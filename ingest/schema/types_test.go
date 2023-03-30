@@ -99,8 +99,6 @@ var oldSchema = []byte(`
 //go:embed schema.ipldsch
 var newSchema []byte
 
-var rng = rand.New(rand.NewSource(1413))
-
 func TestOldAdsCanBeReadWithNewStructs(t *testing.T) {
 	oldSchema := createTestSchema(t, oldSchema, (*OldAdvertisement)(nil))
 
