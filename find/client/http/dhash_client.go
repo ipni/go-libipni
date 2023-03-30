@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/ipni/dhstore"
-	"github.com/ipni/go-indexer-core/store/dhash"
 	"github.com/ipni/go-libipni/apierror"
+	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/libp2p/go-libp2p/core/peer"
 	b58 "github.com/mr-tron/base58/base58"

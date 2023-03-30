@@ -8,7 +8,6 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipld/go-ipld-prime v0.20.0
 	github.com/ipni/dhstore v0.0.2-0.20230324212407-ceb5f50e3bad
-	github.com/ipni/go-indexer-core v0.7.5
 	github.com/libp2p/go-libp2p v0.26.4
 	github.com/libp2p/go-libp2p-pubsub v0.9.0
 	github.com/libp2p/go-msgio v0.3.0
