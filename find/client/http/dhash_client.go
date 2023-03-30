@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipni/dhstore"
 	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
@@ -181,7 +180,13 @@ func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, err
 		return nil, apierror.FromResponse(resp.StatusCode, body)
 	}
 
-	findResponse := &dhstore.GetMetadataResponse{}
+	type (
+		GetMetadataResponse struct {
+			EncryptedMetadata []byte `json:"EncryptedMetadata"`
+		}
+	)
+
+	findResponse := &GetMetadataResponse{}
 	err = json.Unmarshal(body, findResponse)
 
 	if err != nil {
