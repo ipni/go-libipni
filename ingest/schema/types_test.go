@@ -3,7 +3,6 @@ package schema_test
 import (
 	_ "embed"
 	"fmt"
-	"math/rand"
 	"strings"
 	"testing"
 
