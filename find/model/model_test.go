@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-libipni/find/model"
-	"github.com/ipni/go-libipni/internal/test"
+	"github.com/ipni/go-libipni/test"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"

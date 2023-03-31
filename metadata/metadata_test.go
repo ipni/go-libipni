@@ -4,15 +4,15 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ipni/go-libipni/internal/test"
 	"github.com/ipni/go-libipni/metadata"
+	"github.com/ipni/go-libipni/test"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-varint"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetadata(t *testing.T) {
-	cids := test.RandomCids(t, 4)
+	cids := test.RandomCids(4)
 	tests := []struct {
 		name            string
 		givenTransports []metadata.Protocol

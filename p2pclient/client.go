@@ -20,7 +20,7 @@ import (
 )
 
 // Client is responsible for sending requests and receiving responses to and
-// from libp2p peers.  Each instance of Client communicates with a single peer
+// from libp2p peers. Each instance of Client communicates with a single peer
 // using a single protocolID.
 type Client struct {
 	host     host.Host
@@ -32,25 +32,37 @@ type Client struct {
 	sendLock sync.Mutex
 }
 
-// DecodeResponseFunc is a function that is passed into this generic libp2p
-// Client to decode a response message.  This is needed because the generic
-// client cannot decode the response message since the message is of a type
-// only know to a specific libp2p client using this generic client.
-type DecodeResponseFunc func([]byte) error
+// Response is returned by SendRequest and contains the response to the
+// request. It is the caller's responsibility to call Response.Close() after
+// reading the data, to free the message buffer.
+type Response struct {
+	Data      []byte
+	Err       error
+	msgReader msgio.Reader
+}
+
+// Close frees the message buffer that holds the response data.
+func (r *Response) Close() {
+	if r.Data != nil {
+		r.msgReader.ReleaseMsg(r.Data)
+		r.Data = nil
+		r.msgReader = nil
+	}
+}
 
 const (
-	// default port for libp2p client to connect to
+	// default IPNI port for libp2p client to connect to
 	defaultLibp2pPort = 3003
 	// Timeout to wait for a response after a request is sent
 	readMessageTimeout = 10 * time.Second
 )
 
 // ErrReadTimeout is an error that occurs when no message is read within the
-// timeout period
+// timeout period.
 var ErrReadTimeout = fmt.Errorf("timed out reading response")
 
-// New creates a new libp2pclient Client that communicates with a specific peer identified by
-// protocolID.  If host is nil, then one is created.
+// New creates a new Client that communicates with a specific peer identified
+// by protocolID. If host is nil, then one is created.
 func New(p2pHost host.Host, peerID peer.ID, protoID protocol.ID) (*Client, error) {
 	// If no host was given, create one.
 	var ownHost bool
@@ -73,7 +85,7 @@ func New(p2pHost host.Host, peerID peer.ID, protoID protocol.ID) (*Client, error
 }
 
 // Connect connects the client to the host at the location specified by
-// hostname.  The value of hostname is a host or host:port, where the host is a
+// hostname. The value of hostname is a host or host:port, where the host is a
 // hostname or IP address.
 func (c *Client) Connect(ctx context.Context, hostname string) error {
 	port := defaultLibp2pPort
@@ -127,7 +139,7 @@ func (c *Client) Self() peer.ID {
 	return c.host.ID()
 }
 
-// Close resets and closes the network stream if one exists,
+// Close resets and closes the network stream if one exists.
 func (c *Client) Close() error {
 	c.sendLock.Lock()
 	defer c.sendLock.Unlock()
@@ -137,32 +149,32 @@ func (c *Client) Close() error {
 	}
 
 	if c.ownHost {
-		if err := c.host.Close(); err != nil {
-			return err
-		}
+		return c.host.Close()
 	}
 	return nil
 }
 
-// SendRequest sends out a request.
-func (c *Client) SendRequest(ctx context.Context, msg proto.Message, decodeRsp DecodeResponseFunc) error {
+// SendRequest sends out a request and reads a response.
+func (c *Client) SendRequest(ctx context.Context, msg proto.Message) *Response {
 	c.sendLock.Lock()
 	defer c.sendLock.Unlock()
 
 	err := c.sendMessage(ctx, msg)
 	if err != nil {
-		return fmt.Errorf("cannot sent request: %w", err)
+		return &Response{
+			Err: fmt.Errorf("cannot sent request: %w", err),
+		}
 	}
 
-	if err = c.ctxReadMsg(ctx, decodeRsp); err != nil {
+	rsp := c.readResponse(ctx)
+	if rsp.Err != nil {
 		c.closeStream()
-		return fmt.Errorf("cannot read response: %w", err)
 	}
 
-	return nil
+	return rsp
 }
 
-// SendMessage sends out a message
+// SendMessage sends out a message.
 func (c *Client) SendMessage(ctx context.Context, msg proto.Message) error {
 	c.sendLock.Lock()
 	defer c.sendLock.Unlock()
@@ -207,30 +219,38 @@ func (c *Client) closeStream() {
 	c.r = nil
 }
 
-func (c *Client) ctxReadMsg(ctx context.Context, decodeRsp DecodeResponseFunc) error {
-	done := make(chan struct{})
-	var err error
-	go func(r msgio.ReadCloser) {
-		defer close(done)
-		var data []byte
-		data, err = r.ReadMsg()
-		defer r.ReleaseMsg(data)
+func (c *Client) readResponse(ctx context.Context) *Response {
+	rspCh := make(chan *Response, 1)
+	go func(r msgio.ReadCloser, rsp chan<- *Response) {
+		data, err := r.ReadMsg()
 		if err != nil {
+			if data != nil {
+				r.ReleaseMsg(data)
+			}
+			rsp <- &Response{
+				Err: err,
+			}
 			return
 		}
-		err = decodeRsp(data)
-	}(c.r)
+		rsp <- &Response{
+			Data:      data,
+			msgReader: r,
+		}
+	}(c.r, rspCh)
 
 	t := time.NewTimer(readMessageTimeout)
 	defer t.Stop()
 
 	select {
-	case <-done:
+	case response := <-rspCh:
+		return response
 	case <-ctx.Done():
-		return ctx.Err()
+		return &Response{
+			Err: ctx.Err(),
+		}
 	case <-t.C:
-		return ErrReadTimeout
+		return &Response{
+			Err: ErrReadTimeout,
+		}
 	}
-
-	return err
 }

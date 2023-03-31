@@ -3,15 +3,15 @@ package metadata_test
 import (
 	"testing"
 
-	"github.com/ipni/go-libipni/internal/test"
 	"github.com/ipni/go-libipni/metadata"
+	"github.com/ipni/go-libipni/test"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-varint"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRoundTripDataTransferFilecoin(t *testing.T) {
-	cids := test.RandomCids(t, 4)
+	cids := test.RandomCids(4)
 	filecoinV1Datas := []*metadata.GraphsyncFilecoinV1{
 		{
 			PieceCID:      cids[0],

@@ -9,7 +9,7 @@ import (
 	"github.com/ipni/go-libipni/find/client"
 	"github.com/ipni/go-libipni/find/model"
 	pb "github.com/ipni/go-libipni/find/pb"
-	"github.com/ipni/go-libipni/internal/p2pclient"
+	"github.com/ipni/go-libipni/p2pclient"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -128,12 +128,15 @@ func (c *Client) GetStats(ctx context.Context) (*model.Stats, error) {
 }
 
 func (c *Client) sendRecv(ctx context.Context, req *pb.FindMessage, expectRspType pb.FindMessage_MessageType) ([]byte, error) {
+	r := c.p2pc.SendRequest(ctx, req)
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	var resp pb.FindMessage
-	err := c.p2pc.SendRequest(ctx, req, func(data []byte) error {
-		return proto.Unmarshal(data, &resp)
-	})
+	err := proto.Unmarshal(r.Data, &resp)
+	r.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request to indexer: %s", err)
+		return nil, err
 	}
 	if resp.GetType() != expectRspType {
 		if resp.GetType() == pb.FindMessage_ERROR_RESPONSE {
