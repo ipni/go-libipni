@@ -12,7 +12,7 @@ require (
 	github.com/ipld/go-ipld-prime v0.20.0
 	github.com/libp2p/go-libp2p v0.26.4
 	github.com/libp2p/go-libp2p-gostream v0.6.0
-	github.com/libp2p/go-libp2p-pubsub v0.9.0
+	github.com/libp2p/go-libp2p-pubsub v0.9.3
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multiaddr v0.8.0
@@ -41,7 +41,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2 // indirect
 	github.com/filecoin-project/go-ds-versioning v0.1.2 // indirect
 	github.com/filecoin-project/go-statemachine v1.0.2-0.20220322104818-27f8fbb86dfd // indirect
