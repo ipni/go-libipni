@@ -14,7 +14,7 @@ import (
 	ipldSchema "github.com/ipld/go-ipld-prime/schema"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	stischema "github.com/ipni/go-libipni/ingest/schema"
-	"github.com/ipni/go-libipni/internal/test"
+	"github.com/ipni/go-libipni/test"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
