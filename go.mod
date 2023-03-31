@@ -1,6 +1,6 @@
 module github.com/ipni/go-libipni
 
-go 1.20
+go 1.19
 
 require (
 	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc5
