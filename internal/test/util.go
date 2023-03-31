@@ -3,10 +3,11 @@ package test
 import (
 	"fmt"
 	"math/rand"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/test"
@@ -15,12 +16,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var rng *rand.Rand
+var globalSeed atomic.Int64
+
+func RandomAddrs(n int) []string {
+	rng := rand.New(rand.NewSource(globalSeed.Add(1)))
+
+	addrs := make([]string, n)
+	for i := 0; i < n; i++ {
+		addrs[i] = fmt.Sprintf("/ip4/%d.%d.%d.%d/tcp/%d", rng.Int()%255, rng.Int()%255, rng.Int()%255, rng.Int()%255, rng.Int()%10751)
+	}
+	return addrs
+}
+
+func RandomCids(t testing.TB, n int) []cid.Cid {
+	rng := rand.New(rand.NewSource(globalSeed.Add(1)))
+
+	prefix := schema.Linkproto.Prefix
+
+	cids := make([]cid.Cid, n)
+	for i := 0; i < n; i++ {
+		b := make([]byte, 10*n)
+		rng.Read(b)
+		c, err := prefix.Sum(b)
+		require.NoError(t, err)
+		cids[i] = c
+	}
+	return cids
+}
+
+func RandomIdentity(t *testing.T) (peer.ID, crypto.PrivKey, crypto.PubKey) {
+	privKey, pubKey, err := test.RandTestKeyPair(crypto.Ed25519, 256)
+	require.NoError(t, err)
+
+	providerID, err := peer.IDFromPublicKey(pubKey)
+	require.NoError(t, err)
+	return providerID, privKey, pubKey
+}
 
 func RandomMultihashes(n int) []multihash.Multihash {
-	if rng == nil {
-		rng = rand.New(rand.NewSource(time.Now().Unix()))
-	}
+	rng := rand.New(rand.NewSource(globalSeed.Add(1)))
+
 	prefix := cid.Prefix{
 		Version:  1,
 		Codec:    cid.Raw,
@@ -41,15 +76,6 @@ func RandomMultihashes(n int) []multihash.Multihash {
 	return mhashes
 }
 
-func RandomIdentity(t *testing.T) (peer.ID, crypto.PrivKey, crypto.PubKey) {
-	privKey, pubKey, err := test.RandTestKeyPair(crypto.Ed25519, 256)
-	require.NoError(t, err)
-
-	providerID, err := peer.IDFromPublicKey(pubKey)
-	require.NoError(t, err)
-	return providerID, privKey, pubKey
-}
-
 func StringToMultiaddrs(t *testing.T, addrs []string) []multiaddr.Multiaddr {
 	mAddrs := make([]multiaddr.Multiaddr, len(addrs))
 	for i, addr := range addrs {
@@ -58,15 +84,4 @@ func StringToMultiaddrs(t *testing.T, addrs []string) []multiaddr.Multiaddr {
 		mAddrs[i] = ma
 	}
 	return mAddrs
-}
-
-func RandomAddrs(n int) []string {
-	if rng == nil {
-		rng = rand.New(rand.NewSource(time.Now().Unix()))
-	}
-	addrs := make([]string, n)
-	for i := 0; i < n; i++ {
-		addrs[i] = fmt.Sprintf("/ip4/%d.%d.%d.%d/tcp/%d", rng.Int()%255, rng.Int()%255, rng.Int()%255, rng.Int()%255, rng.Int()%10751)
-	}
-	return addrs
 }
