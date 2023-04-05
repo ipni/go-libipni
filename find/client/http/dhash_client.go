@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
@@ -20,8 +21,11 @@ import (
 
 const (
 	metadataPath = "metadata"
-	pcacheTTL    = 5 * time.Minute
+	// pcacheTTL is the time to live for provider info cache.
+	pcacheTTL = 5 * time.Minute
 )
+
+var log = logging.Logger("dhash-client")
 
 type DHashClient struct {
 	Client
@@ -126,25 +130,30 @@ func (c *DHashClient) decryptFindResponse(ctx context.Context, resp *model.FindR
 		}
 		for _, evk := range encRes.EncryptedValueKeys {
 			vk, err := dhash.DecryptValueKey(evk, mh)
+			// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
 			if err != nil {
-				return err
+				log.Warnw("Error decrypting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
 			}
 
 			pid, ctxId, err := dhash.SplitValueKey(vk)
 			if err != nil {
-				return err
+				log.Warnw("Error splitting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
 			}
 
 			// fetch metadata
 			metadata, err := c.fetchMetadata(ctx, vk)
 			if err != nil {
-				return err
+				log.Warnw("Error fetching metadata", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
 			}
 
 			// fetch provider info alongside extended providers
 			results, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
 			if err != nil {
-				return err
+				log.Warnw("Error fetching provider info", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
 			}
 
 			mhr.ProviderResults = append(mhr.ProviderResults, results...)
