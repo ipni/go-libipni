@@ -95,14 +95,7 @@ retry:
 // RandomMultihashes returns a slice of n random unique Multihashes.
 func RandomMultihashes(n int) []multihash.Multihash {
 	rng := rand.New(rand.NewSource(globalSeed.Add(1)))
-
-	prefix := cid.Prefix{
-		Version:  1,
-		Codec:    cid.Raw,
-		MhType:   multihash.SHA2_256,
-		MhLength: -1, // default length
-	}
-
+	prefix := schema.Linkproto.Prefix
 	set := make(map[string]struct{})
 	mhashes := make([]multihash.Multihash, n)
 	for i := 0; i < n; i++ {
