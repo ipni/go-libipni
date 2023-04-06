@@ -20,7 +20,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-type publisher struct {
+type Publisher struct {
 	closeOnce     sync.Once
 	dtManager     dt.Manager
 	dtClose       dtCloseFunc
@@ -31,7 +31,7 @@ type publisher struct {
 }
 
 // NewPublisher creates a new dagsync publisher.
-func NewPublisher(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topicName string, options ...Option) (*publisher, error) {
+func NewPublisher(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topicName string, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func NewPublisher(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, t
 	headPublisher := head.NewPublisher()
 	startHeadPublisher(host, topicName, headPublisher)
 
-	return &publisher{
+	return &Publisher{
 		dtManager:     dtManager,
 		dtClose:       dtClose,
 		extraData:     opts.extraData,
@@ -69,7 +69,7 @@ func startHeadPublisher(host host.Host, topicName string, headPublisher *head.Pu
 
 // NewPublisherFromExisting instantiates publishing on an existing
 // data transfer instance.
-func NewPublisherFromExisting(dtManager dt.Manager, host host.Host, topicName string, lsys ipld.LinkSystem, options ...Option) (*publisher, error) {
+func NewPublisherFromExisting(dtManager dt.Manager, host host.Host, topicName string, lsys ipld.LinkSystem, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func NewPublisherFromExisting(dtManager dt.Manager, host host.Host, topicName st
 	headPublisher := head.NewPublisher()
 	startHeadPublisher(host, topicName, headPublisher)
 
-	return &publisher{
+	return &Publisher{
 		extraData:     opts.extraData,
 		headPublisher: headPublisher,
 		host:          host,
@@ -90,27 +90,27 @@ func NewPublisherFromExisting(dtManager dt.Manager, host host.Host, topicName st
 	}, nil
 }
 
-func (p *publisher) Addrs() []multiaddr.Multiaddr {
+func (p *Publisher) Addrs() []multiaddr.Multiaddr {
 	return p.host.Addrs()
 }
 
-func (p *publisher) ID() peer.ID {
+func (p *Publisher) ID() peer.ID {
 	return p.host.ID()
 }
 
-func (p *publisher) Protocol() int {
+func (p *Publisher) Protocol() int {
 	return multiaddr.P_P2P
 }
 
-func (p *publisher) AnnounceHead(ctx context.Context) error {
+func (p *Publisher) AnnounceHead(ctx context.Context) error {
 	return p.announce(ctx, p.headPublisher.Root(), p.Addrs())
 }
 
-func (p *publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
 	return p.announce(ctx, p.headPublisher.Root(), addrs)
 }
 
-func (p *publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	// Do nothing if nothing to announce or no means to announce it.
 	if c == cid.Undef || len(p.senders) == 0 {
 		return nil
@@ -131,7 +131,7 @@ func (p *publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.M
 	return errs
 }
 
-func (p *publisher) SetRoot(ctx context.Context, c cid.Cid) error {
+func (p *Publisher) SetRoot(ctx context.Context, c cid.Cid) error {
 	if c == cid.Undef {
 		return errors.New("cannot update to an undefined cid")
 	}
@@ -139,11 +139,11 @@ func (p *publisher) SetRoot(ctx context.Context, c cid.Cid) error {
 	return p.headPublisher.UpdateRoot(ctx, c)
 }
 
-func (p *publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
+func (p *Publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
 	return p.UpdateRootWithAddrs(ctx, c, p.Addrs())
 }
 
-func (p *publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	err := p.SetRoot(ctx, c)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func (p *publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []
 	return p.announce(ctx, c, addrs)
 }
 
-func (p *publisher) Close() error {
+func (p *Publisher) Close() error {
 	var errs error
 	p.closeOnce.Do(func() {
 		err := p.headPublisher.Close()

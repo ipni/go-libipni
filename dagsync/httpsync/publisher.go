@@ -24,7 +24,7 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-type publisher struct {
+type Publisher struct {
 	addr      multiaddr.Multiaddr
 	closer    io.Closer
 	lsys      ipld.LinkSystem
@@ -36,11 +36,11 @@ type publisher struct {
 	extraData []byte
 }
 
-var _ http.Handler = (*publisher)(nil)
+var _ http.Handler = (*Publisher)(nil)
 
 // NewPublisher creates a new http publisher, listening on the specified
 // address.
-func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*publisher, error) {
+func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 	}
 	proto, _ := multiaddr.NewMultiaddr("/http")
 
-	pub := &publisher{
+	pub := &Publisher{
 		addr:      multiaddr.Join(maddr, proto),
 		closer:    l,
 		lsys:      lsys,
@@ -86,35 +86,35 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 	return pub, nil
 }
 
-// Addrs returns the addresses, as []multiaddress, that the publisher is
+// Addrs returns the addresses, as []multiaddress, that the Publisher is
 // listening on.
-func (p *publisher) Addrs() []multiaddr.Multiaddr {
+func (p *Publisher) Addrs() []multiaddr.Multiaddr {
 	return []multiaddr.Multiaddr{p.addr}
 }
 
-func (p *publisher) ID() peer.ID {
+func (p *Publisher) ID() peer.ID {
 	return p.peerID
 }
 
-func (p *publisher) Protocol() int {
+func (p *Publisher) Protocol() int {
 	return multiaddr.P_HTTP
 }
 
-func (p *publisher) AnnounceHead(ctx context.Context) error {
+func (p *Publisher) AnnounceHead(ctx context.Context) error {
 	p.rl.Lock()
 	c := p.root
 	p.rl.Unlock()
 	return p.announce(ctx, c, p.Addrs())
 }
 
-func (p *publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
 	p.rl.Lock()
 	c := p.root
 	p.rl.Unlock()
 	return p.announce(ctx, c, addrs)
 }
 
-func (p *publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	// Do nothing if nothing to announce or no means to announce it.
 	if c == cid.Undef || len(p.senders) == 0 {
 		return nil
@@ -136,18 +136,18 @@ func (p *publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.M
 	return errs
 }
 
-func (p *publisher) SetRoot(ctx context.Context, c cid.Cid) error {
+func (p *Publisher) SetRoot(_ context.Context, c cid.Cid) error {
 	p.rl.Lock()
 	defer p.rl.Unlock()
 	p.root = c
 	return nil
 }
 
-func (p *publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
+func (p *Publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
 	return p.UpdateRootWithAddrs(ctx, c, p.Addrs())
 }
 
-func (p *publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
+func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	err := p.SetRoot(ctx, c)
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func (p *publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []
 	return p.announce(ctx, c, addrs)
 }
 
-func (p *publisher) Close() error {
+func (p *Publisher) Close() error {
 	var errs error
 	err := p.closer.Close()
 	if err != nil {
@@ -169,7 +169,7 @@ func (p *publisher) Close() error {
 	return errs
 }
 
-func (p *publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ask := path.Base(r.URL.Path)
 	if ask == "head" {
 		// serve the head

@@ -20,7 +20,7 @@ type Publisher interface {
 	// AnnounceHead sends an announce messag, via all senders, to announce the
 	// current head advertisement CID. If there is no head, then does nothing.
 	AnnounceHead(context.Context) error
-	// AnnounceHead sends an announce messag containing the specified
+	// AnnounceHeadWithAddrs sends an announce messag containing the specified
 	// addresses, via all senders, to announce the current head advertisement
 	// CID. If there is no head, then does nothing.
 	AnnounceHeadWithAddrs(context.Context, []multiaddr.Multiaddr) error
