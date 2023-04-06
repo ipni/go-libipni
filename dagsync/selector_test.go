@@ -31,8 +31,7 @@ func TestGetStopNodeWhenNil(t *testing.T) {
 }
 
 func TestGetRecursionLimit(t *testing.T) {
-	testCid, err := test.RandomCids(1)
-	require.NoError(t, err)
+	testCid := test.RandomCids(1)
 	testStopLink := cidlink.Link{Cid: testCid[0]}
 	ssb := selectorbuilder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	tests := []struct {
@@ -99,8 +98,7 @@ func TestGetRecursionLimit(t *testing.T) {
 }
 
 func TestWithRecursionLimit(t *testing.T) {
-	testCid, err := test.RandomCids(1)
-	require.NoError(t, err)
+	testCid := test.RandomCids(1)
 	testStopLink := cidlink.Link{Cid: testCid[0]}
 	ssb := selectorbuilder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	tests := []struct {

@@ -110,7 +110,7 @@ func TestSyncFn(t *testing.T) {
 
 	// Try to sync with a non-existing cid to check that sync returns with err,
 	// and SyncFinished watcher does not get event.
-	cids, _ := test.RandomCids(1)
+	cids := test.RandomCids(1)
 	ctx, syncncl := context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
 	peerInfo := peer.AddrInfo{

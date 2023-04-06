@@ -138,7 +138,7 @@ func TestSyncFnHttp(t *testing.T) {
 
 	// Try to sync with a non-existing cid to chack that sync returns with err,
 	// and SyncFinished watcher does not get event.
-	cids, _ := test.RandomCids(1)
+	cids := test.RandomCids(1)
 	ctx, syncncl := context.WithTimeout(context.Background(), time.Second)
 	defer syncncl()
 
