@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"path"
 	"sync"
@@ -20,13 +19,14 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipni/go-libipni/dagsync/p2p/protocol/head"
+	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
+	"github.com/ipni/go-libipni/test"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -158,38 +158,15 @@ func waitForMeshWithMessage(t *testing.T, topic string, hosts ...host.Host) []*p
 // just gimme a link and stuff the bytes in a map.
 // (also return the node again for convenient assignment.)
 func encode(lsys ipld.LinkSystem, n ipld.Node) (ipld.Node, ipld.Link) {
-	lp := cidlink.LinkPrototype{
-		Prefix: prefix,
-	}
-
-	lnk, err := lsys.Store(ipld.LinkContext{}, lp, n)
+	lnk, err := lsys.Store(ipld.LinkContext{}, schema.Linkproto, n)
 	if err != nil {
 		panic(err)
 	}
 	return n, lnk
 }
 
-var prefix = cid.Prefix{
-	Version:  1,
-	Codec:    uint64(multicodec.DagJson),
-	MhType:   uint64(multicodec.Sha2_256),
-	MhLength: 16,
-}
-
-func RandomCids(n int) ([]cid.Cid, error) {
-	var prng = rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	res := make([]cid.Cid, n)
-	for i := 0; i < n; i++ {
-		b := make([]byte, 10*n)
-		prng.Read(b)
-		c, err := prefix.Sum(b)
-		if err != nil {
-			return nil, err
-		}
-		res[i] = c
-	}
-	return res, nil
+func RandomCids(n int) []cid.Cid {
+	return test.RandomCids(n)
 }
 
 func MkLinkSystem(ds datastore.Batching) ipld.LinkSystem {
@@ -211,22 +188,16 @@ func MkLinkSystem(ds datastore.Batching) ipld.LinkSystem {
 }
 
 func Store(srcStore datastore.Batching, n ipld.Node) (ipld.Link, error) {
-	linkproto := cidlink.LinkPrototype{
-		Prefix: cid.Prefix{
-			Version:  1,
-			Codec:    uint64(multicodec.DagJson),
-			MhType:   uint64(multicodec.Sha2_256),
-			MhLength: 16,
-		},
-	}
 	lsys := MkLinkSystem(srcStore)
-
-	return lsys.Store(ipld.LinkContext{}, linkproto, n)
+	return lsys.Store(ipld.LinkContext{}, schema.Linkproto, n)
 }
 
 func MkTestHost(options ...libp2p.Option) host.Host {
 	options = append(options, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
-	h, _ := libp2p.New(options...)
+	h, err := libp2p.New(options...)
+	if err != nil {
+		panic(err)
+	}
 	return h
 }
 

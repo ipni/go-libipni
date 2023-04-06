@@ -759,14 +759,14 @@ func (h *hostSystem) close() {
 }
 
 func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostSystem, subSys hostSystem, subOpts []dagsync.Option) (dagsync.Publisher, *dagsync.Subscriber) {
-	var pub dagsync.Publisher
 	var senders []announce.Sender
-
 	if !b.P2PAnnounce {
 		p2pSender, err := p2psender.New(pubSys.host, topicName)
 		require.NoError(t, err)
 		senders = append(senders, p2pSender)
 	}
+
+	var pub dagsync.Publisher
 	var err error
 	if b.IsHttp {
 		pub, err = httpsync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, httpsync.WithAnnounceSenders(senders...))
