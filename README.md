@@ -6,3 +6,6 @@
 > IPNI library implementation in Go
 
 This project provides a Golang implementation of indexer API, data definitions, and utilities that can be used to build and interact with indexing services.
+
+## License
+[SPDX-License-Identifier: Apache-2.0 OR MIT](LICENSE.md)
