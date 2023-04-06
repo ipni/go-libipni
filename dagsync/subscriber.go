@@ -243,8 +243,8 @@ func (s *Subscriber) HttpPeerStore() peerstore.Peerstore {
 }
 
 // GetLatestSync returns the latest synced CID for the specified peer. If there
-// is not handler for the peer, then nil is returned. This does not mean that
-// no data is synced with that peer, it means that the Subscriber does not know
+// is no handler for the peer, then nil is returned. This does not mean that no
+// data is synced with that peer, it means that the Subscriber does not know
 // about it. Calling Sync() first may be necessary.
 func (s *Subscriber) GetLatestSync(peerID peer.ID) ipld.Link {
 	v, ok := s.latestSyncHander.GetLatestSync(peerID)
@@ -295,13 +295,16 @@ func (s *Subscriber) doClose() error {
 	close(s.closing)
 
 	// Close receiver and wait for watch to exit.
-	s.receiver.Close()
+	err := s.receiver.Close()
+	if err != nil {
+		log.Errorw("error closing receiver", "err", err)
+	}
 	<-s.watchDone
 
 	// Wait for any syncs to complete.
 	s.asyncWG.Wait()
 
-	err := s.dtSync.Close()
+	err = s.dtSync.Close()
 
 	// Dismiss any event readers.
 	s.outEventsMutex.Lock()
@@ -823,15 +826,17 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wr
 
 	var syncBySegment bool
 	var origLimit selector.RecursionLimit
-	// Only attempt to detect recursion limit in original selector if maximum segment depth is
-	// larger than zero and there is a block hook set; either general or scoped.
+	// Only attempt to detect recursion limit in original selector if maximum
+	// segment depth is larger than zero and there is a block hook set; either
+	// general or scoped.
 	//
-	// Not that we need at least one block hook to let the caller decide which CID to sync in next
-	// segment. Therefore, it has to be set for segmented sync to function correctly.
+	// Not that we need at least one block hook to let the caller decide which
+	// CID to sync in next segment. Therefore, it has to be set for segmented
+	// sync to function correctly.
 	if segdl > 0 && bh != nil {
 		origLimit, syncBySegment = getRecursionLimit(sel)
-		// If the given selector has a incursion Do not sync using segments if the depth limit in the selector is already less than the
-		// configured maximum segment depth limit.
+		// Do not sync using segments if the depth limit in the selector is
+		// already less than the configured maximum segment depth limit.
 		if syncBySegment &&
 			origLimit.Mode() == selector.RecursionLimit_Depth &&
 			origLimit.Depth() <= segdl {
@@ -839,14 +844,16 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wr
 		}
 	}
 
-	// Revert back to sync without segmentation if original limit was not detected, due to:
-	// - segment depth limit being negative; meaning segmentation is explicitly disabled, or
-	// - no block hook is configured; meaning we don't have a way to determine next
-	//   CID during segmented sync,
-	// - the original selector does not explore recursively, and therefore, has no top level
-	//   recursion limit, or
-	// - tje original selector has a recursion depth limit that is already less than the maximum
-	//   segment depth limit.
+	// Revert back to sync without segmentation if original limit was not
+	// detected, due to:
+	// - segment depth limit being negative; meaning segmentation is explicitly
+	//   disabled, or
+	// - no block hook is configured; meaning we don't have a way to determine
+	//   next CID during segmented sync,
+	// - original selector does not explore recursively, and therefore, has
+	//   no top level recursion limit, or
+	// - original selector has a recursion depth limit that is already less
+	//   than the maximum segment depth limit.
 	if !syncBySegment {
 		err := syncer.Sync(ctx, nextCid, sel)
 		if err != nil {
@@ -863,8 +870,8 @@ SegSyncLoop:
 	for {
 		segmentSel, ok := withRecursionLimit(sel, selector.RecursionLimitDepth(nextDepth))
 		if !ok {
-			// This should not happen if we were able to extract origLimit from sel.
-			// If this happens there is likely a bug. Fail fast.
+			// This should not happen if we were able to extract origLimit from
+			// sel. If this happens there is likely a bug. Fail fast.
 			return nil, fmt.Errorf("failed to construct segment selector with recursion depth limit of %d", nextDepth)
 		}
 		nextCid = *segSync.nextSyncCid
