@@ -3,11 +3,11 @@ module github.com/ipni/go-libipni
 go 1.19
 
 require (
-	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc5
+	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc6
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/ipfs/go-cid v0.4.0
+	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
-	github.com/ipfs/go-graphsync v0.14.4
+	github.com/ipfs/go-graphsync v0.14.5
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipld/go-ipld-prime v0.20.0
 	github.com/libp2p/go-libp2p v0.26.4
