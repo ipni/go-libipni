@@ -76,15 +76,7 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 	resChan := make(chan model.ProviderResult)
 	errChan := make(chan error)
 
-	// resChan gets closed by doFind
-	defer close(errChan)
-
-	go func() {
-		err := c.FindAsync(ctx, mh, resChan)
-		if err != nil {
-			errChan <- err
-		}
-	}()
+	go c.FindAsync(ctx, mh, resChan, errChan)
 
 	mhr := model.MultihashResult{
 		Multihash: mh,
@@ -107,49 +99,50 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 }
 
 // FindAsync implements double hashed lookup workflow. It can submit results as they come in into resChan
-func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan model.ProviderResult) error {
+func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan model.ProviderResult, errChan chan error) {
 	defer func() {
 		close(resChan)
+		close(errChan)
 	}()
 
 	smh, err := dhash.SecondMultihash(mh)
 	if err != nil {
-		return err
+		errChan <- err
 	}
 	u := c.dhFindURL.JoinPath(smh.B58String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return err
+		errChan <- err
 	}
 	req.Header.Add("Accept", "application/json")
 
 	resp, err := c.c.Do(req)
 	if err != nil {
-		return err
+		errChan <- err
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	if err != nil {
-		return err
+		errChan <- err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return apierror.FromResponse(resp.StatusCode, body)
+		errChan <- apierror.FromResponse(resp.StatusCode, body)
 	}
 
 	encResponse := &model.FindResponse{}
 	err = json.Unmarshal(body, encResponse)
 	if err != nil {
-		return err
+		errChan <- err
 	}
 
 	for _, emhrs := range encResponse.EncryptedMultihashResults {
 		for _, evk := range emhrs.EncryptedValueKeys {
 			select {
 			case <-ctx.Done():
-				return errors.New("context cancelled")
+				return
 			default:
 				vk, err := dhash.DecryptValueKey(evk, mh)
 				// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
@@ -183,8 +176,6 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 			}
 		}
 	}
-
-	return nil
 }
 
 // fetchMetadata fetches and decrypts metadata from a remote server.
