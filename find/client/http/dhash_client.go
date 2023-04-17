@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -140,35 +139,34 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				errChan <- ctx.Err()
 				return
 			}
-				vk, err := dhash.DecryptValueKey(evk, mh)
-				// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
-				if err != nil {
-					log.Warnw("Error decrypting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
-					continue
-				}
+			vk, err := dhash.DecryptValueKey(evk, mh)
+			// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
+			if err != nil {
+				log.Warnw("Error decrypting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
+			}
 
-				pid, ctxId, err := dhash.SplitValueKey(vk)
-				if err != nil {
-					log.Warnw("Error splitting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
-					continue
-				}
+			pid, ctxId, err := dhash.SplitValueKey(vk)
+			if err != nil {
+				log.Warnw("Error splitting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
+			}
 
-				// fetch metadata
-				metadata, err := c.fetchMetadata(ctx, vk)
-				if err != nil {
-					log.Warnw("Error fetching metadata", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
-					continue
-				}
+			// fetch metadata
+			metadata, err := c.fetchMetadata(ctx, vk)
+			if err != nil {
+				log.Warnw("Error fetching metadata", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
+			}
 
-				prs, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
-				if err != nil {
-					log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
-					continue
-				}
+			prs, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
+			if err != nil {
+				log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				continue
+			}
 
-				for _, pr := range prs {
-					resChan <- pr
-				}
+			for _, pr := range prs {
+				resChan <- pr
 			}
 		}
 	}
