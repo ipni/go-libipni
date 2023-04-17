@@ -81,21 +81,16 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 	mhr := model.MultihashResult{
 		Multihash: mh,
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, errors.New("context cancelled")
-		case err := <-errChan:
-			return nil, err
-		case pr, ok := <-resChan:
-			if !ok {
-				return &model.FindResponse{
-					MultihashResults: []model.MultihashResult{mhr},
-				}, nil
-			}
-			mhr.ProviderResults = append(mhr.ProviderResults, pr)
-		}
+	for pr := range resChan {
+		mhr.ProviderResults = append(mhr.ProviderResults, pr)
 	}
+	err := <-errChan
+	if err != nil {
+		return nil, err
+	}
+	return &model.FindResponse{
+		MultihashResults: []model.MultihashResult{mhr},
+	}, nil
 }
 
 // FindAsync implements double hashed lookup workflow. It submits results as they get decrypted and assembled into resChan. If an error occurs it is sent to errChan.
