@@ -70,65 +70,75 @@ func NewDHashClient(dhstoreURL, stiURL string, options ...Option) (*DHashClient,
 	}, nil
 }
 
+// Find launches FindAsync in a separate go routine and assembles the result into FindResponse as if it was a synchronous invocation.
 func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.FindResponse, error) {
-	// query value keys from indexer
-	smh, err := dhash.SecondMultihash(mh)
+	resChan := make(chan model.ProviderResult)
+	errChan := make(chan error)
+
+	go c.FindAsync(ctx, mh, resChan, errChan)
+
+	mhr := model.MultihashResult{
+		Multihash: mh,
+	}
+	for pr := range resChan {
+		mhr.ProviderResults = append(mhr.ProviderResults, pr)
+	}
+	err := <-errChan
 	if err != nil {
 		return nil, err
+	}
+	return &model.FindResponse{
+		MultihashResults: []model.MultihashResult{mhr},
+	}, nil
+}
+
+// FindAsync implements double hashed lookup workflow. It submits results as they get decrypted and assembled into resChan. If an error occurs it is sent to errChan.
+// Once the workflow is finished both channels are closed.
+func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan<- model.ProviderResult, errChan chan<- error) {
+	defer func() {
+		close(resChan)
+		close(errChan)
+	}()
+
+	smh, err := dhash.SecondMultihash(mh)
+	if err != nil {
+		errChan <- err
 	}
 	u := c.dhFindURL.JoinPath(smh.B58String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, err
+		errChan <- err
 	}
 	req.Header.Add("Accept", "application/json")
 
 	resp, err := c.c.Do(req)
 	if err != nil {
-		return nil, err
+		errChan <- err
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	if err != nil {
-		return nil, err
+		errChan <- err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, apierror.FromResponse(resp.StatusCode, body)
+		errChan <- apierror.FromResponse(resp.StatusCode, body)
 	}
 
-	findResponse := &model.FindResponse{}
-	err = json.Unmarshal(body, findResponse)
+	encResponse := &model.FindResponse{}
+	err = json.Unmarshal(body, encResponse)
 	if err != nil {
-		return nil, err
+		errChan <- err
 	}
 
-	err = c.decryptFindResponse(ctx, findResponse, map[string]multihash.Multihash{smh.B58String(): mh})
-	if err != nil {
-		return nil, err
-	}
-
-	return findResponse, nil
-}
-
-// decryptFindResponse decrypts EncMultihashResults and appends the decrypted
-// values to MultihashResults. It also fetches provider info and metadata for
-// each value key.
-func (c *DHashClient) decryptFindResponse(ctx context.Context, resp *model.FindResponse, unhasher map[string]multihash.Multihash) error {
-	// decrypt each value key using the original multihash
-	// then for each decrypted value key fetch provider's addr info.
-	for _, encRes := range resp.EncryptedMultihashResults {
-		mh, found := unhasher[encRes.Multihash.B58String()]
-		if !found {
-			continue
-		}
-
-		mhr := model.MultihashResult{
-			Multihash: mh,
-		}
-		for _, evk := range encRes.EncryptedValueKeys {
+	for _, emhrs := range encResponse.EncryptedMultihashResults {
+		for _, evk := range emhrs.EncryptedValueKeys {
+			if ctx.Err() != nil {
+				errChan <- ctx.Err()
+				return
+			}
 			vk, err := dhash.DecryptValueKey(evk, mh)
 			// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
 			if err != nil {
@@ -149,22 +159,20 @@ func (c *DHashClient) decryptFindResponse(ctx context.Context, resp *model.FindR
 				continue
 			}
 
-			// fetch provider info alongside extended providers
-			results, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
+			prs, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
 			if err != nil {
-				log.Warnw("Error fetching provider info", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
+				log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue
 			}
 
-			mhr.ProviderResults = append(mhr.ProviderResults, results...)
-		}
-		if len(mhr.ProviderResults) > 0 {
-			resp.MultihashResults = append(resp.MultihashResults, mhr)
+			for _, pr := range prs {
+				resChan <- pr
+			}
 		}
 	}
-	return nil
 }
 
+// fetchMetadata fetches and decrypts metadata from a remote server.
 func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, error) {
 	u := c.dhMetadataURL.JoinPath(b58.Encode(dhash.SHA256(vk, nil)))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
