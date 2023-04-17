@@ -339,8 +339,8 @@ func (s *Subscriber) OnSyncFinished() (<-chan SyncFinished, context.CancelFunc) 
 	s.outEventsMutex.Unlock()
 
 	cncl := func() {
-		// Drain channel to prevent deadlock if there are blocked writes to the
-		// channel.
+		// Drain channel to prevent deadlock if blocked writes are preventing
+		// the mutex from being unlocked.
 		go func() {
 			for range ch {
 			}
