@@ -339,6 +339,12 @@ func (s *Subscriber) OnSyncFinished() (<-chan SyncFinished, context.CancelFunc) 
 	s.outEventsMutex.Unlock()
 
 	cncl := func() {
+		// Drain channel to prevent deadlock if there are blocked writes to the
+		// channel.
+		go func() {
+			for range ch {
+			}
+		}()
 		s.outEventsMutex.Lock()
 		defer s.outEventsMutex.Unlock()
 		for i, ca := range s.outEventsChans {

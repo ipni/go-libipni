@@ -382,6 +382,75 @@ func TestAnnounce(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCancelDeadlock(t *testing.T) {
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost := test.MkTestHost()
+	srcLnkS := test.MkLinkSystem(srcStore)
+	dstHost := test.MkTestHost()
+	defer srcHost.Close()
+	defer dstHost.Close()
+
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+	dstLnkS := test.MkLinkSystem(dstStore)
+
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	require.NoError(t, err)
+	defer pub.Close()
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	require.NoError(t, err)
+	defer sub.Close()
+
+	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
+
+	watcher, cncl := sub.OnSyncFinished()
+
+	// Store the whole chain in source node
+	chainLnks := test.MkChain(srcLnkS, true)
+
+	c := chainLnks[2].(cidlink.Link).Cid
+	err = pub.SetRoot(context.Background(), c)
+	require.NoError(t, err)
+
+	peerInfo := peer.AddrInfo{
+		ID:    srcHost.ID(),
+		Addrs: srcHost.Addrs(),
+	}
+	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	require.NoError(t, err)
+	// Now there should be an event on the watcher channel.
+
+	c = chainLnks[1].(cidlink.Link).Cid
+	err = pub.SetRoot(context.Background(), c)
+	require.NoError(t, err)
+
+	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	require.NoError(t, err)
+	// Now the event dispatcher is blocked writing to the watcher channel.
+
+	// It is necessary to wait a bit for the event dispatcher to block.
+	time.Sleep(time.Second)
+
+	// Cancel watching for sync finished. This should unblock the event
+	// dispatcher, otherwise it will deadlock.
+	done := make(chan struct{})
+	go func() {
+		cncl()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		// Drain the watcher so sub can close and test can exit.
+		for range watcher {
+		}
+		t.Fatal("cancel did not return")
+	}
+}
+
 func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerID peer.ID, peerAddrs []multiaddr.Multiaddr, lnk ipld.Link, expectedSync cid.Cid) error {
 	var err error
 	c := lnk.(cidlink.Link).Cid
@@ -404,7 +473,7 @@ func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore da
 		return errors.New("timed out waiting for sync to propagate")
 	case downstream, open := <-watcher:
 		if !open {
-			return errors.New("event channle closed without receiving event")
+			return errors.New("event channel closed without receiving event")
 		}
 		if !downstream.Cid.Equals(c) {
 			return fmt.Errorf("sync returned unexpected cid %s, expected %s", downstream.Cid, c)
