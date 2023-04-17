@@ -95,7 +95,7 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 
 // FindAsync implements double hashed lookup workflow. It submits results as they get decrypted and assembled into resChan. If an error occurs it is sent to errChan.
 // Once the workflow is finished both channels are closed.
-func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan model.ProviderResult, errChan chan error) {
+func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan<- model.ProviderResult, errChan chan<- error) {
 	defer func() {
 		close(resChan)
 		close(errChan)
