@@ -42,8 +42,16 @@ func New(err error, status int) *Error {
 	}
 }
 
-func FromResponse(status int, body []byte) *Error {
-	return New(errors.New(strings.TrimSpace(string(body))), status)
+func FromResponse(status int, body []byte) error {
+	var err error
+	text := strings.TrimSpace(string(body))
+	if text != "" {
+		err = errors.New(text)
+	}
+	if status == 0 {
+		return err
+	}
+	return New(err, status)
 }
 
 func (e *Error) Error() string {
