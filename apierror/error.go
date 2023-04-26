@@ -126,6 +126,9 @@ func DecodeError(data []byte) error {
 		return fmt.Errorf("cannot decode error message: %s", err)
 	}
 
-	apierr := New(errors.New(e.Message), e.Status)
-	return errors.New(apierr.Text())
+	err = errors.New(e.Message)
+	if e.Status == 0 {
+		return err
+	}
+	return New(err, e.Status)
 }
