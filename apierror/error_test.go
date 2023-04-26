@@ -14,8 +14,8 @@ func TestNew(t *testing.T) {
 	err := apierror.New(errors.New("test error"), 0)
 	require.Equal(t, "test error", err.Error())
 
-	err = apierror.New(nil, 404)
-	require.Equal(t, fmt.Sprintf("404 %s", http.StatusText(404)), err.Error())
+	err = apierror.New(nil, http.StatusNotFound)
+	require.Equal(t, fmt.Sprintf("%d %s", http.StatusNotFound, http.StatusText(http.StatusNotFound)), err.Error())
 
 	err = apierror.New(nil, 0)
 	require.Equal(t, "", err.Error())
@@ -28,15 +28,15 @@ func TestFromResponse(t *testing.T) {
 	err := apierror.FromResponse(0, []byte(" hello world\n"))
 	require.Equal(t, "hello world", err.Error())
 
-	err = apierror.FromResponse(418, []byte(" hello world\n"))
+	err = apierror.FromResponse(http.StatusTeapot, []byte(" hello world\n"))
 	require.Equal(t, "hello world", err.Error())
 
 	ae, ok := err.(*apierror.Error)
 	require.True(t, ok)
-	require.Equal(t, 418, ae.Status())
+	require.Equal(t, http.StatusTeapot, ae.Status())
 
-	err = apierror.FromResponse(418, nil)
-	require.Equal(t, fmt.Sprintf("418 %s", http.StatusText(418)), err.Error())
+	err = apierror.FromResponse(http.StatusTeapot, nil)
+	require.Equal(t, fmt.Sprintf("%d %s", http.StatusTeapot, http.StatusText(http.StatusTeapot)), err.Error())
 }
 
 func TestEncodeDecode(t *testing.T) {
@@ -49,7 +49,7 @@ func TestEncodeDecode(t *testing.T) {
 	derr = apierror.DecodeError([]byte("hello world"))
 	require.ErrorContains(t, derr, "cannot decode error message")
 
-	err := apierror.New(errors.New("cannot find it"), 404)
+	err := apierror.New(errors.New("cannot find it"), http.StatusNotFound)
 	data = apierror.EncodeError(err)
 
 	derr = apierror.DecodeError(data)
@@ -57,8 +57,8 @@ func TestEncodeDecode(t *testing.T) {
 
 	ae, ok := derr.(*apierror.Error)
 	require.True(t, ok)
-	require.Equal(t, 404, ae.Status())
-	require.Equal(t, fmt.Sprintf("404 %s: cannot find it", http.StatusText(404)), ae.Text())
+	require.Equal(t, http.StatusNotFound, ae.Status())
+	require.Equal(t, fmt.Sprintf("%d %s: cannot find it", http.StatusNotFound, http.StatusText(http.StatusNotFound)), ae.Text())
 
 	someErr := errors.New("some error")
 	data = apierror.EncodeError(someErr)
