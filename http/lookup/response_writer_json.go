@@ -1,4 +1,4 @@
-package server
+package lookup
 
 import (
 	"encoding/json"
