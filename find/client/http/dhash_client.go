@@ -71,29 +71,23 @@ func NewDHashClient(dhstoreURL, stiURL string, options ...Option) (*DHashClient,
 // Find launches FindAsync in a separate go routine and assembles the result into FindResponse as if it was a synchronous invocation.
 func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.FindResponse, error) {
 	resChan := make(chan model.ProviderResult)
-	errChan := make(chan error)
+	errChan := make(chan error, 2)
 
 	go c.FindAsync(ctx, mh, resChan, errChan)
 
 	mhr := model.MultihashResult{
 		Multihash: mh,
 	}
-
-	for {
-		select {
-		case pr, ok := <-resChan:
-			if !ok {
-				return &model.FindResponse{
-					MultihashResults: []model.MultihashResult{mhr},
-				}, nil
-			}
-			mhr.ProviderResults = append(mhr.ProviderResults, pr)
-		case e, ok := <-errChan:
-			if ok {
-				return nil, e
-			}
-		}
+	for pr := range resChan {
+		mhr.ProviderResults = append(mhr.ProviderResults, pr)
 	}
+	err := <-errChan
+	if err != nil {
+		return nil, err
+	}
+	return &model.FindResponse{
+		MultihashResults: []model.MultihashResult{mhr},
+	}, nil
 }
 
 // FindAsync implements double hashed lookup workflow. It submits results as they get decrypted and assembled into resChan. If an error occurs it is sent to errChan.
