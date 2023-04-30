@@ -180,7 +180,7 @@ func (pc *providerCache) getResults(ctx context.Context, pid peer.ID, ctxID []by
 		}
 		// Use metadata from advertisement if one hasn't been specified for the
 		// extended provider
-		if xmd == nil {
+		if len(xmd) == 0 {
 			xmd = metadata
 		}
 		results = append(results, model.ProviderResult{
