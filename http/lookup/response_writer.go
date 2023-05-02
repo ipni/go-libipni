@@ -9,26 +9,14 @@ import (
 )
 
 type (
-	selectiveResponseWriter interface {
-		http.ResponseWriter
-		Accept(r *http.Request) error
-	}
-	lookupResponseWriter interface {
+	LookupResponseWriter interface {
 		io.Closer
 		selectiveResponseWriter
 		Key() multihash.Multihash
 		WriteProviderResult(model.ProviderResult) error
 	}
-	errHttpResponse struct {
-		message string
-		status  int
+	selectiveResponseWriter interface {
+		http.ResponseWriter
+		Accept(r *http.Request) error
 	}
 )
-
-func (e errHttpResponse) Error() string {
-	return e.message
-}
-
-func (e errHttpResponse) WriteTo(w http.ResponseWriter) {
-	http.Error(w, e.message, e.status)
-}

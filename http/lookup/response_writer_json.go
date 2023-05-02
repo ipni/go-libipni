@@ -2,10 +2,13 @@ package lookup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"strings"
+
+	"github.com/ipni/go-libipni/apierror"
 )
 
 const (
@@ -43,7 +46,7 @@ func (i *jsonResponseWriter) Accept(r *http.Request) error {
 		for _, amt := range amts {
 			mt, _, err := mime.ParseMediaType(amt)
 			if err != nil {
-				return errHttpResponse{message: "invalid Accept header", status: http.StatusBadRequest}
+				return apierror.New(errors.New("invalid Accept header"), http.StatusBadRequest)
 			}
 			switch mt {
 			case mediaTypeNDJson:
@@ -65,10 +68,10 @@ func (i *jsonResponseWriter) Accept(r *http.Request) error {
 		// If there is no `Accept` header and JSON is preferred then be forgiving and fall back
 		// onto JSON media type. Otherwise, strictly require `Accept` header.
 		if !i.preferJson {
-			return errHttpResponse{message: "Accept header must be specified", status: http.StatusBadRequest}
+			return apierror.New(errors.New("Accept header must be specified"), http.StatusBadRequest)
 		}
 	case !okJson && !i.nd:
-		return errHttpResponse{message: fmt.Sprintf("media type not supported: %s", accepts), status: http.StatusBadRequest}
+		return apierror.New(fmt.Errorf("media type not supported: %s", accepts), http.StatusBadRequest)
 	}
 
 	i.f, _ = i.w.(http.Flusher)

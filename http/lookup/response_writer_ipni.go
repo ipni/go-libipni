@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/multiformats/go-multihash"
 )
 
 var (
-	_ lookupResponseWriter = (*ipniLookupResponseWriter)(nil)
+	_ LookupResponseWriter = (*ipniLookupResponseWriter)(nil)
 
 	newline = []byte("\n")
 )
@@ -24,7 +25,7 @@ type ipniLookupResponseWriter struct {
 	isMultihash bool
 }
 
-func NewIPNILookupResponseWriter(w http.ResponseWriter, preferJson bool, isMultihash bool) lookupResponseWriter {
+func NewIPNILookupResponseWriter(w http.ResponseWriter, preferJson bool, isMultihash bool) *ipniLookupResponseWriter {
 	return &ipniLookupResponseWriter{
 		jsonResponseWriter: newJsonResponseWriter(w, preferJson),
 		isMultihash:        isMultihash,
@@ -49,7 +50,7 @@ func (i *ipniLookupResponseWriter) Accept(r *http.Request) error {
 		}
 	}
 	if err != nil {
-		return errHttpResponse{message: err.Error(), status: http.StatusBadRequest}
+		return apierror.New(err, http.StatusBadRequest)
 	}
 	i.result.Multihash = mh
 	return nil
@@ -79,7 +80,7 @@ func (i *ipniLookupResponseWriter) WriteProviderResult(pr model.ProviderResult) 
 
 func (i *ipniLookupResponseWriter) Close() error {
 	if i.count == 0 {
-		return errHttpResponse{status: http.StatusNotFound}
+		return apierror.New(nil, http.StatusNotFound)
 	}
 	if i.nd {
 		return nil
