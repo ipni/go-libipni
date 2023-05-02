@@ -8,15 +8,13 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-type (
-	LookupResponseWriter interface {
-		io.Closer
-		selectiveResponseWriter
-		Key() multihash.Multihash
-		WriteProviderResult(model.ProviderResult) error
-	}
-	selectiveResponseWriter interface {
-		http.ResponseWriter
-		Accept(r *http.Request) error
-	}
-)
+type LookupResponseWriter interface {
+	io.Closer
+	selectiveResponseWriter
+	Key() multihash.Multihash
+	WriteProviderResult(model.ProviderResult) error
+}
+type selectiveResponseWriter interface {
+	http.ResponseWriter
+	Accept(r *http.Request) error
+}
