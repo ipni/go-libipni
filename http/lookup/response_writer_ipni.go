@@ -32,13 +32,13 @@ func NewIPNILookupResponseWriter(w http.ResponseWriter, preferJson bool, isMulti
 	}
 }
 
-func (i *ipniLookupResponseWriter) Accept(r *http.Request) error {
-	if err := i.jsonResponseWriter.Accept(r); err != nil {
+func (ilpw *ipniLookupResponseWriter) Accept(r *http.Request) error {
+	if err := ilpw.jsonResponseWriter.Accept(r); err != nil {
 		return err
 	}
 	var mh multihash.Multihash
 	var err error
-	if i.isMultihash {
+	if ilpw.isMultihash {
 		smh := strings.TrimPrefix(path.Base(r.URL.Path), "multihash/")
 		mh, err = multihash.FromB58String(smh)
 	} else {
@@ -52,38 +52,38 @@ func (i *ipniLookupResponseWriter) Accept(r *http.Request) error {
 	if err != nil {
 		return apierror.New(err, http.StatusBadRequest)
 	}
-	i.result.Multihash = mh
+	ilpw.result.Multihash = mh
 	return nil
 }
 
-func (i *ipniLookupResponseWriter) Key() multihash.Multihash {
-	return i.result.Multihash
+func (ilpw *ipniLookupResponseWriter) Key() multihash.Multihash {
+	return ilpw.result.Multihash
 }
 
-func (i *ipniLookupResponseWriter) WriteProviderResult(pr model.ProviderResult) error {
-	if i.nd {
-		if err := i.encoder.Encode(pr); err != nil {
+func (ilpw *ipniLookupResponseWriter) WriteProviderResult(pr model.ProviderResult) error {
+	if ilpw.nd {
+		if err := ilpw.encoder.Encode(pr); err != nil {
 			return err
 		}
-		if _, err := i.w.Write(newline); err != nil {
+		if _, err := ilpw.w.Write(newline); err != nil {
 			return err
 		}
-		if i.f != nil {
-			i.f.Flush()
+		if ilpw.f != nil {
+			ilpw.f.Flush()
 		}
 	} else {
-		i.result.ProviderResults = append(i.result.ProviderResults, pr)
+		ilpw.result.ProviderResults = append(ilpw.result.ProviderResults, pr)
 	}
-	i.count++
+	ilpw.count++
 	return nil
 }
 
-func (i *ipniLookupResponseWriter) Close() error {
-	if i.count == 0 {
+func (ilpw *ipniLookupResponseWriter) Close() error {
+	if ilpw.count == 0 {
 		return apierror.New(nil, http.StatusNotFound)
 	}
-	if i.nd {
+	if ilpw.nd {
 		return nil
 	}
-	return i.encoder.Encode(i.result)
+	return ilpw.encoder.Encode(ilpw.result)
 }

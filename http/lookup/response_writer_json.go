@@ -38,7 +38,7 @@ func newJsonResponseWriter(w http.ResponseWriter, preferJson bool) jsonResponseW
 	}
 }
 
-func (i *jsonResponseWriter) Accept(r *http.Request) error {
+func (irw *jsonResponseWriter) Accept(r *http.Request) error {
 	accepts := r.Header.Values("Accept")
 	var okJson bool
 	for _, accept := range accepts {
@@ -50,14 +50,14 @@ func (i *jsonResponseWriter) Accept(r *http.Request) error {
 			}
 			switch mt {
 			case mediaTypeNDJson:
-				i.nd = true
+				irw.nd = true
 			case mediaTypeJson:
 				okJson = true
 			case mediaTypeAny:
-				i.nd = !i.preferJson
+				irw.nd = !irw.preferJson
 				okJson = true
 			}
-			if i.nd && okJson {
+			if irw.nd && okJson {
 				break
 			}
 		}
@@ -67,33 +67,33 @@ func (i *jsonResponseWriter) Accept(r *http.Request) error {
 	case len(accepts) == 0:
 		// If there is no `Accept` header and JSON is preferred then be forgiving and fall back
 		// onto JSON media type. Otherwise, strictly require `Accept` header.
-		if !i.preferJson {
+		if !irw.preferJson {
 			return apierror.New(errors.New("Accept header must be specified"), http.StatusBadRequest)
 		}
-	case !okJson && !i.nd:
+	case !okJson && !irw.nd:
 		return apierror.New(fmt.Errorf("media type not supported: %s", accepts), http.StatusBadRequest)
 	}
 
-	i.f, _ = i.w.(http.Flusher)
+	irw.f, _ = irw.w.(http.Flusher)
 
-	if i.nd {
-		i.w.Header().Set("Content-Type", mediaTypeNDJson)
-		i.w.Header().Set("Connection", "Keep-Alive")
-		i.w.Header().Set("X-Content-Type-Options", "nosniff")
+	if irw.nd {
+		irw.w.Header().Set("Content-Type", mediaTypeNDJson)
+		irw.w.Header().Set("Connection", "Keep-Alive")
+		irw.w.Header().Set("X-Content-Type-Options", "nosniff")
 	} else {
-		i.w.Header().Set("Content-Type", mediaTypeJson)
+		irw.w.Header().Set("Content-Type", mediaTypeJson)
 	}
 	return nil
 }
 
-func (i *jsonResponseWriter) Header() http.Header {
-	return i.w.Header()
+func (irw *jsonResponseWriter) Header() http.Header {
+	return irw.w.Header()
 }
 
-func (i *jsonResponseWriter) Write(b []byte) (int, error) {
-	return i.w.Write(b)
+func (irw *jsonResponseWriter) Write(b []byte) (int, error) {
+	return irw.w.Write(b)
 }
 
-func (i *jsonResponseWriter) WriteHeader(code int) {
-	i.w.WriteHeader(code)
+func (irw *jsonResponseWriter) WriteHeader(code int) {
+	irw.w.WriteHeader(code)
 }
