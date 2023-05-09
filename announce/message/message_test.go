@@ -73,3 +73,18 @@ func TestJSON(t *testing.T) {
 
 	require.Equal(t, msg, newMsg)
 }
+
+func TestUnknownProtocol(t *testing.T) {
+	// Encoded unknown protocol code 9999: /ip4/127.0.0.1/udp/1234/<proto-9999>
+	addrData := []byte{54, 9, 108, 111, 99, 97, 108, 104, 111, 115, 116, 145, 2, 4, 210, 143, 78}
+	_, err := multiaddr.NewMultiaddrBytes(addrData)
+	require.ErrorContains(t, err, "no protocol with code")
+
+	var msg message.Message
+	msg.SetAddrs([]multiaddr.Multiaddr{maddr1})
+	msg.Addrs = append(msg.Addrs, addrData)
+
+	addrs, err := msg.GetAddrs()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(addrs))
+}

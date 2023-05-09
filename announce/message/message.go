@@ -2,6 +2,7 @@ package message
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multiaddr"
@@ -38,13 +39,17 @@ func (m *Message) SetAddrs(addrs []multiaddr.Multiaddr) {
 // GetAddrs reads the slice of Multiaddr that is stored in the Message as a
 // slice of []byte.
 func (m *Message) GetAddrs() ([]multiaddr.Multiaddr, error) {
-	addrs := make([]multiaddr.Multiaddr, len(m.Addrs))
-	for i := range m.Addrs {
-		var err error
-		addrs[i], err = multiaddr.NewMultiaddrBytes(m.Addrs[i])
+	addrs := make([]multiaddr.Multiaddr, 0, len(m.Addrs))
+	for _, addrBytes := range m.Addrs {
+		addr, err := multiaddr.NewMultiaddrBytes(addrBytes)
 		if err != nil {
+			if strings.Contains(err.Error(), "no protocol with code") {
+				// Ignore unknown protocols.
+				continue
+			}
 			return nil, err
 		}
+		addrs = append(addrs, addr)
 	}
 	return addrs, nil
 }
