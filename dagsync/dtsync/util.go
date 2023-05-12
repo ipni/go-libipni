@@ -68,7 +68,7 @@ func registerVoucher(dtManager dt.Manager, allowPeer func(peer.ID) bool) error {
 func makeDataTransfer(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, allowPeer func(peer.ID) bool) (dt.Manager, graphsync.GraphExchange, dtCloseFunc, error) {
 	gsNet := gsnet.NewFromLibp2pHost(host)
 	ctx, cancel := context.WithCancel(context.Background())
-	gs := gsimpl.New(ctx, gsNet, lsys)
+	gs := gsimpl.New(ctx, gsNet, lsys, gsimpl.MaxInProgressOutgoingRequests(1000), gsimpl.MaxInProgressIncomingRequests(1000))
 
 	dtNet := dtnetwork.NewFromLibp2pHost(host)
 	tp := gstransport.NewTransport(host.ID(), gs)
