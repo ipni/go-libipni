@@ -37,7 +37,7 @@ func NewPublisher(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, t
 		return nil, err
 	}
 
-	dtManager, _, dtClose, err := makeDataTransfer(host, ds, lsys, opts.allowPeer)
+	dtManager, _, dtClose, err := makeDataTransfer(host, ds, lsys, opts.allowPeer, opts.gsMaxInRequests, opts.gsMaxOutRequests)
 	if err != nil {
 		return nil, err
 	}
