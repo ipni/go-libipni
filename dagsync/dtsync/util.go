@@ -23,6 +23,11 @@ import (
 // Time to wait for datatransfer to gracefully stop before canceling.
 const datatransferStopTimeout = time.Minute
 
+const (
+	defaultGsMaxInReq  = 1024
+	defaultGsMaxOutReq = 1024
+)
+
 type dtCloseFunc func() error
 
 // configureDataTransferForDagsync configures an existing data transfer
@@ -65,10 +70,16 @@ func registerVoucher(dtManager dt.Manager, allowPeer func(peer.ID) bool) error {
 	return nil
 }
 
-func makeDataTransfer(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, allowPeer func(peer.ID) bool) (dt.Manager, graphsync.GraphExchange, dtCloseFunc, error) {
+func makeDataTransfer(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, allowPeer func(peer.ID) bool, gsMaxInReq, gsMaxOutReq uint64) (dt.Manager, graphsync.GraphExchange, dtCloseFunc, error) {
 	gsNet := gsnet.NewFromLibp2pHost(host)
 	ctx, cancel := context.WithCancel(context.Background())
-	gs := gsimpl.New(ctx, gsNet, lsys, gsimpl.MaxInProgressOutgoingRequests(1000), gsimpl.MaxInProgressIncomingRequests(1000))
+	if gsMaxInReq == 0 {
+		gsMaxInReq = defaultGsMaxInReq
+	}
+	if gsMaxOutReq == 0 {
+		gsMaxOutReq = defaultGsMaxOutReq
+	}
+	gs := gsimpl.New(ctx, gsNet, lsys, gsimpl.MaxInProgressIncomingRequests(gsMaxInReq), gsimpl.MaxInProgressOutgoingRequests(gsMaxOutReq))
 
 	dtNet := dtnetwork.NewFromLibp2pHost(host)
 	tp := gstransport.NewTransport(host.ID(), gs)

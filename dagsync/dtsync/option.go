@@ -7,11 +7,20 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+const (
+	// Maximum number of in-prgress graphsync requests.
+	defaultGsMaxInRequests  = 1024
+	defaultGsMaxOutRequests = 1024
+)
+
 // config contains all options for configuring dtsync.publisher.
 type config struct {
 	extraData []byte
 	allowPeer func(peer.ID) bool
 	senders   []announce.Sender
+
+	gsMaxInRequests  uint64
+	gsMaxOutRequests uint64
 }
 
 // Option is a function that sets a value in a config.
@@ -19,7 +28,10 @@ type Option func(*config) error
 
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
-	var cfg config
+	cfg := config{
+		gsMaxInRequests:  defaultGsMaxInRequests,
+		gsMaxOutRequests: defaultGsMaxOutRequests,
+	}
 	for i, opt := range opts {
 		if err := opt(&cfg); err != nil {
 			return config{}, fmt.Errorf("option %d failed: %s", i, err)
@@ -53,6 +65,14 @@ func WithAnnounceSenders(senders ...announce.Sender) Option {
 		if len(senders) != 0 {
 			c.senders = senders
 		}
+		return nil
+	}
+}
+
+func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
+	return func(c *config) error {
+		c.gsMaxInRequests = maxIn
+		c.gsMaxOutRequests = maxOut
 		return nil
 	}
 }

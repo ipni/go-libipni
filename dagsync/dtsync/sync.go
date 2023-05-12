@@ -75,8 +75,8 @@ func NewSyncWithDT(host host.Host, dtManager dt.Manager, gs graphsync.GraphExcha
 }
 
 // NewSync creates a new Sync with its own datatransfer.Manager.
-func NewSync(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid)) (*Sync, error) {
-	dtManager, gs, dtClose, err := makeDataTransfer(host, ds, lsys, nil)
+func NewSync(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), gsMaxInReq, gsMaxOutReq uint64) (*Sync, error) {
+	dtManager, gs, dtClose, err := makeDataTransfer(host, ds, lsys, nil, gsMaxInReq, gsMaxOutReq)
 	if err != nil {
 		return nil, err
 	}

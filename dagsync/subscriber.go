@@ -173,7 +173,7 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		dtSync, err = dtsync.NewSyncWithDT(host, opts.dtManager, opts.graphExchange, &lsys, blockHook)
 	} else {
 		ds := namespace.Wrap(ds, datastore.NewKey("data-transfer-v2"))
-		dtSync, err = dtsync.NewSync(host, ds, lsys, blockHook)
+		dtSync, err = dtsync.NewSync(host, ds, lsys, blockHook, opts.gsMaxInRequests, opts.gsMaxOutRequests)
 	}
 	if err != nil {
 		return nil, err

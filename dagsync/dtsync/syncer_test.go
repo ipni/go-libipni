@@ -75,7 +75,7 @@ func TestDTSync_CallsBlockHookWhenCIDsAreFullyFoundLocally(t *testing.T) {
 
 	// Use the same linksystem as the publisher for the syncer; this is to assure all the blocks being
 	// synced are already present on the syncer side.
-	subject, err := dtsync.NewSync(subh, dssync.MutexWrap(datastore.NewMapDatastore()), ls, testHook)
+	subject, err := dtsync.NewSync(subh, dssync.MutexWrap(datastore.NewMapDatastore()), ls, testHook, 0, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, subject.Close()) })
 
@@ -169,7 +169,7 @@ func TestDTSync_CallsBlockHookWhenCIDsArePartiallyFoundLocally(t *testing.T) {
 	_, err = subls.Load(ipld.LinkContext{Ctx: ctx}, l2, basicnode.Prototype.Any)
 	require.Error(t, err)
 
-	subject, err := dtsync.NewSync(subh, dssync.MutexWrap(datastore.NewMapDatastore()), subls, testHook)
+	subject, err := dtsync.NewSync(subh, dssync.MutexWrap(datastore.NewMapDatastore()), subls, testHook, 0, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, subject.Close()) })
 
