@@ -181,6 +181,8 @@ func ResendAnnounce(enable bool) Option {
 	}
 }
 
+// WithMaxGraphsyncRequests sets the maximum number of in-progress inbound and
+// outbound graphsync requests.
 func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
 	return func(c *config) error {
 		c.gsMaxInRequests = maxIn
