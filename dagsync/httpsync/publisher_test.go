@@ -20,9 +20,11 @@ import (
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	"github.com/ipld/go-ipld-prime/traversal"
+	"github.com/ipni/go-libipni/announce"
+	"github.com/ipni/go-libipni/announce/message"
 	"github.com/ipni/go-libipni/dagsync/httpsync"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	ic "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,9 +49,24 @@ func TestNewPublisherForListener(t *testing.T) {
 			l := fakeListener{addr}
 			privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 			req.NoError(err)
-			subject, err := httpsync.NewPublisherForListener(l, handlerPath, lsys, privKey)
+			sender := &fakeSender{}
+			subject, err := httpsync.NewPublisherForListener(l, handlerPath, lsys, privKey, httpsync.WithAnnounceSenders(sender))
 			req.NoError(err)
+
 			subject.SetRoot(ctx, rootLnk.(cidlink.Link).Cid)
+			req.NoError(subject.AnnounceHead(ctx))
+			req.Len(sender.msgs, 1)
+			req.Equal(rootLnk.(cidlink.Link).Cid, sender.msgs[0].Cid)
+			req.Len(sender.msgs[0].Addrs, 1)
+			maddr, err := multiaddr.NewMultiaddrBytes(sender.msgs[0].Addrs[0])
+			req.NoError(err)
+			pathPart := strings.TrimLeft(handlerPath, "/")
+			expectedMaddr := "/ip4/192.168.200.1/tcp/8080/http"
+			if pathPart != "" {
+				expectedMaddr += "/httpath/" + url.PathEscape(pathPart)
+			}
+			req.Equal(expectedMaddr, maddr.String())
+
 			resp := &mockResponseWriter{}
 			u := &url.URL{
 				Path: handlerPath + "/head",
@@ -64,7 +81,7 @@ func TestNewPublisherForListener(t *testing.T) {
 			req.NoError(err)
 			headCid := mustCid(t, respNode, ipld.ParsePath("/head"))
 			req.Equal(rootLnk.(cidlink.Link).Cid, headCid)
-			expectedPubkey, err := ic.MarshalPublicKey(privKey.GetPublic())
+			expectedPubkey, err := crypto.MarshalPublicKey(privKey.GetPublic())
 			req.NoError(err)
 			pubkey := mustBytes(t, respNode, ipld.ParsePath("/pubkey"))
 			req.Equal(expectedPubkey, pubkey)
@@ -115,6 +132,22 @@ func mustBytes(t *testing.T, n ipld.Node, path ipld.Path) []byte {
 	require.NoError(t, err)
 	return b
 }
+
+var _ announce.Sender = (*fakeSender)(nil)
+
+type fakeSender struct {
+	msgs []message.Message
+}
+
+func (s *fakeSender) Send(ctx context.Context, msg message.Message) error {
+	if s.msgs == nil {
+		s.msgs = make([]message.Message, 0)
+	}
+	s.msgs = append(s.msgs, msg)
+	return nil
+}
+
+func (s *fakeSender) Close() error { return nil }
 
 type fakeListener struct {
 	addr net.Addr

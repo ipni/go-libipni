@@ -89,7 +89,7 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 	return pub, nil
 }
 
-// NewPublisherForListener creates a new http publisher for an existing,
+// NewPublisherForListener creates a new http publisher for an existing
 // listener. When providing an existing listener, running the HTTP server
 // is the caller's responsibility. ServeHTTP on the returned Publisher
 // can be used to handle requests. handlerPath is the path to handle
@@ -113,16 +113,17 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 		return nil, err
 	}
 	proto, _ := multiaddr.NewMultiaddr("/http")
+	handlerPath = strings.TrimPrefix(handlerPath, "/")
 	if handlerPath != "" {
-		httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(strings.TrimLeft(handlerPath, "/")))
+		httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(handlerPath))
 		if err != nil {
 			return nil, err
 		}
 		proto = multiaddr.Join(proto, httpath)
-		if !strings.HasPrefix(handlerPath, "/") {
-			handlerPath = "/" + handlerPath
-		}
+		handlerPath = "/" + handlerPath
 	}
+
+	fmt.Println("w addr", multiaddr.Join(maddr, proto).String())
 
 	return &Publisher{
 		addr:        multiaddr.Join(maddr, proto),
