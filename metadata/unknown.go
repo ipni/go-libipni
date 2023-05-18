@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -30,34 +31,42 @@ func (u *Unknown) MarshalBinary() ([]byte, error) {
 }
 
 func (u *Unknown) UnmarshalBinary(data []byte) error {
-	u.Payload = data
-	return nil
+	r := bytes.NewReader(data)
+	_, err := u.ReadFrom(r)
+	return err
 }
 
-func (u *Unknown) ReadFrom(r io.Reader) (n int64, err error) {
-	// see if it starts with a reasonable looking uvarint.
-	size, err := varint.ReadUvarint(rbr{r, [1]byte{0}})
+func (u *Unknown) ReadFrom(r io.Reader) (int64, error) {
+	cr := &countingReader{r: r}
+	v, err := varint.ReadUvarint(cr)
 	if err != nil {
-		return 0, err
+		return cr.readCount, err
+	}
+	u.Code = multicodec.Code(v)
+
+	size, err := varint.ReadUvarint(cr)
+	if err != nil {
+		return cr.readCount, err
 	}
 
-	rl := varint.ToUvarint(size)
-	preSize := int64(len(rl))
-	if size > MaxMetadataSize {
-		return preSize, ErrTooLong
-	}
-	buf := make([]byte, size+uint64(preSize))
-	copy(buf, rl)
-	read, err := r.Read(buf[preSize:])
-	bRead := int64(read)
+	codeSize := varint.UvarintSize(v)
+	sizeSize := varint.UvarintSize(size)
+	buf := make([]byte, codeSize+sizeSize+int(size))
+	varint.PutUvarint(buf, v)
+	varint.PutUvarint(buf[codeSize:], size)
+	n, err := r.Read(buf[codeSize+sizeSize:])
+	readLen := codeSize + sizeSize + n
 	if err != nil {
-		return preSize + bRead, err
+		u.Payload = buf[:readLen]
+		return int64(readLen), err
 	}
-	if size != uint64(read) {
-		return preSize + bRead, fmt.Errorf("expected %d readable bytes but read %d", size, read)
+	if size != uint64(n) {
+		u.Payload = buf[:readLen]
+		return int64(readLen), fmt.Errorf("expected %d readable bytes but read %d", size, n)
 	}
+	u.Payload = buf
 
-	return preSize + bRead, nil
+	return int64(readLen), nil
 }
 
 type rbr struct {

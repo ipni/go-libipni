@@ -217,5 +217,5 @@ func (mc *metadataContext) newTransport(id multicodec.Code) (Protocol, error) {
 		return factory(), nil
 	}
 
-	return nil, fmt.Errorf("unknown transport id: %s", id.String())
+	return &Unknown{}, nil
 }

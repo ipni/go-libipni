@@ -73,6 +73,13 @@ func TestMetadata(t *testing.T) {
 }
 
 func TestMetadata_UnmarshalBinary(t *testing.T) {
+	unknownID := multicodec.Libp2pRelayRsvp
+	unknownData := makeUnknownData(unknownID)
+	unknownMetadata := &metadata.Unknown{
+		Code:    unknownID,
+		Payload: unknownData,
+	}
+
 	tests := []struct {
 		name         string
 		givenBytes   []byte
@@ -84,9 +91,9 @@ func TestMetadata_UnmarshalBinary(t *testing.T) {
 			wantErr: "at least one transport must be specified",
 		},
 		{
-			name:       "Unknown transport ID is error",
-			givenBytes: varint.ToUvarint(uint64(multicodec.Libp2pRelayRsvp)),
-			wantErr:    "unknown transport id: libp2p-relay-rsvp",
+			name:         "Unknown transport ID is not error",
+			givenBytes:   unknownData,
+			wantMetadata: metadata.Default.New(unknownMetadata),
 		},
 		{
 			name:         "Known transport ID is not error",
@@ -95,9 +102,9 @@ func TestMetadata_UnmarshalBinary(t *testing.T) {
 		},
 
 		{
-			name:       "Known transport ID mixed with unknown ID is not error",
-			givenBytes: append(varint.ToUvarint(uint64(123456)), varint.ToUvarint(uint64(multicodec.TransportBitswap))...),
-			wantErr:    "unknown transport id: Code(123456)",
+			name:         "Known transport ID mixed with unknown ID is not error",
+			givenBytes:   append(unknownData, varint.ToUvarint(uint64(multicodec.TransportBitswap))...),
+			wantMetadata: metadata.Default.New(unknownMetadata, &metadata.Bitswap{}),
 		},
 	}
 	for _, test := range tests {
@@ -113,4 +120,16 @@ func TestMetadata_UnmarshalBinary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func makeUnknownData(code multicodec.Code) []byte {
+	id := uint64(code)
+	contents := []byte("hello")
+	codeSize := varint.UvarintSize(id)
+	sizeSize := varint.UvarintSize(uint64(len(contents)))
+	data := make([]byte, codeSize+sizeSize+len(contents))
+	varint.PutUvarint(data, id)
+	varint.PutUvarint(data[codeSize:], uint64(len(contents)))
+	copy(data[codeSize+sizeSize:], contents)
+	return data
 }
