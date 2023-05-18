@@ -7,7 +7,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
+	"strings"
 	"sync"
 
 	"github.com/hashicorp/go-multierror"
@@ -25,15 +27,16 @@ import (
 )
 
 type Publisher struct {
-	addr      multiaddr.Multiaddr
-	closer    io.Closer
-	lsys      ipld.LinkSystem
-	peerID    peer.ID
-	privKey   ic.PrivKey
-	rl        sync.RWMutex
-	root      cid.Cid
-	senders   []announce.Sender
-	extraData []byte
+	addr        multiaddr.Multiaddr
+	closer      io.Closer
+	lsys        ipld.LinkSystem
+	handlerPath string
+	peerID      peer.ID
+	privKey     ic.PrivKey
+	rl          sync.RWMutex
+	root        cid.Cid
+	senders     []announce.Sender
+	extraData   []byte
 }
 
 var _ http.Handler = (*Publisher)(nil)
@@ -84,6 +87,54 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 	go server.Serve(l)
 
 	return pub, nil
+}
+
+// NewPublisherForListener creates a new http publisher for an existing
+// listener. When providing an existing listener, running the HTTP server
+// is the caller's responsibility. ServeHTTP on the returned Publisher
+// can be used to handle requests. handlerPath is the path to handle
+// requests on, e.g. "ipni" for `/ipni/...` requests.
+func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
+	opts, err := getOpts(options)
+	if err != nil {
+		return nil, err
+	}
+
+	if privKey == nil {
+		return nil, errors.New("private key required to sign head requests")
+	}
+	peerID, err := peer.IDFromPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
+	}
+
+	maddr, err := manet.FromNetAddr(listener.Addr())
+	if err != nil {
+		return nil, err
+	}
+	proto, _ := multiaddr.NewMultiaddr("/http")
+	handlerPath = strings.TrimPrefix(handlerPath, "/")
+	if handlerPath != "" {
+		httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(handlerPath))
+		if err != nil {
+			return nil, err
+		}
+		proto = multiaddr.Join(proto, httpath)
+		handlerPath = "/" + handlerPath
+	}
+
+	fmt.Println("w addr", multiaddr.Join(maddr, proto).String())
+
+	return &Publisher{
+		addr:        multiaddr.Join(maddr, proto),
+		closer:      io.NopCloser(nil),
+		lsys:        lsys,
+		handlerPath: handlerPath,
+		peerID:      peerID,
+		privKey:     privKey,
+		senders:     opts.senders,
+		extraData:   opts.extraData,
+	}, nil
 }
 
 // Addrs returns the addresses, as []multiaddress, that the Publisher is
@@ -170,7 +221,16 @@ func (p *Publisher) Close() error {
 }
 
 func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ask := path.Base(r.URL.Path)
+	var ask string
+	if p.handlerPath != "" {
+		if !strings.HasPrefix(r.URL.Path, p.handlerPath) {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		ask = path.Base(strings.TrimPrefix(r.URL.Path, p.handlerPath))
+	} else {
+		ask = path.Base(r.URL.Path)
+	}
 	if ask == "head" {
 		// serve the head
 		p.rl.RLock()
