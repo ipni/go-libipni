@@ -68,19 +68,3 @@ func (u *Unknown) ReadFrom(r io.Reader) (int64, error) {
 
 	return int64(readLen), nil
 }
-
-type rbr struct {
-	io.Reader
-	b [1]byte // avoid alloc in ReadByte
-}
-
-func (r rbr) ReadByte() (byte, error) {
-	n, err := r.Read(r.b[:])
-	if err != nil {
-		return 0, err
-	}
-	if n == 0 {
-		return 0, io.ErrNoProgress
-	}
-	return r.b[0], nil
-}
