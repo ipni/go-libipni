@@ -165,10 +165,7 @@ func (m *Metadata) UnmarshalBinary(data []byte) error {
 			return err
 		}
 		id := multicodec.Code(v)
-		t, err := m.mc.newTransport(id)
-		if err != nil {
-			return err
-		}
+		t := m.mc.newTransport(id)
 
 		buf := bytes.NewBuffer(data)
 		tLen, err := t.ReadFrom(buf)
@@ -212,10 +209,9 @@ func protocolEqual(one, other Protocol) bool {
 	return bytes.Equal(oneBytes, otherBytes)
 }
 
-func (mc *metadataContext) newTransport(id multicodec.Code) (Protocol, error) {
+func (mc *metadataContext) newTransport(id multicodec.Code) Protocol {
 	if factory, ok := mc.protocols[id]; ok {
-		return factory(), nil
+		return factory()
 	}
-
-	return &Unknown{}, nil
+	return &Unknown{}
 }
