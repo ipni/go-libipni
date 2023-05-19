@@ -5,6 +5,7 @@ import (
 	"path"
 
 	"github.com/ipfs/go-cid"
+	"github.com/multiformats/go-multihash"
 )
 
 const (
@@ -44,15 +45,32 @@ func (cr *ShardingRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 		}
 		// don't forget to remove the last "/"
 		_, object = path.Split(u[:len(u)-1])
-		if object == metadataPath {
+		switch object {
+		case metadataPath:
 			shardKey = objectId
-		} else if (object == findPath) || (object == cidPath) {
-			// it's safe to use cid.Decode for both cids and multihashes. In the latter case, the string will be trated as B58 encoded multihash.
+		case cidPath:
 			c, err := cid.Decode(objectId)
-			if err == nil {
+			if err != nil {
+				goto DEFAULT
+			}
+			dmh, err := multihash.Decode(c.Hash())
+			// set the header only for double hashed lookups
+			if err == nil && dmh.Code == multihash.DBL_SHA2_256 {
 				shardKey = c.Hash().B58String()
 			}
+		case findPath:
+			mh, err := multihash.FromB58String(objectId)
+			if err != nil {
+				goto DEFAULT
+			}
+
+			dmh, err := multihash.Decode(mh)
+			// set the header only for double hashed lookups
+			if err == nil && dmh.Code == multihash.DBL_SHA2_256 {
+				shardKey = objectId
+			}
 		}
+
 		if len(shardKey) > 0 {
 			r.Header.Set(shardKeyHeader, shardKey)
 		}

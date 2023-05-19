@@ -18,9 +18,9 @@ func TestShardingClient(t *testing.T) {
 			return
 		}
 		if strings.Contains(u, "cid") {
-			require.Equal(t, "QmUtQvv4erpcYDyoL8jgzXHqy9dQUi3a5gGTVDSdDicw4x", r.Header.Get(shardKeyHeader))
+			require.Equal(t, "2wvrrzCXz5kN4bEKCNvZgPECjiNwdXLeHuqU5yZzeRN7j8o", r.Header.Get(shardKeyHeader))
 		} else if strings.Contains(u, "multihash") {
-			require.Equal(t, "QmZ7nrfFMcrnroRWkZCAiALDEYK5Z5gkEFsSMAaoFfQmAw", r.Header.Get(shardKeyHeader))
+			require.Equal(t, "2wvrrzCXz5kN4bEKCNvZgPECjiNwdXLeHuqU5yZzeRN7j8o", r.Header.Get(shardKeyHeader))
 		} else if strings.Contains(u, "metadata") {
 			require.Equal(t, "ABCD", r.Header.Get(shardKeyHeader))
 		} else {
@@ -29,11 +29,11 @@ func TestShardingClient(t *testing.T) {
 	}))
 
 	c := NewShardingClient()
-	sendRequest(t, c, server.URL+"/multihash/QmZ7nrfFMcrnroRWkZCAiALDEYK5Z5gkEFsSMAaoFfQmAw", http.MethodGet)
-	sendRequest(t, c, server.URL+"/cid/bafybeidbjeqjovk2zdwh2dngy7tckid7l7qab5wivw2v5es4gphqxvsqqu", http.MethodGet)
+	sendRequest(t, c, server.URL+"/multihash/2wvrrzCXz5kN4bEKCNvZgPECjiNwdXLeHuqU5yZzeRN7j8o", http.MethodGet)
+	sendRequest(t, c, server.URL+"/cid/bafyfmiglbrdanius5to5ugztnscfor6ovqf2ufbf5edkk46pqw2j4tsvvq", http.MethodGet)
 	sendRequest(t, c, server.URL+"/metadata/ABCD", http.MethodGet)
-	sendRequest(t, c, server.URL+"/someOthePath/ABCD", http.MethodGet)
-	sendRequest(t, c, server.URL+"/someOthePath/ABCD", http.MethodPost)
+	sendRequest(t, c, server.URL+"/someOtherPath/ABCD", http.MethodGet)
+	sendRequest(t, c, server.URL+"/someOtherPath/ABCD", http.MethodPost)
 }
 
 func sendRequest(t *testing.T, c *http.Client, u, method string) {
