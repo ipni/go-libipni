@@ -3,6 +3,7 @@ package httpsync_test
 import (
 	"context"
 	"crypto/rand"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +14,9 @@ import (
 	"github.com/ipld/go-ipld-prime"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	_ "github.com/ipld/go-ipld-prime/codec/raw"
+	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/fluent"
+	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
@@ -24,6 +27,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multicodec"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -175,4 +179,41 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	gotLink, err := ls.ComputeLink(wantLink.Prototype(), node)
 	require.NoError(t, err)
 	require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
+}
+
+func TestHttpsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
+	ctx := context.Background()
+
+	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
+	require.NoError(t, err)
+	pubID, err := peer.IDFromPrivateKey(pubPrK)
+	require.NoError(t, err)
+
+	// Instantiate a dagsync publisher.
+	publs := cidlink.DefaultLinkSystem()
+
+	publs.StorageReadOpener = func(lnkCtx linking.LinkContext, lnk datamodel.Link) (io.Reader, error) {
+		return nil, ipld.ErrNotExists{}
+	}
+
+	pub, err := httpsync.NewPublisher("0.0.0.0:0", publs, pubPrK)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pub.Close()) })
+
+	ls := cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ls.SetWriteStorage(store)
+	ls.SetReadStorage(store)
+
+	sync := httpsync.NewSync(ls, http.DefaultClient, nil)
+	syncer, err := sync.NewSyncer(pubID, pub.Addrs(), nil)
+	require.NoError(t, err)
+
+	mh, err := multihash.Sum([]byte("fish"), multihash.SHA2_256, -1)
+	require.NoError(t, err)
+	nonExistingCid := cid.NewCidV1(cid.Raw, mh)
+
+	err = syncer.Sync(ctx, nonExistingCid, selectorparse.CommonSelector_MatchPoint)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "content not found")
 }

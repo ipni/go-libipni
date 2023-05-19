@@ -249,11 +249,19 @@ nextURL:
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
+		// Include the string "content not found" so that indexers that have not
+		// upgraded gracefully handle the error case. Because, this string is
+		// being checked already.
+		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
+	case http.StatusOK:
+		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
+		return cb(resp.Body)
+	default:
 		return fmt.Errorf("non success http fetch response at %s: %d", localURL.String(), resp.StatusCode)
 	}
-
-	return cb(resp.Body)
 }
 
 // fetchBlock fetches an item into the datastore at c if not locally available.
