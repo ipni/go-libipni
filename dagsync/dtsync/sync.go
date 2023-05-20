@@ -264,19 +264,18 @@ func (s *Sync) onEvent(event dt.Event, channelState dt.ChannelState) {
 			stoppedAtCidStr = stoppedAtCidStr[:lastParen]
 
 			var stoppedAtCid cid.Cid
-			stoppedAtCid, err = cid.Decode(stoppedAtCidStr)
-			if err == nil {
-				err = rateLimitErr{msg, stoppedAtCid}
-			}
+			stoppedAtCid, _ = cid.Decode(stoppedAtCidStr)
+			log.Warnw("Datatransfer hit rate limit", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
+			err = rateLimitErr{msg, stoppedAtCid}
 		} else {
-			err = fmt.Errorf("datatransfer failed: %s", msg)
+			log.Errorw("Datatransfer failed", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
+			if strings.HasSuffix(msg, "content not found") {
+				err = fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
+			} else {
+				err = fmt.Errorf("datatransfer failed: %s", msg)
+			}
 		}
 
-		log.Errorw(err.Error(), "cid", channelState.BaseCID(), "peer", channelState.OtherPeer(), "message", msg)
-
-		if strings.HasSuffix(msg, "content not found") {
-			err = errors.New(err.Error() + ": content not found")
-		}
 	default:
 		// Ignore non-terminal channel states.
 		return
