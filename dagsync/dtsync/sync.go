@@ -269,7 +269,7 @@ func (s *Sync) onEvent(event dt.Event, channelState dt.ChannelState) {
 			err = rateLimitErr{msg, stoppedAtCid}
 		} else {
 			log.Errorw("Datatransfer failed", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
-			if strings.HasSuffix(msg, "content not found") {
+			if strings.Contains(msg, "content not found") {
 				err = fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 			} else {
 				err = fmt.Errorf("datatransfer failed: %s", msg)
