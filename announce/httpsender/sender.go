@@ -18,6 +18,7 @@ import (
 
 const DefaultAnnouncePath = "/announce"
 
+// Sender sends announce messages over HTTP.
 type Sender struct {
 	announceURLs []string
 	client       *http.Client
@@ -71,6 +72,7 @@ func New(announceURLs []*url.URL, peerID peer.ID, options ...Option) (*Sender, e
 	}, nil
 }
 
+// Close closes idle HTTP connections..
 func (s *Sender) Close() error {
 	s.client.CloseIdleConnections()
 	return nil

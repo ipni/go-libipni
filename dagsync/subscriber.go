@@ -778,10 +778,13 @@ type (
 	}
 )
 
+// SetNextSyncCid sets the CID that will be synced in the next segmented sync.
 func (ss *segmentedSync) SetNextSyncCid(c cid.Cid) {
 	ss.nextSyncCid = &c
 }
 
+// FailSync fails the sync and returns the given error when the current segment
+// sync finishes.
 func (ss *segmentedSync) FailSync(err error) {
 	ss.err = err
 }

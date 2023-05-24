@@ -20,6 +20,8 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
+// Publisher is a data-transfer publisher that announces the head of an
+// advertisement chain to a set of configured senders.
 type Publisher struct {
 	closeOnce     sync.Once
 	dtManager     dt.Manager
@@ -90,22 +92,30 @@ func NewPublisherFromExisting(dtManager dt.Manager, host host.Host, topicName st
 	}, nil
 }
 
+// Addrs returns the multiaddrs of the publisher's host.
 func (p *Publisher) Addrs() []multiaddr.Multiaddr {
 	return p.host.Addrs()
 }
 
+// ID returns the peer ID of the publisher's host.
 func (p *Publisher) ID() peer.ID {
 	return p.host.ID()
 }
 
+// Protocol returns the multihash protocol ID of the transport used by the
+// publisher.
 func (p *Publisher) Protocol() int {
 	return multiaddr.P_P2P
 }
 
+// AnnounceHead announces the current head of the advertisement chain to the
+// configured senders.
 func (p *Publisher) AnnounceHead(ctx context.Context) error {
 	return p.announce(ctx, p.headPublisher.Root(), p.Addrs())
 }
 
+// AnnounceHeadWithAddrs announces the current head of the advertisement chain
+// to the configured senders with the given addresses.
 func (p *Publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
 	return p.announce(ctx, p.headPublisher.Root(), addrs)
 }
@@ -131,6 +141,7 @@ func (p *Publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.M
 	return errs
 }
 
+// SetRoot sets the root CID of the advertisement chain.
 func (p *Publisher) SetRoot(ctx context.Context, c cid.Cid) error {
 	if c == cid.Undef {
 		return errors.New("cannot update to an undefined cid")
@@ -139,10 +150,14 @@ func (p *Publisher) SetRoot(ctx context.Context, c cid.Cid) error {
 	return p.headPublisher.UpdateRoot(ctx, c)
 }
 
+// UpdateRoot updates the root CID of the advertisement chain and announces it
+// to the configured senders.
 func (p *Publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
 	return p.UpdateRootWithAddrs(ctx, c, p.Addrs())
 }
 
+// UpdateRootWithAddrs updates the root CID of the advertisement chain and
+// announces it to the configured senders with the given addresses.
 func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	err := p.SetRoot(ctx, c)
 	if err != nil {
@@ -151,6 +166,7 @@ func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []
 	return p.announce(ctx, c, addrs)
 }
 
+// Close closes the publisher and all of its senders.
 func (p *Publisher) Close() error {
 	var errs error
 	p.closeOnce.Do(func() {
