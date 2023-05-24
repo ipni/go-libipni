@@ -72,7 +72,7 @@ func New(announceURLs []*url.URL, peerID peer.ID, options ...Option) (*Sender, e
 	}, nil
 }
 
-// Close closes idle HTTP connections..
+// Close closes idle HTTP connections.
 func (s *Sender) Close() error {
 	s.client.CloseIdleConnections()
 	return nil
