@@ -26,6 +26,8 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
+// Publisher is an HTTP publisher that announces the head of an advertisement
+// chain to a set of configured senders.
 type Publisher struct {
 	addr        multiaddr.Multiaddr
 	closer      io.Closer
@@ -143,14 +145,19 @@ func (p *Publisher) Addrs() []multiaddr.Multiaddr {
 	return []multiaddr.Multiaddr{p.addr}
 }
 
+// ID returns the p2p peer ID of the Publisher.
 func (p *Publisher) ID() peer.ID {
 	return p.peerID
 }
 
+// Protocol returns the multihash protocol ID of the transport used by the
+// publisher.
 func (p *Publisher) Protocol() int {
 	return multiaddr.P_HTTP
 }
 
+// AnnounceHead announces the head of the advertisement chain to the configured
+// senders.
 func (p *Publisher) AnnounceHead(ctx context.Context) error {
 	p.rl.Lock()
 	c := p.root
@@ -158,6 +165,8 @@ func (p *Publisher) AnnounceHead(ctx context.Context) error {
 	return p.announce(ctx, c, p.Addrs())
 }
 
+// AnnounceHeadWithAddrs announces the head of the advertisement chain to the
+// configured senders, with the provided addresses.
 func (p *Publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
 	p.rl.Lock()
 	c := p.root
@@ -187,6 +196,7 @@ func (p *Publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.M
 	return errs
 }
 
+// SetRoot sets the head of the advertisement chain.
 func (p *Publisher) SetRoot(_ context.Context, c cid.Cid) error {
 	p.rl.Lock()
 	defer p.rl.Unlock()
@@ -194,10 +204,14 @@ func (p *Publisher) SetRoot(_ context.Context, c cid.Cid) error {
 	return nil
 }
 
+// UpdateRoot updates the head of the advertisement chain and announces it to
+// the configured senders.
 func (p *Publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
 	return p.UpdateRootWithAddrs(ctx, c, p.Addrs())
 }
 
+// UpdateRootWithAddrs updates the head of the advertisement chain and announces
+// it to the configured senders, with the provided addresses.
 func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
 	err := p.SetRoot(ctx, c)
 	if err != nil {
@@ -206,6 +220,7 @@ func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []
 	return p.announce(ctx, c, addrs)
 }
 
+// Close closes the Publisher and all of its senders.
 func (p *Publisher) Close() error {
 	var errs error
 	err := p.closer.Close()
@@ -220,6 +235,7 @@ func (p *Publisher) Close() error {
 	return errs
 }
 
+// ServeHTTP implements the http.Handler interface.
 func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ask string
 	if p.handlerPath != "" {

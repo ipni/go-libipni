@@ -14,6 +14,7 @@ import (
 
 const shutdownTime = 5 * time.Second
 
+// Sender sends announce messages over pubsub.
 type Sender struct {
 	cancelPubSub context.CancelFunc
 	topic        *pubsub.Topic

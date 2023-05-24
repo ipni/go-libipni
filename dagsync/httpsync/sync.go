@@ -38,6 +38,7 @@ type Sync struct {
 	lsys      ipld.LinkSystem
 }
 
+// NewSync creates a new Sync.
 func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, cid.Cid)) *Sync {
 	if client == nil {
 		client = &http.Client{
@@ -77,6 +78,7 @@ func (s *Sync) Close() {
 
 var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected peer")
 
+// Syncer provides sync functionality for a single sync with a peer.
 type Syncer struct {
 	peerID      peer.ID
 	rateLimiter *rate.Limiter
@@ -85,6 +87,7 @@ type Syncer struct {
 	sync        *Sync
 }
 
+// GetHead fetches the head of the peer's advertisement chain.
 func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	var head cid.Cid
 	var pubKey ic.PubKey
@@ -110,6 +113,7 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	return head, nil
 }
 
+// Sync syncs the peer's advertisement chain or entries chain.
 func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error {
 	xsel, err := selector.CompileSelector(sel)
 	if err != nil {
