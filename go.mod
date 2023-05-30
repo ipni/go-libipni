@@ -24,7 +24,6 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230126041949-52956bd4c9aa
 	golang.org/x/crypto v0.7.0
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	google.golang.org/protobuf v1.30.0
 )
