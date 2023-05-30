@@ -48,30 +48,28 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return nil
 	}
 
-	for {
-		inProgressSyncK := inProgressSyncKey{nextCid, s.peerID}
-		syncDone := s.sync.notifyOnSyncDone(inProgressSyncK)
+	inProgressSyncK := inProgressSyncKey{nextCid, s.peerID}
+	syncDone := s.sync.notifyOnSyncDone(inProgressSyncK)
 
-		log.Debugw("Starting data channel for message source", "cid", nextCid, "source_peer", s.peerID)
+	log.Debugw("Starting data channel for message source", "cid", nextCid, "source_peer", s.peerID)
 
-		v := Voucher{&nextCid}
-		// Do not pass cancelable context into OpenPullDataChannel because a
-		// canceled context causes it to hang.
-		_, err := s.sync.dtManager.OpenPullDataChannel(context.Background(), s.peerID, v.AsVoucher(), nextCid, sel)
-		if err != nil {
-			s.sync.signalSyncDone(inProgressSyncK, nil)
-			return fmt.Errorf("cannot open data channel: %w", err)
-		}
-
-		// Wait for transfer finished signal.
-		select {
-		case err = <-syncDone:
-		case <-ctx.Done():
-			s.sync.signalSyncDone(inProgressSyncK, ctx.Err())
-			err = <-syncDone
-		}
-		return err
+	v := Voucher{&nextCid}
+	// Do not pass cancelable context into OpenPullDataChannel because a
+	// canceled context causes it to hang.
+	_, err := s.sync.dtManager.OpenPullDataChannel(context.Background(), s.peerID, v.AsVoucher(), nextCid, sel)
+	if err != nil {
+		s.sync.signalSyncDone(inProgressSyncK, nil)
+		return fmt.Errorf("cannot open data channel: %w", err)
 	}
+
+	// Wait for transfer finished signal.
+	select {
+	case err = <-syncDone:
+	case <-ctx.Done():
+		s.sync.signalSyncDone(inProgressSyncK, ctx.Err())
+		err = <-syncDone
+	}
+	return err
 }
 
 // has determines if a given CID and selector is stored in the linksystem for a syncer already.
