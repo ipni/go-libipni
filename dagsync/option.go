@@ -13,7 +13,6 @@ import (
 	"github.com/ipni/go-libipni/announce"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"golang.org/x/time/rate"
 )
 
 const (
@@ -50,7 +49,6 @@ type config struct {
 	idleHandlerTTL    time.Duration
 	latestSyncHandler LatestSyncHandler
 
-	rateLimiterFor RateLimiterFor
 	resendAnnounce bool
 
 	segDepthLimit int64
@@ -191,17 +189,6 @@ func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
 	}
 }
 
-type RateLimiterFor func(publisher peer.ID) *rate.Limiter
-
-// RateLimiter configures a function that is called for each sync to get the
-// rate limiter for a specific peer.
-func RateLimiter(limiterFor RateLimiterFor) Option {
-	return func(c *config) error {
-		c.rateLimiterFor = limiterFor
-		return nil
-	}
-}
-
 // LatestSyncHandler defines how to store the latest synced cid for a given
 // peer and how to fetch it. dagsync guarantees this will not be called
 // concurrently for the same peer, but it may be called concurrently for
@@ -238,7 +225,6 @@ func UseLatestSyncHandler(h LatestSyncHandler) Option {
 
 type syncCfg struct {
 	alwaysUpdateLatest bool
-	rateLimiter        *rate.Limiter
 	scopedBlockHook    BlockHookFunc
 	segDepthLimit      int64
 }
@@ -271,15 +257,6 @@ func AlwaysUpdateLatest() SyncOption {
 func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 	return func(sc *syncCfg) {
 		sc.scopedBlockHook = hook
-	}
-}
-
-// ScopedRateLimiter set a rate limiter to use for a singel sync. If not
-// specified, the Subscriber rateLimiterFor function is used to get a rate
-// limiter for the sync.
-func ScopedRateLimiter(l *rate.Limiter) SyncOption {
-	return func(sc *syncCfg) {
-		sc.rateLimiter = l
 	}
 }
 

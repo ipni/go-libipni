@@ -31,7 +31,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
 )
 
 const (
@@ -508,65 +507,6 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 	peerInfo.Addrs = nil
 	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
 	require.NoError(t, err)
-}
-
-func TestRateLimiter(t *testing.T) {
-	t.Parallel()
-	type testCase struct {
-		name   string
-		isHttp bool
-	}
-
-	testCases := []testCase{
-		{"DT rate limiter", false},
-		{"HTTP rate limiter", true},
-	}
-
-	for _, tc := range testCases {
-		isHttp := tc.isHttp
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			pubHostSys := newHostSystem(t)
-			subHostSys := newHostSystem(t)
-			defer pubHostSys.close()
-			defer subHostSys.close()
-
-			tokenEvery := 100 * time.Millisecond
-			limiter := rate.NewLimiter(rate.Every(tokenEvery), 1)
-			var calledTimes int64
-			pub, sub := dagsyncPubSubBuilder{
-				IsHttp: isHttp,
-			}.Build(t, testTopic, pubHostSys, subHostSys, []dagsync.Option{
-				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
-					atomic.AddInt64(&calledTimes, 1)
-				}),
-				dagsync.RateLimiter(func(publisher peer.ID) *rate.Limiter {
-					return limiter
-				}),
-			})
-
-			llB := llBuilder{
-				Length: 5,
-			}
-			ll := llB.Build(t, pubHostSys.lsys)
-
-			err := pub.SetRoot(context.Background(), ll.(cidlink.Link).Cid)
-			require.NoError(t, err)
-
-			start := time.Now()
-			peerInfo := peer.AddrInfo{
-				ID:    pub.ID(),
-				Addrs: pub.Addrs(),
-			}
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
-			require.NoError(t, err)
-			// Minus 1 because we start with a full bucket.
-			require.GreaterOrEqual(t, time.Since(start), tokenEvery*time.Duration(llB.Length-1))
-
-			require.Equal(t, atomic.LoadInt64(&calledTimes), int64(llB.Length))
-		})
-	}
-
 }
 
 func TestBackpressureDoesntDeadlock(t *testing.T) {

@@ -15,12 +15,9 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"golang.org/x/time/rate"
 )
 
 var log = logging.Logger("dagsync/dtsync")
-
-const hitRateLimitErrStr = "hitRateLimit"
 
 type inProgressSyncKey struct {
 	c    cid.Cid
@@ -45,9 +42,6 @@ type Sync struct {
 	// Map of CID of in-progress sync to sync done channel.
 	syncDoneChans map[inProgressSyncKey]chan<- error
 	syncDoneMutex sync.Mutex
-
-	rateLimiters map[peer.ID]*rate.Limiter
-	rateMutex    sync.Mutex
 }
 
 // NewSyncWithDT creates a new Sync with a datatransfer.Manager provided by the
@@ -59,15 +53,14 @@ func NewSyncWithDT(host host.Host, dtManager dt.Manager, gs graphsync.GraphExcha
 	}
 
 	s := &Sync{
-		host:         host,
-		dtManager:    dtManager,
-		ls:           ls,
-		rateLimiters: map[peer.ID]*rate.Limiter{},
-		blockHook:    blockHook,
+		host:      host,
+		dtManager: dtManager,
+		ls:        ls,
+		blockHook: blockHook,
 	}
 
 	if blockHook != nil {
-		s.unregHook = gs.RegisterIncomingBlockHook(s.addRateLimiting(addIncomingBlockHook(nil, blockHook), s.getRateLimiter, gs))
+		s.unregHook = gs.RegisterIncomingBlockHook(addIncomingBlockHook(nil, blockHook))
 	}
 
 	s.unsubEvents = dtManager.SubscribeToEvents(s.onEvent)
@@ -82,61 +75,19 @@ func NewSync(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, blockH
 	}
 
 	s := &Sync{
-		host:         host,
-		dtManager:    dtManager,
-		ls:           &lsys,
-		dtClose:      dtClose,
-		rateLimiters: make(map[peer.ID]*rate.Limiter),
-		blockHook:    blockHook,
+		host:      host,
+		dtManager: dtManager,
+		ls:        &lsys,
+		dtClose:   dtClose,
+		blockHook: blockHook,
 	}
 
 	if blockHook != nil {
-		s.unregHook = gs.RegisterIncomingBlockHook(s.addRateLimiting(addIncomingBlockHook(nil, blockHook), s.getRateLimiter, gs))
+		s.unregHook = gs.RegisterIncomingBlockHook(addIncomingBlockHook(nil, blockHook))
 	}
 
 	s.unsubEvents = dtManager.SubscribeToEvents(s.onEvent)
 	return s, nil
-}
-
-func (s *Sync) clearRateLimiter(peerID peer.ID) {
-	s.rateMutex.Lock()
-	delete(s.rateLimiters, peerID)
-	s.rateMutex.Unlock()
-}
-
-func (s *Sync) setRateLimiter(peerID peer.ID, rateLimiter *rate.Limiter) {
-	s.rateMutex.Lock()
-	s.rateLimiters[peerID] = rateLimiter
-	s.rateMutex.Unlock()
-}
-
-func (s *Sync) getRateLimiter(peerID peer.ID) *rate.Limiter {
-	s.rateMutex.Lock()
-	limiter := s.rateLimiters[peer.ID(peerID)]
-	s.rateMutex.Unlock()
-	return limiter
-}
-
-func (s *Sync) addRateLimiting(bFn graphsync.OnIncomingBlockHook, rateLimiter func(peer.ID) *rate.Limiter, gs graphsync.GraphExchange) graphsync.OnIncomingBlockHook {
-	return func(p peer.ID, responseData graphsync.ResponseData, blockData graphsync.BlockData, hookActions graphsync.IncomingBlockHookActions) {
-		isLocalBlock := blockData.BlockSizeOnWire() == 0
-
-		if !isLocalBlock {
-			limiter := rateLimiter(p)
-			if limiter != nil && !limiter.Allow() {
-				// We've hit a rate limit. We'll terminate this sync with a rate limit
-				// err along with the cid of the block that we didn't process. When we
-				// restart the sync after the rate limit we should continue from this
-				// block.
-				hookActions.TerminateWithError(fmt.Errorf("%s(%s)", hitRateLimitErrStr, blockData.Link().(cidlink.Link).Cid.String()))
-				return
-			}
-		}
-
-		if bFn != nil {
-			bFn(p, responseData, blockData, hookActions)
-		}
-	}
 }
 
 func addIncomingBlockHook(bFn graphsync.OnIncomingBlockHook, blockHook func(peer.ID, cid.Cid)) graphsync.OnIncomingBlockHook {
@@ -177,13 +128,12 @@ func (s *Sync) Close() error {
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a peer.
-func (s *Sync) NewSyncer(peerID peer.ID, topicName string, rateLimiter *rate.Limiter) *Syncer {
+func (s *Sync) NewSyncer(peerID peer.ID, topicName string) *Syncer {
 	return &Syncer{
-		peerID:      peerID,
-		sync:        s,
-		topicName:   topicName,
-		rateLimiter: rateLimiter,
-		ls:          s.ls,
+		peerID:    peerID,
+		sync:      s,
+		topicName: topicName,
+		ls:        s.ls,
 	}
 }
 
@@ -235,13 +185,6 @@ func (s *Sync) signalLocallyFoundCids(id peer.ID, cids []cid.Cid) {
 	}
 }
 
-type rateLimitErr struct {
-	msg          string
-	stoppedAtCid cid.Cid
-}
-
-func (e rateLimitErr) Error() string { return e.msg }
-
 // onEvent is called by the datatransfer manager to send events.
 func (s *Sync) onEvent(event dt.Event, channelState dt.ChannelState) {
 	var err error
@@ -256,24 +199,11 @@ func (s *Sync) onEvent(event dt.Event, channelState dt.ChannelState) {
 	case dt.Failed:
 		// Communicate the error back to the waiting handler.
 		msg := channelState.Message()
-		if idx := strings.Index(msg, hitRateLimitErrStr); idx != -1 {
-			// This is a rate limit error, let's pull out the cid of the block we
-			// didn't process to include it in the error.
-			stoppedAtCidStr := msg[idx+len(hitRateLimitErrStr)+1:]
-			lastParen := strings.Index(stoppedAtCidStr, ")")
-			stoppedAtCidStr = stoppedAtCidStr[:lastParen]
-
-			var stoppedAtCid cid.Cid
-			stoppedAtCid, _ = cid.Decode(stoppedAtCidStr)
-			log.Warnw("Datatransfer hit rate limit", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
-			err = rateLimitErr{msg, stoppedAtCid}
+		log.Errorw("Datatransfer failed", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
+		if strings.Contains(msg, "content not found") {
+			err = fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 		} else {
-			log.Errorw("Datatransfer failed", "err", msg, "cid", channelState.BaseCID(), "peer", channelState.OtherPeer())
-			if strings.Contains(msg, "content not found") {
-				err = fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
-			} else {
-				err = fmt.Errorf("datatransfer failed: %s", msg)
-			}
+			err = fmt.Errorf("datatransfer failed: %s", msg)
 		}
 
 	default:

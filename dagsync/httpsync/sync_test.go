@@ -87,7 +87,7 @@ func TestHttpSync_NFTStorage_DigestCheck(t *testing.T) {
 			require.NoError(t, err)
 
 			sync := httpsync.NewSync(ls, http.DefaultClient, nil)
-			syncer, err := sync.NewSyncer(pubid, []multiaddr.Multiaddr{pubmaddr}, nil)
+			syncer, err := sync.NewSyncer(pubid, []multiaddr.Multiaddr{pubmaddr})
 			require.NoError(t, err)
 
 			head, err := syncer.GetHead(ctx)
@@ -161,7 +161,7 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	ls.SetReadStorage(store)
 
 	sync := httpsync.NewSync(ls, http.DefaultClient, nil)
-	syncer, err := sync.NewSyncer(pubID, pub.Addrs(), nil)
+	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
 	require.NoError(t, err)
 
 	head, err := syncer.GetHead(ctx)
@@ -206,7 +206,7 @@ func TestHttpsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 	ls.SetReadStorage(store)
 
 	sync := httpsync.NewSync(ls, http.DefaultClient, nil)
-	syncer, err := sync.NewSyncer(pubID, pub.Addrs(), nil)
+	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
 	require.NoError(t, err)
 
 	mh, err := multihash.Sum([]byte("fish"), multihash.SHA2_256, -1)

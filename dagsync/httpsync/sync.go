@@ -24,7 +24,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
-	"golang.org/x/time/rate"
 )
 
 const defaultHttpTimeout = 10 * time.Second
@@ -53,7 +52,7 @@ func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, 
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a peer.
-func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr, rateLimiter *rate.Limiter) (*Syncer, error) {
+func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
 	urls := make([]*url.URL, len(peerAddrs))
 	for i := range peerAddrs {
 		var err error
@@ -64,11 +63,10 @@ func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr, rateLi
 	}
 
 	return &Syncer{
-		peerID:      peerID,
-		rateLimiter: rateLimiter,
-		rootURL:     *urls[0],
-		urls:        urls[1:],
-		sync:        s,
+		peerID:  peerID,
+		rootURL: *urls[0],
+		urls:    urls[1:],
+		sync:    s,
 	}, nil
 }
 
@@ -80,11 +78,10 @@ var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected
 
 // Syncer provides sync functionality for a single sync with a peer.
 type Syncer struct {
-	peerID      peer.ID
-	rateLimiter *rate.Limiter
-	rootURL     url.URL
-	urls        []*url.URL
-	sync        *Sync
+	peerID  peer.ID
+	rootURL url.URL
+	urls    []*url.URL
+	sync    *Sync
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
@@ -167,19 +164,8 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 			return r, nil
 		}
 
-		// Did not find block read opener, so fetch block via HTTP with re-try in case rate limit is
-		// reached.
-		for {
-			if err = s.fetchBlock(ctx, c); err != nil {
-				var errRateLimit rateLimitErr
-				if errors.As(err, &errRateLimit) {
-					// TODO: implement backoff to avoid potentially exhausting the HTTP source.
-					log.Info("Fetch request was rate-limited")
-					continue
-				}
-				return nil, fmt.Errorf("failed to fetch block for cid %s: %w", c, err)
-			}
-			break
+		if err = s.fetchBlock(ctx, c); err != nil {
+			return nil, fmt.Errorf("failed to fetch block for cid %s: %w", c, err)
 		}
 
 		r, err = s.sync.lsys.StorageReadOpener(lc, l)
@@ -211,28 +197,7 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 	return traversalOrder, nil
 }
 
-type rateLimitErr struct {
-	resource string
-	rootURL  url.URL
-	source   peer.ID
-}
-
-func (r rateLimitErr) Error() string {
-	return fmt.Sprintf("rate limit reached when fetching %s from %s at %s", r.resource, r.source, r.rootURL.String())
-}
-
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
-	if s.rateLimiter != nil {
-		err := s.rateLimiter.Wait(ctx)
-		if err != nil {
-			return &rateLimitErr{
-				resource: rsrc,
-				rootURL:  s.rootURL,
-				source:   s.peerID,
-			}
-		}
-	}
-
 nextURL:
 	localURL := s.rootURL
 	localURL.Path = path.Join(s.rootURL.Path, rsrc)

@@ -23,7 +23,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/multiformats/go-multiaddr"
-	"golang.org/x/time/rate"
 )
 
 var log = logging.Logger("dagsync")
@@ -97,8 +96,6 @@ type Subscriber struct {
 	latestSyncHander LatestSyncHandler
 
 	segDepthLimit int64
-
-	rateLimiterFor RateLimiterFor
 
 	receiver *announce.Receiver
 }
@@ -222,8 +219,7 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		idleHandlerTTL:   opts.idleHandlerTTL,
 		latestSyncHander: latestSyncHandler,
 
-		segDepthLimit:  opts.segDepthLimit,
-		rateLimiterFor: opts.rateLimiterFor,
+		segDepthLimit: opts.segDepthLimit,
 
 		receiver: rcvr,
 	}
@@ -431,7 +427,7 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 
 	log := log.With("peer", peerInfo.ID)
 
-	syncer, isHttp, err := s.makeSyncer(peerInfo, tempAddrTTL, opts.rateLimiter)
+	syncer, isHttp, err := s.makeSyncer(peerInfo, tempAddrTTL)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -617,7 +613,7 @@ func (s *Subscriber) watch() {
 			ID:    amsg.PeerID,
 			Addrs: amsg.Addrs,
 		}
-		syncer, _, err := s.makeSyncer(peerInfo, s.addrTTL, nil)
+		syncer, _, err := s.makeSyncer(peerInfo, s.addrTTL)
 		if err != nil {
 			log.Errorw("Cannot make syncer for announce", "err", err)
 			continue
@@ -638,7 +634,7 @@ func (s *Subscriber) Announce(ctx context.Context, nextCid cid.Cid, peerID peer.
 	return s.receiver.Direct(ctx, nextCid, peerID, peerAddrs)
 }
 
-func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration, rateLimiter *rate.Limiter) (Syncer, bool, error) {
+func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration) (Syncer, bool, error) {
 	// Check for an HTTP address in peerAddrs, or if not given, in the http
 	// peerstore. This gives a preference to use httpsync over dtsync.
 	var httpAddrs []multiaddr.Multiaddr
@@ -648,18 +644,12 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration, r
 		httpAddrs = mautil.FindHTTPAddrs(peerInfo.Addrs)
 	}
 
-	// If there was no rate limiter for this sync, then use the normal rate
-	// limiter for the peer.
-	if rateLimiter == nil && s.rateLimiterFor != nil {
-		rateLimiter = s.rateLimiterFor(peerInfo.ID)
-	}
-
 	if len(httpAddrs) != 0 {
 		// Store this http address so that future calls to sync will work without a
 		// peerAddr (given that it happens within the TTL)
 		s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, addrTTL)
 
-		syncer, err := s.httpSync.NewSyncer(peerInfo.ID, httpAddrs, rateLimiter)
+		syncer, err := s.httpSync.NewSyncer(peerInfo.ID, httpAddrs)
 		if err != nil {
 			return nil, false, fmt.Errorf("cannot create http sync handler: %w", err)
 		}
@@ -676,7 +666,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration, r
 		peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, addrTTL)
 	}
 
-	return s.dtSync.NewSyncer(peerInfo.ID, s.receiver.TopicName(), rateLimiter), false, nil
+	return s.dtSync.NewSyncer(peerInfo.ID, s.receiver.TopicName()), false, nil
 }
 
 // handleAsync starts a goroutine to process the latest announce message
