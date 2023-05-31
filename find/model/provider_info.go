@@ -67,5 +67,7 @@ type ContextualExtendedProviders struct {
 	// Providers contains a list of context-level extended providers IDs and
 	// addresses.
 	Providers []peer.AddrInfo
+	// Metadatas contains a list of content level metadata overrides for this
+	// provider.
 	Metadatas [][]byte `json:",omitempty"`
 }
