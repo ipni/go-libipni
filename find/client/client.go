@@ -1,4 +1,4 @@
-package httpclient
+package client
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/ipni/go-libipni/apierror"
-	"github.com/ipni/go-libipni/find/client"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -31,8 +30,8 @@ type Client struct {
 	statsURL     *url.URL
 }
 
-// Client must implement client.Interface.
-var _ client.Interface = (*Client)(nil)
+// Client must implement Interface.
+var _ Interface = (*Client)(nil)
 
 // New creates a new find HTTP client.
 func New(baseURL string, options ...Option) (*Client, error) {
