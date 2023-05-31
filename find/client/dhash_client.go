@@ -133,9 +133,6 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 
 	for _, emhrs := range encResponse.EncryptedMultihashResults {
 		for _, evk := range emhrs.EncryptedValueKeys {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
 			vk, err := dhash.DecryptValueKey(evk, mh)
 			// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
 			if err != nil {
@@ -163,7 +160,11 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 			}
 
 			for _, pr := range prs {
-				resChan <- pr
+				select {
+				case resChan <- pr:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 		}
 	}
