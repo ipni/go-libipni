@@ -98,6 +98,12 @@ type Subscriber struct {
 	segDepthLimit int64
 
 	receiver *announce.Receiver
+
+	// Track explicit Sync calls in progress and allow them to complete before
+	// closing subscriber.
+	expSyncClosed bool
+	expSyncMutex  sync.Mutex
+	expSyncWG     sync.WaitGroup
 }
 
 // SyncFinished notifies an OnSyncFinished reader that a specified peer
@@ -290,6 +296,13 @@ func (s *Subscriber) doClose() error {
 	// Cancel idle handler cleaner.
 	close(s.closing)
 
+	// Block any additional explicit Sync calls.
+	s.expSyncMutex.Lock()
+	s.expSyncClosed = true
+	s.expSyncMutex.Unlock()
+	// Wait for explicit Syncs calls to finish.
+	s.expSyncWG.Wait()
+
 	// Close receiver and wait for watch to exit.
 	err := s.receiver.Close()
 	if err != nil {
@@ -403,6 +416,15 @@ func (s *Subscriber) RemoveHandler(peerID peer.ID) bool {
 //
 // See: ExploreRecursiveWithStopNode.
 func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid cid.Cid, sel ipld.Node, options ...SyncOption) (cid.Cid, error) {
+	s.expSyncMutex.Lock()
+	if s.expSyncClosed {
+		s.expSyncMutex.Unlock()
+		return cid.Undef, errors.New("shutdown")
+	}
+	s.expSyncWG.Add(1)
+	s.expSyncMutex.Unlock()
+	defer s.expSyncWG.Done()
+
 	defaultOptions := []SyncOption{
 		ScopedBlockHook(s.generalBlockHook),
 		ScopedSegmentDepthLimit(s.segDepthLimit)}
