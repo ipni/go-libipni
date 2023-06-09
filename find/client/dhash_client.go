@@ -36,16 +36,9 @@ type DHashClient struct {
 // querying data. It requires more roundtrips to fullfill one query however it
 // also protects the user from a passive observer. dhstoreURL specifies the URL
 // of the double hashed store that can respond to find encrypted multihash and
-// find encrypted metadata requests. stiURL specifies the URL of indexer that
-// can respond to find provider requests. dhstoreURL and stiURL are expected to
-// be the same when these services are deployed behing a proxy - indexstar.
-func NewDHashClient(dhstoreURL, stiURL string, options ...Option) (*DHashClient, error) {
+// find encrypted metadata requests.
+func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 	opts, err := getOpts(options)
-	if err != nil {
-		return nil, err
-	}
-
-	dhsURL, err := parseUrl(dhstoreURL)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +46,14 @@ func NewDHashClient(dhstoreURL, stiURL string, options ...Option) (*DHashClient,
 	sURL, err := parseUrl(stiURL)
 	if err != nil {
 		return nil, err
+	}
+
+	dhsURL := sURL
+	if len(opts.dhstoreUrl) > 0 {
+		dhsURL, err = parseUrl(opts.dhstoreUrl)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pcache, err := newProviderCache(sURL, opts.httpClient)
