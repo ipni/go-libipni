@@ -7,7 +7,7 @@ import (
 
 type config struct {
 	httpClient *http.Client
-	dhstoreURL string
+	dhstoreUrl string
 }
 
 // Option is a function that sets a value in a config.
@@ -35,12 +35,12 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithDHStoreURL allows specifying different URLs for dhstore (/multihash and /metadata endpoints) and storetheindex (/providers endpoint).
+// WithDHStoreUrl allows specifying different URLs for dhstore (/multihash and /metadata endpoints) and storetheindex (/providers endpoint).
 // This might be useful as dhstore and storetheindex are different services that might not necessarily be behind the same URL. However
 // the data from both of them is required to assemble results.
-func WithDHStoreURL(u string) Option {
+func WithDHStoreUrl(u string) Option {
 	return func(cfg *config) error {
-		cfg.dhstoreURL = u
+		cfg.dhstoreUrl = u
 		return nil
 	}
 }
