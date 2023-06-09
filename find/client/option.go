@@ -7,7 +7,7 @@ import (
 
 type config struct {
 	httpClient *http.Client
-	dhstoreUrl string
+	dhstoreURL string
 }
 
 // Option is a function that sets a value in a config.
