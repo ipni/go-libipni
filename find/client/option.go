@@ -35,12 +35,12 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithDHStoreUrl allows specifying different URLs for dhstore (/multihash and /metadata endpoints) and storetheindex (/providers endpoint).
+// WithDHStoreURL allows specifying different URLs for dhstore (/multihash and /metadata endpoints) and storetheindex (/providers endpoint).
 // This might be useful as dhstore and storetheindex are different services that might not necessarily be behind the same URL. However
 // the data from both of them is required to assemble results.
-func WithDHStoreUrl(u string) Option {
+func WithDHStoreURL(u string) Option {
 	return func(cfg *config) error {
-		cfg.dhstoreUrl = u
+		cfg.dhstoreURL = u
 		return nil
 	}
 }
