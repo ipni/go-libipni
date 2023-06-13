@@ -43,14 +43,14 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	sURL, err := parseUrl(stiURL)
+	sURL, err := parseURL(stiURL)
 	if err != nil {
 		return nil, err
 	}
 
 	dhsURL := sURL
-	if len(opts.dhstoreUrl) > 0 {
-		dhsURL, err = parseUrl(opts.dhstoreUrl)
+	if len(opts.dhstoreURL) > 0 {
+		dhsURL, err = parseURL(opts.dhstoreURL)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +69,8 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 	}, nil
 }
 
-// Find launches FindAsync in a separate go routine and assembles the result into FindResponse as if it was a synchronous invocation.
+// Find launches FindAsync in a separate go routine and assembles the result
+// into FindResponse as if it was a synchronous invocation.
 func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.FindResponse, error) {
 	resChan := make(chan model.ProviderResult)
 	errChan := make(chan error, 1)
@@ -135,7 +136,8 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 	for _, emhrs := range encResponse.EncryptedMultihashResults {
 		for _, evk := range emhrs.EncryptedValueKeys {
 			vk, err := dhash.DecryptValueKey(evk, mh)
-			// skip errors as we don't want to fail the whole query, warn instead. Same applies to the rest of the loop.
+			// skip errors as we don't want to fail the whole query, warn
+			// instead. Same applies to the rest of the loop.
 			if err != nil {
 				log.Warnw("Error decrypting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue
@@ -213,7 +215,7 @@ func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, err
 	return dhash.DecryptMetadata(findResponse.EncryptedMetadata, vk)
 }
 
-func parseUrl(su string) (*url.URL, error) {
+func parseURL(su string) (*url.URL, error) {
 	if !strings.HasPrefix(su, "http://") && !strings.HasPrefix(su, "https://") {
 		su = "http://" + su
 	}
