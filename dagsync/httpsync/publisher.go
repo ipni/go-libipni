@@ -96,7 +96,18 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 // is the caller's responsibility. ServeHTTP on the returned Publisher
 // can be used to handle requests. handlerPath is the path to handle
 // requests on, e.g. "ipni" for `/ipni/...` requests.
+//
+// DEPRECATED: use NewPublisherWithoutServer(listener.Addr(), ...)
 func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
+	return NewPublisherWithoutServer(listener.Addr().String(), handlerPath, lsys, privKey, options...)
+}
+
+// NewPublisherWithoutServer creates a new http publisher for an existing
+// network address. When providing an existing network address, running
+// the HTTP server is the caller's responsibility. ServeHTTP on the
+// returned Publisher can be used to handle requests. handlerPath is the
+// path to handle requests on, e.g. "ipni" for `/ipni/...` requests.
+func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -110,7 +121,11 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
 	}
 
-	maddr, err := manet.FromNetAddr(listener.Addr())
+	addr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	maddr, err := manet.FromNetAddr(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +139,6 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 		proto = multiaddr.Join(proto, httpath)
 		handlerPath = "/" + handlerPath
 	}
-
-	fmt.Println("w addr", multiaddr.Join(maddr, proto).String())
 
 	return &Publisher{
 		addr:        multiaddr.Join(maddr, proto),
