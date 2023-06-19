@@ -165,6 +165,7 @@ func (s *Sender) sendAnnounce(ctx context.Context, announceURL string, buf *byte
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", "go-libipni")
 	if js {
 		req.Header.Set("Content-Type", "application/json")
 	} else {

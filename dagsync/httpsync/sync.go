@@ -206,6 +206,7 @@ nextURL:
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", "go-libipni")
 
 	resp, err := s.sync.client.Do(req)
 	if err != nil {
