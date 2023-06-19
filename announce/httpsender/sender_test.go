@@ -52,6 +52,9 @@ func init() {
 func TestSend(t *testing.T) {
 	var count int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check for expected User-Agent
+		require.True(t, strings.HasPrefix(r.UserAgent(), "go-libipni/"))
+
 		// Decode CID and originator addresses from message.
 		an := message.Message{}
 		err := an.UnmarshalCBOR(r.Body)

@@ -23,6 +23,7 @@ type Sender struct {
 	announceURLs []string
 	client       *http.Client
 	peerID       peer.ID
+	userAgent    string
 }
 
 // New creates a new Sender that sends announce messages over HTTP. Announce
@@ -69,6 +70,7 @@ func New(announceURLs []*url.URL, peerID peer.ID, options ...Option) (*Sender, e
 		announceURLs: urls,
 		client:       client,
 		peerID:       peerID,
+		userAgent:    opts.userAgent,
 	}, nil
 }
 
@@ -165,6 +167,7 @@ func (s *Sender) sendAnnounce(ctx context.Context, announceURL string, buf *byte
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", s.userAgent)
 	if js {
 		req.Header.Set("Content-Type", "application/json")
 	} else {
