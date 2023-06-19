@@ -85,16 +85,16 @@ func makeDataTransfer(host host.Host, ds datastore.Batching, lsys ipld.LinkSyste
 	tp := gstransport.NewTransport(host.ID(), gs)
 
 	dtRestartConfig := datatransfer.ChannelRestartConfig(channelmonitor.Config{
-		AcceptTimeout:   time.Minute,
+		AcceptTimeout:   30 * time.Second,
 		CompleteTimeout: time.Minute,
 
 		// When an error occurs, wait a little while until all related errors
 		// have fired before sending a restart message
 		RestartDebounce: 10 * time.Second,
-		// After sending a restart, wait for at least 1 minute before sending another
-		RestartBackoff: time.Minute,
-		// After trying to restart 3 times, give up and fail the transfer
-		MaxConsecutiveRestarts: 3,
+		// After sending a restart, wait at least this long before sending another
+		RestartBackoff: 30 * time.Second,
+		// After trying to restart this many times, give up and fail the transfer
+		MaxConsecutiveRestarts: 1,
 	})
 
 	dtManager, err := datatransfer.NewDataTransfer(ds, dtNet, tp, dtRestartConfig)
@@ -135,7 +135,7 @@ func makeDataTransfer(host host.Host, ds datastore.Batching, lsys ipld.LinkSyste
 	log.Info("Data transfer manager is ready.")
 
 	closeFunc := func() error {
-		errCh := make(chan error)
+		errCh := make(chan error, 1)
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), datatransferStopTimeout)
 		go func() {
 			errCh <- dtManager.Stop(stopCtx)
