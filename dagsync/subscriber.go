@@ -93,7 +93,8 @@ type Subscriber struct {
 	httpPeerstore peerstore.Peerstore
 
 	idleHandlerTTL    time.Duration
-	latestSyncHandler LatestSyncHandler
+	latestSyncHandler latestSyncHandler
+	lastKnownSync     LastKnownSyncFunc
 
 	segDepthLimit int64
 
@@ -126,9 +127,6 @@ type handler struct {
 	// syncMutex serializes the handling of individual syncs. This should only
 	// guard the actual handling of a sync, nothing else.
 	syncMutex sync.Mutex
-	// latestSync is the cid of the latest sync that Subscribe was told to
-	// remember. It is protected by syncMutex.
-	latestSync cid.Cid
 	// peerID is the ID of the peer this handler is responsible for. This is
 	// the publisher of an advertisement chain.
 	peerID peer.ID
@@ -217,15 +215,12 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		generalBlockHook:     opts.blockHook,
 
 		idleHandlerTTL:    opts.idleHandlerTTL,
-		latestSyncHandler: opts.latestSyncHandler,
+		latestSyncHandler: latestSyncHandler{},
+		lastKnownSync:     opts.lastKnownSync,
 
 		segDepthLimit: opts.segDepthLimit,
 
 		receiver: rcvr,
-	}
-
-	if s.latestSyncHandler == nil {
-		s.latestSyncHandler = &DefaultLatestSyncHandler{}
 	}
 
 	// Start watcher to read announce messages.
@@ -243,41 +238,28 @@ func (s *Subscriber) HttpPeerStore() peerstore.Peerstore {
 	return s.httpPeerstore
 }
 
-// GetLatestSync returns the latest synced CID for the specified peer. If there
-// is no handler for the peer, then nil is returned. This does not mean that no
-// data is synced with that peer, it means that the Subscriber does not know
-// about it. Calling Sync() first may be necessary.
+// GetLatestSync returns the latest synced CID for the specified peer.
 func (s *Subscriber) GetLatestSync(peerID peer.ID) ipld.Link {
-	hnd := s.getOrCreateHandler(peerID)
-	hnd.syncMutex.Lock()
-	defer hnd.syncMutex.Unlock()
-
-	if hnd.latestSync != cid.Undef {
-		return cidlink.Link{Cid: hnd.latestSync}
+	c, ok := s.latestSyncHandler.getLatestSync(peerID)
+	if ok && c != cid.Undef {
+		return cidlink.Link{Cid: c}
 	}
-
-	v, ok := s.latestSyncHandler.GetLatestSync(peerID)
-	if ok && v != cid.Undef {
-		hnd.latestSync = v
-		return cidlink.Link{Cid: v}
+	if s.lastKnownSync != nil {
+		c, ok = s.lastKnownSync(peerID)
+		if ok && c != cid.Undef {
+			s.latestSyncHandler.setLatestSync(peerID, c)
+			return cidlink.Link{Cid: c}
+		}
 	}
-
 	return nil
 }
 
-// SetLatestSync sets the latest synced CID for a specified peer. If there is
-// no handler for the peer, then one is created without consulting any
-// AllowPeerFunc.
+// SetLatestSync sets the latest synced CID for a specified peer.
 func (s *Subscriber) SetLatestSync(peerID peer.ID, latestSync cid.Cid) error {
 	if latestSync == cid.Undef {
 		return errors.New("cannot set latest sync to undefined value")
 	}
-	hnd := s.getOrCreateHandler(peerID)
-	hnd.syncMutex.Lock()
-	defer hnd.syncMutex.Unlock()
-
-	hnd.latestSync = latestSync
-	s.latestSyncHandler.SetLatestSync(peerID, latestSync)
+	s.latestSyncHandler.setLatestSync(peerID, latestSync)
 	return nil
 }
 
@@ -460,7 +442,7 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 		return cid.Undef, err
 	}
 
-	updateLatest := opts.alwaysUpdateLatest
+	updateLatest := opts.forceUpdateLatest
 	if nextCid == cid.Undef {
 		// Query the peer for the latest CID
 		nextCid, err = syncer.GetHead(ctx)
@@ -803,8 +785,7 @@ func (ss *segmentedSync) reset() {
 }
 
 func (h *handler) sendSyncFinishedEvent(c cid.Cid, count int) {
-	h.latestSync = c
-	h.subscriber.latestSyncHandler.SetLatestSync(h.peerID, c)
+	h.subscriber.latestSyncHandler.setLatestSync(h.peerID, c)
 	h.subscriber.inEvents <- SyncFinished{
 		Cid:    c,
 		PeerID: h.peerID,
@@ -817,16 +798,7 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wr
 	log := log.With("cid", nextCid, "peer", h.peerID)
 
 	if wrapSel {
-		var latestSyncLink ipld.Link
-		if h.latestSync == cid.Undef {
-			latestSync, ok := h.subscriber.latestSyncHandler.GetLatestSync(h.peerID)
-			if ok && latestSync != cid.Undef {
-				h.latestSync = latestSync
-				latestSyncLink = cidlink.Link{Cid: latestSync}
-			}
-		} else {
-			latestSyncLink = cidlink.Link{Cid: h.latestSync}
-		}
+		latestSyncLink := h.subscriber.GetLatestSync(h.peerID)
 		sel = ExploreRecursiveWithStopNode(h.subscriber.syncRecLimit, sel, latestSyncLink)
 	}
 
