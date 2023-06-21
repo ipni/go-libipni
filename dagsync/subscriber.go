@@ -534,20 +534,6 @@ func (s *Subscriber) distributeEvents() {
 	}
 }
 
-// getHandler returns an existing handler for a specific peer
-func (s *Subscriber) getHandler(peerID peer.ID) *handler {
-	s.handlersMutex.Lock()
-	defer s.handlersMutex.Unlock()
-
-	// Check for existing handler, return if found.
-	hnd, ok := s.handlers[peerID]
-	if !ok {
-		return nil
-	}
-	hnd.expires = time.Now().Add(s.idleHandlerTTL)
-	return hnd
-}
-
 // getOrCreateHandler creates a handler for a specific peer
 func (s *Subscriber) getOrCreateHandler(peerID peer.ID) *handler {
 	expires := time.Now().Add(s.idleHandlerTTL)
