@@ -146,10 +146,10 @@ func TestSyncedCidsReturned(t *testing.T) {
 			require.NoError(t, err)
 
 			finishedVal := <-onFinished
-			require.Equalf(t, int(ll.Length), len(finishedVal.SyncedCids),
-				"The finished value should include %d synced cids, but has %d", ll.Length, len(finishedVal.SyncedCids))
+			require.Equalf(t, int(ll.Length), finishedVal.Count,
+				"The finished value should include %d synced cids, but has %d", ll.Length, finishedVal.Count)
 
-			require.Equal(t, head.(cidlink.Link).Cid, finishedVal.SyncedCids[0],
+			require.Equal(t, head.(cidlink.Link).Cid, finishedVal.Cid,
 				"The latest synced cid should be the head and first in the list")
 		})
 	}, &quick.Config{
@@ -593,6 +593,8 @@ func TestBackpressureDoesntDeadlock(t *testing.T) {
 		// sync a user will call explicitly, so it should not be blocked by the
 		// backpressure of SyncFinishedEvent (it doesn't emit a SyncFinishedEvent).
 		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for sync to finish")
 	}
 
 	// Now pull from onSyncFinishedChan

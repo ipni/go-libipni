@@ -3,16 +3,13 @@ package dagsync
 import (
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	dt "github.com/filecoin-project/go-data-transfer/v2"
-	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-graphsync"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipni/go-libipni/announce"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 const (
@@ -187,32 +184,6 @@ func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
 		c.gsMaxOutRequests = maxOut
 		return nil
 	}
-}
-
-// LatestSyncHandler defines how to store the latest synced cid for a given
-// peer and how to fetch it. dagsync guarantees this will not be called
-// concurrently for the same peer, but it may be called concurrently for
-// different peers.
-type LatestSyncHandler interface {
-	SetLatestSync(peer peer.ID, cid cid.Cid)
-	GetLatestSync(peer peer.ID) (cid.Cid, bool)
-}
-
-type DefaultLatestSyncHandler struct {
-	m sync.Map
-}
-
-func (h *DefaultLatestSyncHandler) SetLatestSync(p peer.ID, c cid.Cid) {
-	log.Infow("Updating latest sync", "cid", c, "peer", p)
-	h.m.Store(p, c)
-}
-
-func (h *DefaultLatestSyncHandler) GetLatestSync(p peer.ID) (cid.Cid, bool) {
-	v, ok := h.m.Load(p)
-	if !ok {
-		return cid.Undef, false
-	}
-	return v.(cid.Cid), true
 }
 
 // UseLatestSyncHandler sets the latest sync handler to use.
