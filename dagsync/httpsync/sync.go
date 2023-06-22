@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -199,10 +198,9 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 nextURL:
-	localURL := s.rootURL
-	localURL.Path = path.Join(s.rootURL.Path, rsrc)
+	fetchURL := s.rootURL.JoinPath(rsrc)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", localURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -210,6 +208,7 @@ nextURL:
 	resp, err := s.sync.client.Do(req)
 	if err != nil {
 		if len(s.urls) != 0 {
+			log.Errorw("Fetch request failed, will retry with next address", "err", err)
 			s.rootURL = *s.urls[0]
 			s.urls = s.urls[1:]
 			goto nextURL
@@ -229,7 +228,7 @@ nextURL:
 		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
 		return cb(resp.Body)
 	default:
-		return fmt.Errorf("non success http fetch response at %s: %d", localURL.String(), resp.StatusCode)
+		return fmt.Errorf("non success http fetch response at %s: %d", fetchURL.String(), resp.StatusCode)
 	}
 }
 
