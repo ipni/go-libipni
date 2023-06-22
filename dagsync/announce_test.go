@@ -52,11 +52,10 @@ func TestAnnounceReplace(t *testing.T) {
 	// Store the whole chain in source node
 	chainLnks := test.MkChain(srcLnkS, true)
 
-	hnd, err := sub.getOrCreateHandler(srcHost.ID())
-	require.NoError(t, err)
+	hnd := sub.getOrCreateHandler(srcHost.ID())
 
 	// Lock mutex inside sync handler to simulate publisher blocked in graphsync.
-	hnd.syncMutex.Lock()
+	hnd.subscriber.scopedBlockHookMutex.Lock()
 
 	firstCid := chainLnks[2].(cidlink.Link).Cid
 	err = pub.SetRoot(context.Background(), firstCid)
@@ -104,7 +103,7 @@ func TestAnnounceReplace(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 
 	// Unblock the first handler goroutine
-	hnd.syncMutex.Unlock()
+	hnd.subscriber.scopedBlockHookMutex.Unlock()
 
 	// Validate that sink for first CID happened.
 	select {

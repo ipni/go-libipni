@@ -3,7 +3,6 @@ package dagsync
 import (
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	dt "github.com/filecoin-project/go-data-transfer/v2"
@@ -30,6 +29,8 @@ const (
 	defaultGsMaxOutRequests = 1024
 )
 
+type LastKnownSyncFunc func(peer.ID) (cid.Cid, bool)
+
 // config contains all options for configuring Subscriber.
 type config struct {
 	addrTTL   time.Duration
@@ -46,8 +47,8 @@ type config struct {
 
 	syncRecLimit selector.RecursionLimit
 
-	idleHandlerTTL    time.Duration
-	latestSyncHandler LatestSyncHandler
+	idleHandlerTTL time.Duration
+	lastKnownSync  LastKnownSyncFunc
 
 	resendAnnounce bool
 
@@ -189,44 +190,21 @@ func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
 	}
 }
 
-// LatestSyncHandler defines how to store the latest synced cid for a given
-// peer and how to fetch it. dagsync guarantees this will not be called
-// concurrently for the same peer, but it may be called concurrently for
-// different peers.
-type LatestSyncHandler interface {
-	SetLatestSync(peer peer.ID, cid cid.Cid)
-	GetLatestSync(peer peer.ID) (cid.Cid, bool)
-}
-
-type DefaultLatestSyncHandler struct {
-	m sync.Map
-}
-
-func (h *DefaultLatestSyncHandler) SetLatestSync(p peer.ID, c cid.Cid) {
-	log.Infow("Updating latest sync", "cid", c, "peer", p)
-	h.m.Store(p, c)
-}
-
-func (h *DefaultLatestSyncHandler) GetLatestSync(p peer.ID) (cid.Cid, bool) {
-	v, ok := h.m.Load(p)
-	if !ok {
-		return cid.Undef, false
-	}
-	return v.(cid.Cid), true
-}
-
-// UseLatestSyncHandler sets the latest sync handler to use.
-func UseLatestSyncHandler(h LatestSyncHandler) Option {
+// WithLastKnownSync sets a function that returns the last known sync, when it
+// is not already known to dagsync. This will generally be some CID that is
+// known to have already been seen, so that there is no need to fetch portions
+// of the dag before this.
+func WithLastKnownSync(f LastKnownSyncFunc) Option {
 	return func(c *config) error {
-		c.latestSyncHandler = h
+		c.lastKnownSync = f
 		return nil
 	}
 }
 
 type syncCfg struct {
-	alwaysUpdateLatest bool
-	scopedBlockHook    BlockHookFunc
-	segDepthLimit      int64
+	forceUpdateLatest bool
+	scopedBlockHook   BlockHookFunc
+	segDepthLimit     int64
 }
 
 type SyncOption func(*syncCfg)
@@ -240,9 +218,9 @@ func getSyncOpts(opts []SyncOption) syncCfg {
 	return cfg
 }
 
-func AlwaysUpdateLatest() SyncOption {
+func WithForceUpdateLatest() SyncOption {
 	return func(sc *syncCfg) {
-		sc.alwaysUpdateLatest = true
+		sc.forceUpdateLatest = true
 	}
 }
 

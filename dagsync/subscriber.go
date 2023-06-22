@@ -92,8 +92,9 @@ type Subscriber struct {
 	// transport.
 	httpPeerstore peerstore.Peerstore
 
-	idleHandlerTTL   time.Duration
-	latestSyncHander LatestSyncHandler
+	idleHandlerTTL    time.Duration
+	latestSyncHandler latestSyncHandler
+	lastKnownSync     LastKnownSyncFunc
 
 	segDepthLimit int64
 
@@ -116,9 +117,8 @@ type SyncFinished struct {
 	// PeerID identifies the peer this SyncFinished event pertains to. This is
 	// the publisher of the advertisement chain.
 	PeerID peer.ID
-	// A list of cids that this sync acquired. In order from latest to oldest.
-	// The latest cid will always be at the beginning.
-	SyncedCids []cid.Cid
+	// Count is the number of CID synced.
+	Count int
 }
 
 // handler holds state that is specific to a peer
@@ -127,10 +127,6 @@ type handler struct {
 	// syncMutex serializes the handling of individual syncs. This should only
 	// guard the actual handling of a sync, nothing else.
 	syncMutex sync.Mutex
-	// If this sync will update the latestSync state (via latestSyncHandler) then
-	// it should grab this lock to insure no other process updates that state
-	// concurrently.
-	latestSyncMu sync.Mutex
 	// peerID is the ID of the peer this handler is responsible for. This is
 	// the publisher of an advertisement chain.
 	peerID peer.ID
@@ -159,7 +155,8 @@ func wrapBlockHook() (*sync.RWMutex, map[peer.ID]func(peer.ID, cid.Cid), func(pe
 	}
 }
 
-// NewSubscriber creates a new Subscriber that process pubsub messages.
+// NewSubscriber creates a new Subscriber that processes pubsub messages and
+// syncs dags advertised using the specified selector.
 func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topic string, dss ipld.Node, options ...Option) (*Subscriber, error) {
 	opts, err := getOpts(options)
 	if err != nil {
@@ -185,11 +182,6 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 	httpPeerstore, err := pstoremem.NewPeerstore()
 	if err != nil {
 		return nil, err
-	}
-
-	latestSyncHandler := opts.latestSyncHandler
-	if latestSyncHandler == nil {
-		latestSyncHandler = &DefaultLatestSyncHandler{}
 	}
 
 	rcvr, err := announce.NewReceiver(host, topic,
@@ -222,13 +214,15 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		scopedBlockHook:      scopedBlockHook,
 		generalBlockHook:     opts.blockHook,
 
-		idleHandlerTTL:   opts.idleHandlerTTL,
-		latestSyncHander: latestSyncHandler,
+		idleHandlerTTL:    opts.idleHandlerTTL,
+		latestSyncHandler: latestSyncHandler{},
+		lastKnownSync:     opts.lastKnownSync,
 
 		segDepthLimit: opts.segDepthLimit,
 
 		receiver: rcvr,
 	}
+
 	// Start watcher to read announce messages.
 	go s.watch()
 	// Start distributor to send SyncFinished messages to interested parties.
@@ -244,34 +238,28 @@ func (s *Subscriber) HttpPeerStore() peerstore.Peerstore {
 	return s.httpPeerstore
 }
 
-// GetLatestSync returns the latest synced CID for the specified peer. If there
-// is no handler for the peer, then nil is returned. This does not mean that no
-// data is synced with that peer, it means that the Subscriber does not know
-// about it. Calling Sync() first may be necessary.
+// GetLatestSync returns the latest synced CID for the specified peer.
 func (s *Subscriber) GetLatestSync(peerID peer.ID) ipld.Link {
-	v, ok := s.latestSyncHander.GetLatestSync(peerID)
-	if !ok || v == cid.Undef {
-		return nil
+	c, ok := s.latestSyncHandler.getLatestSync(peerID)
+	if ok && c != cid.Undef {
+		return cidlink.Link{Cid: c}
 	}
-	return cidlink.Link{Cid: v}
+	if s.lastKnownSync != nil {
+		c, ok = s.lastKnownSync(peerID)
+		if ok && c != cid.Undef {
+			s.latestSyncHandler.setLatestSync(peerID, c)
+			return cidlink.Link{Cid: c}
+		}
+	}
+	return nil
 }
 
-// SetLatestSync sets the latest synced CID for a specified peer. If there is
-// no handler for the peer, then one is created without consulting any
-// AllowPeerFunc.
+// SetLatestSync sets the latest synced CID for a specified peer.
 func (s *Subscriber) SetLatestSync(peerID peer.ID, latestSync cid.Cid) error {
 	if latestSync == cid.Undef {
 		return errors.New("cannot set latest sync to undefined value")
 	}
-	hnd, err := s.getOrCreateHandler(peerID)
-	if err != nil {
-		return err
-	}
-
-	hnd.latestSyncMu.Lock()
-	s.latestSyncHander.SetLatestSync(peerID, latestSync)
-	hnd.latestSyncMu.Unlock()
-
+	s.latestSyncHandler.setLatestSync(peerID, latestSync)
 	return nil
 }
 
@@ -454,7 +442,7 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 		return cid.Undef, err
 	}
 
-	updateLatest := opts.alwaysUpdateLatest
+	updateLatest := opts.forceUpdateLatest
 	if nextCid == cid.Undef {
 		// Query the peer for the latest CID
 		nextCid, err = syncer.GetHead(ctx)
@@ -471,7 +459,8 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 
 		log.Infow("Sync queried head CID", "cid", nextCid)
 		if sel == nil {
-			// Update the latestSync only if no CID and no selector given.
+			// Update the latestSync only if no CID (syncing ads) and no
+			// selector given.
 			updateLatest = true
 		}
 	}
@@ -494,21 +483,10 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 
 	// Check for an existing handler for the specified peer (publisher). If
 	// none, create one if allowed.
-	hnd, err := s.getOrCreateHandler(peerInfo.ID)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	if updateLatest {
-		// Grab the latestSyncMu lock so that an async handler doesn't update
-		// the latestSync between when we call hnd.handle and when we actually
-		// updateLatest.
-		hnd.latestSyncMu.Lock()
-		defer hnd.latestSyncMu.Unlock()
-	}
+	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	hnd.syncMutex.Lock()
-	syncedCids, err := hnd.handle(ctx, nextCid, sel, wrapSel, syncer, opts.scopedBlockHook, opts.segDepthLimit)
+	syncCount, err := hnd.handle(ctx, nextCid, sel, wrapSel, syncer, opts.scopedBlockHook, opts.segDepthLimit)
 	hnd.syncMutex.Unlock()
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)
@@ -533,12 +511,7 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 	}
 
 	if updateLatest {
-		s.latestSyncHander.SetLatestSync(peerInfo.ID, nextCid)
-		s.inEvents <- SyncFinished{
-			Cid:        nextCid,
-			PeerID:     peerInfo.ID,
-			SyncedCids: syncedCids,
-		}
+		hnd.sendSyncFinishedEvent(nextCid, syncCount)
 	}
 
 	return nextCid, nil
@@ -562,7 +535,7 @@ func (s *Subscriber) distributeEvents() {
 }
 
 // getOrCreateHandler creates a handler for a specific peer
-func (s *Subscriber) getOrCreateHandler(peerID peer.ID) (*handler, error) {
+func (s *Subscriber) getOrCreateHandler(peerID peer.ID) *handler {
 	expires := time.Now().Add(s.idleHandlerTTL)
 
 	s.handlersMutex.Lock()
@@ -581,7 +554,7 @@ func (s *Subscriber) getOrCreateHandler(peerID peer.ID) (*handler, error) {
 		s.handlers[peerID] = hnd
 	}
 
-	return hnd, nil
+	return hnd
 }
 
 // idleHandlerCleaner periodically looks for idle handlers to remove. This
@@ -625,11 +598,7 @@ func (s *Subscriber) watch() {
 			break
 		}
 
-		hnd, err := s.getOrCreateHandler(amsg.PeerID)
-		if err != nil {
-			log.Errorw("Cannot create handler for announce", "err", err)
-			continue
-		}
+		hnd := s.getOrCreateHandler(amsg.PeerID)
 
 		peerInfo := peer.AddrInfo{
 			ID:    amsg.PeerID,
@@ -708,8 +677,8 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 
 			// Wait for any other goroutine, for this handler, to finish
 			// updating the latest sync.
-			h.latestSyncMu.Lock()
-			defer h.latestSyncMu.Unlock()
+			h.syncMutex.Lock()
+			defer h.syncMutex.Unlock()
 
 			if ctx.Err() != nil {
 				log.Warnw("Abandoned pending sync", "err", ctx.Err(), "publisher", h.peerID)
@@ -724,19 +693,14 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 			h.pendingSyncer = nil
 			h.qlock.Unlock()
 
-			h.syncMutex.Lock()
-			syncedCids, err := h.handle(ctx, c, h.subscriber.dss, true, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit)
-			h.syncMutex.Unlock()
+			syncCount, err := h.handle(ctx, c, h.subscriber.dss, true, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit)
 			if err != nil {
 				// Failed to handle the sync, so allow another announce for the same CID.
 				h.subscriber.receiver.UncacheCid(c)
 				log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
 				return
 			}
-
-			// Update latest head seen.
-			h.subscriber.latestSyncHander.SetLatestSync(h.peerID, c)
-			h.subscriber.inEvents <- SyncFinished{Cid: c, PeerID: h.peerID, SyncedCids: syncedCids}
+			h.sendSyncFinishedEvent(c, syncCount)
 		}()
 	} else {
 		log.Infow("Pending announce replaced by new", "previous_cid", h.pendingCid, "new_cid", nextCid, "publisher", h.peerID)
@@ -806,32 +770,37 @@ func (ss *segmentedSync) reset() {
 	ss.err = nil
 }
 
+func (h *handler) sendSyncFinishedEvent(c cid.Cid, count int) {
+	h.subscriber.latestSyncHandler.setLatestSync(h.peerID, c)
+	h.subscriber.inEvents <- SyncFinished{
+		Cid:    c,
+		PeerID: h.peerID,
+		Count:  count,
+	}
+}
+
 // handle processes a message from the peer that the handler is responsible for.
-func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wrapSel bool, syncer Syncer, bh BlockHookFunc, segdl int64) ([]cid.Cid, error) {
+func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wrapSel bool, syncer Syncer, bh BlockHookFunc, segdl int64) (int, error) {
 	log := log.With("cid", nextCid, "peer", h.peerID)
 
 	if wrapSel {
-		var latestSyncLink ipld.Link
-		latestSync, ok := h.subscriber.latestSyncHander.GetLatestSync(h.peerID)
-		if ok && latestSync != cid.Undef {
-			latestSyncLink = cidlink.Link{Cid: latestSync}
-		}
+		latestSyncLink := h.subscriber.GetLatestSync(h.peerID)
 		sel = ExploreRecursiveWithStopNode(h.subscriber.syncRecLimit, sel, latestSyncLink)
 	}
 
 	stopNode, stopNodeOK := getStopNode(sel)
 	if stopNodeOK && stopNode.(cidlink.Link).Cid == nextCid {
 		log.Infow("cid to sync to is the stop node. Nothing to do")
-		return nil, nil
+		return 0, nil
 	}
 
 	segSync := &segmentedSync{
 		nextSyncCid: &nextCid,
 	}
 
-	var syncedCids []cid.Cid
+	var syncedCount int
 	hook := func(p peer.ID, c cid.Cid) {
-		syncedCids = append(syncedCids, c)
+		syncedCount++
 		if bh != nil {
 			bh(p, c, segSync)
 		}
@@ -878,10 +847,10 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wr
 	if !syncBySegment {
 		err := syncer.Sync(ctx, nextCid, sel)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
-		log.Infow("Non-segmented sync completed", "syncedCidCount", len(syncedCids))
-		return syncedCids, nil
+		log.Infow("Non-segmented sync completed", "syncedCount", syncedCount)
+		return syncedCount, nil
 	}
 
 	var nextDepth = segdl
@@ -893,18 +862,18 @@ SegSyncLoop:
 		if !ok {
 			// This should not happen if we were able to extract origLimit from
 			// sel. If this happens there is likely a bug. Fail fast.
-			return nil, fmt.Errorf("failed to construct segment selector with recursion depth limit of %d", nextDepth)
+			return 0, fmt.Errorf("failed to construct segment selector with recursion depth limit of %d", nextDepth)
 		}
 		nextCid = *segSync.nextSyncCid
 		segSync.reset()
 		err := syncer.Sync(ctx, nextCid, segmentSel)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		depthSoFar += nextDepth
 
 		if segSync.err != nil {
-			return nil, segSync.err
+			return 0, segSync.err
 		}
 
 		// If hook action is not called, or next CID is set to cid.Undef then break out of the
@@ -931,10 +900,10 @@ SegSyncLoop:
 				nextDepth = remainingDepth
 			}
 		default:
-			return nil, fmt.Errorf("unknown recursion limit mode: %v", origLimit.Mode())
+			return 0, fmt.Errorf("unknown recursion limit mode: %v", origLimit.Mode())
 		}
 	}
 
-	log.Infow("Segmented sync completed", "syncedCidCount", len(syncedCids))
-	return syncedCids, nil
+	log.Infow("Segmented sync completed", "syncedCount", syncedCount)
+	return syncedCount, nil
 }
