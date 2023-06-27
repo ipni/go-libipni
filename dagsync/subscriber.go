@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,6 +120,9 @@ type SyncFinished struct {
 	PeerID peer.ID
 	// Count is the number of CID synced.
 	Count int
+	// AsyncErr is used to return a failure to asynchrounusly sync in response
+	// to an announcement.
+	AsyncErr error
 }
 
 // handler holds state that is specific to a peer
@@ -698,6 +702,17 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 				// Failed to handle the sync, so allow another announce for the same CID.
 				h.subscriber.receiver.UncacheCid(c)
 				log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
+				if strings.Contains(err.Error(), "response rejected") {
+					// A "response rejected" error happens when the indexer
+					// does no allow a provider. This is not an error with
+					// provider, so do not send an error event.
+					return
+				}
+				h.subscriber.inEvents <- SyncFinished{
+					Cid:      c,
+					PeerID:   h.peerID,
+					AsyncErr: err,
+				}
 				return
 			}
 			h.sendSyncFinishedEvent(c, syncCount)
