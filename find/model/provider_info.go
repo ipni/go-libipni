@@ -38,6 +38,11 @@ type ProviderInfo struct {
 	// Inactive means that no update has been received for the configured
 	// Discovery.PollInterval, and the publisher is not responding to polls.
 	Inactive bool `json:",omitempty"`
+	// LastError is a description of the last ingestion error to occur for this
+	// provider.
+	LastError string `json:",omitempty"`
+	// LastErrorTime is the time that LastError occurred.
+	LastErrorTime string `json:",omitempty"`
 }
 
 // ExtendedProviders contains chain-level and context-level extended provider
