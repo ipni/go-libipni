@@ -592,12 +592,12 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	}
 
 	var count int
-	for {
+	for done := false; !done; {
 		select {
 		case <-onSyncFinishedChan:
 			count++
 		case <-timer.C:
-			return
+			done = true
 		}
 	}
 	timer.Stop()
