@@ -574,26 +574,35 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 		syncDoneCh <- err
 	}()
 
+	timer := time.NewTimer(10 * time.Second)
 	select {
 	case <-syncDoneCh:
 		// Sync should have finished SyncFinished events are always delivered.
 		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
+	case <-timer.C:
 		t.Fatal("timed out waiting for sync to finish")
 	}
+	timer.Stop()
 
-	// Now pull from onSyncFinishedChan
+	timer.Reset(2 * time.Second)
 	select {
 	case <-onSyncFinishedChan:
-	default:
-		t.Fatal("Expected event to be ready to read from onSyncFinishedChan")
+	case <-timer.C:
+		t.Fatal("did not get event from onSyncFinishedChan")
 	}
 
-	select {
-	case <-onSyncFinishedChan:
-		t.Fatal("No more SyncFinished events expected")
-	default:
+	var count int
+	for {
+		select {
+		case <-onSyncFinishedChan:
+			count++
+		case <-timer.C:
+			return
+		}
 	}
+	timer.Stop()
+
+	require.Equal(t, 3, count)
 }
 
 func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, expectedCid cidlink.Link, watcher <-chan dagsync.SyncFinished) {
