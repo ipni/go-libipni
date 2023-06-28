@@ -114,6 +114,7 @@ func (pc *providerCache) getResults(ctx context.Context, pid peer.ID, ctxID []by
 		}
 		if pinfo.ExtendedProviders != nil {
 			for _, cxp := range pinfo.ExtendedProviders.Contextual {
+				cxp := cxp
 				wrapper.cxps[cxp.ContextID] = &cxp
 			}
 		}
@@ -141,6 +142,7 @@ func (pc *providerCache) getResults(ctx context.Context, pid peer.ID, ctxID []by
 	if contextualEpRecord, ok := wrapper.cxps[string(ctxID)]; ok {
 		override = contextualEpRecord.Override
 		for i, xpinfo := range contextualEpRecord.Providers {
+			xpinfo := xpinfo
 			xmd := contextualEpRecord.Metadatas[i]
 			// Skippng the main provider's record if its metadata is nil or is
 			// the same as the one retrieved from the indexer, because such EP
@@ -170,6 +172,7 @@ func (pc *providerCache) getResults(ctx context.Context, pid peer.ID, ctxID []by
 
 	// Adding chain-level EPs if such exist
 	for i, xpinfo := range wrapper.pinfo.ExtendedProviders.Providers {
+		xpinfo := xpinfo
 		xmd := wrapper.pinfo.ExtendedProviders.Metadatas[i]
 		// Skippng the main provider's record if its metadata is nil or is the
 		// same as the one retrieved from the indexer, because such EP record
