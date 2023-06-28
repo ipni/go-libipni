@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/channelqueue"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
@@ -68,10 +69,8 @@ type Subscriber struct {
 	// distributeEvents goroutine.
 	inEvents chan SyncFinished
 
-	// outEventsChans is a slice of channels, where each channel delivers a
-	// copy of a SyncFinished to an OnSyncFinished reader.
-	outEventsChans []chan<- SyncFinished
-	outEventsMutex sync.Mutex
+	addEventChan chan chan<- SyncFinished
+	rmEventChan  chan chan<- SyncFinished
 
 	// closing signals that the Subscriber is closing.
 	closing chan struct{}
@@ -208,6 +207,9 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		handlers: make(map[peer.ID]*handler),
 		inEvents: make(chan SyncFinished, 1),
 
+		addEventChan: make(chan chan<- SyncFinished),
+		rmEventChan:  make(chan chan<- SyncFinished),
+
 		dtSync:       dtSync,
 		httpSync:     httpsync.NewSync(lsys, opts.httpClient, blockHook),
 		syncRecLimit: opts.syncRecLimit,
@@ -307,14 +309,6 @@ func (s *Subscriber) doClose() error {
 
 	err = s.dtSync.Close()
 
-	// Dismiss any event readers.
-	s.outEventsMutex.Lock()
-	for _, ch := range s.outEventsChans {
-		close(ch)
-	}
-	s.outEventsChans = nil
-	s.outEventsMutex.Unlock()
-
 	// Stop the distribution goroutine.
 	close(s.inEvents)
 
@@ -333,33 +327,23 @@ func (s *Subscriber) OnSyncFinished() (<-chan SyncFinished, context.CancelFunc) 
 	// Channel is buffered to prevent distribute() from blocking if a reader is
 	// not reading the channel immediately.
 	log.Info("Configuring subscriber OnSyncFinished...")
-	ch := make(chan SyncFinished, 1)
 
-	s.outEventsMutex.Lock()
-	s.outEventsChans = append(s.outEventsChans, ch)
-	s.outEventsMutex.Unlock()
+	cq := channelqueue.New[SyncFinished](-1)
+	ch := cq.In()
+	s.addEventChan <- ch
 
 	cncl := func() {
-		// Drain channel to prevent deadlock if blocked writes are preventing
-		// the mutex from being unlocked.
-		go func() {
-			for range ch {
-			}
-		}()
-		s.outEventsMutex.Lock()
-		defer s.outEventsMutex.Unlock()
-		for i, ca := range s.outEventsChans {
-			if ca == ch {
-				s.outEventsChans[i] = s.outEventsChans[len(s.outEventsChans)-1]
-				s.outEventsChans[len(s.outEventsChans)-1] = nil
-				s.outEventsChans = s.outEventsChans[:len(s.outEventsChans)-1]
-				close(ch)
-				break
-			}
+		if ch == nil {
+			return
 		}
+		select {
+		case s.rmEventChan <- ch:
+		case <-s.closing:
+		}
+		ch = nil
 	}
 	log.Info("Subscriber OnSyncFinished configured.")
-	return ch, cncl
+	return cq.Out(), cncl
 }
 
 // RemoveHandler removes a handler for a publisher.
@@ -525,16 +509,35 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 // the even to all channels in outEventsChans. This delivers the SyncFinished
 // to all OnSyncFinished channel readers.
 func (s *Subscriber) distributeEvents() {
-	for event := range s.inEvents {
-		if !event.Cid.Defined() {
-			panic("SyncFinished event with undefined cid")
+	var outEventsChans []chan<- SyncFinished
+
+	for {
+		select {
+		case event, ok := <-s.inEvents:
+			if !ok {
+				// Dismiss any event readers.
+				for _, ch := range outEventsChans {
+					close(ch)
+				}
+				return
+			}
+			// Send update to all change notification channels.
+			for _, ch := range outEventsChans {
+				ch <- event
+			}
+		case ch := <-s.addEventChan:
+			outEventsChans = append(outEventsChans, ch)
+		case ch := <-s.rmEventChan:
+			for i, ca := range outEventsChans {
+				if ca == ch {
+					outEventsChans[i] = outEventsChans[len(outEventsChans)-1]
+					outEventsChans[len(outEventsChans)-1] = nil
+					outEventsChans = outEventsChans[:len(outEventsChans)-1]
+					close(ch)
+					break
+				}
+			}
 		}
-		// Send update to all change notification channels.
-		s.outEventsMutex.Lock()
-		for _, ch := range s.outEventsChans {
-			ch <- event
-		}
-		s.outEventsMutex.Unlock()
 	}
 }
 
@@ -682,9 +685,9 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 			// Wait for any other goroutine, for this handler, to finish
 			// updating the latest sync.
 			h.syncMutex.Lock()
-			defer h.syncMutex.Unlock()
 
 			if ctx.Err() != nil {
+				h.syncMutex.Unlock()
 				log.Warnw("Abandoned pending sync", "err", ctx.Err(), "publisher", h.peerID)
 				return
 			}
@@ -698,6 +701,7 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 			h.qlock.Unlock()
 
 			syncCount, err := h.handle(ctx, c, h.subscriber.dss, true, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit)
+			h.syncMutex.Unlock()
 			if err != nil {
 				// Failed to handle the sync, so allow another announce for the same CID.
 				h.subscriber.receiver.UncacheCid(c)
