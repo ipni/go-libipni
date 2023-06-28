@@ -8,6 +8,7 @@ import (
 type config struct {
 	httpClient *http.Client
 	dhstoreURL string
+	dhstoreAPI DHStoreAPI
 }
 
 // Option is a function that sets a value in a config.
@@ -43,6 +44,16 @@ func WithClient(c *http.Client) Option {
 func WithDHStoreURL(u string) Option {
 	return func(cfg *config) error {
 		cfg.dhstoreURL = u
+		return nil
+	}
+}
+
+// WithDHStoreAPI configures an interface to use for doing multihash and
+// metadata lookups with dhstore. If this is not configured, then dhstore
+// lookups are done using the dhstoreURL.
+func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
+	return func(cfg *config) error {
+		cfg.dhstoreAPI = dhsAPI
 		return nil
 	}
 }

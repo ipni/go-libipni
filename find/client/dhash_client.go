@@ -2,15 +2,12 @@ package client
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
 	b58 "github.com/mr-tron/base58/base58"
@@ -25,11 +22,17 @@ const (
 
 var log = logging.Logger("dhash-client")
 
+type DHStoreAPI interface {
+	// FindMultihash does a dh-multihash lookup and returns a
+	// model.FindResponse with EncryptedMultihashResults.
+	FindMultihash(context.Context, multihash.Multihash) ([]model.EncryptedMultihashResult, error)
+	FindMetadata(context.Context, []byte) ([]byte, error)
+}
+
 type DHashClient struct {
-	c             *http.Client
-	dhFindURL     *url.URL
-	dhMetadataURL *url.URL
-	pcache        *providerCache
+	c          *http.Client
+	dhstoreAPI DHStoreAPI
+	pcache     *providerCache
 }
 
 // NewDHashClient instantiates a new client that uses Reader Privacy API for
@@ -48,24 +51,32 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	dhsURL := sURL
-	if len(opts.dhstoreURL) > 0 {
-		dhsURL, err = parseURL(opts.dhstoreURL)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	pcache, err := newProviderCache(sURL, opts.httpClient)
 	if err != nil {
 		return nil, err
 	}
 
+	var dhsAPI DHStoreAPI
+	if opts.dhstoreAPI != nil {
+		dhsAPI = opts.dhstoreAPI
+	} else {
+		dhsURL := sURL
+		if len(opts.dhstoreURL) > 0 {
+			dhsURL, err = parseURL(opts.dhstoreURL)
+			if err != nil {
+				return nil, err
+			}
+		}
+		dhsAPI = &dhstoreHTTP{
+			c:             opts.httpClient,
+			dhFindURL:     dhsURL.JoinPath(findPath),
+			dhMetadataURL: dhsURL.JoinPath(metadataPath),
+		}
+	}
+
 	return &DHashClient{
-		c:             opts.httpClient,
-		dhFindURL:     dhsURL.JoinPath(findPath),
-		dhMetadataURL: dhsURL.JoinPath(metadataPath),
-		pcache:        pcache,
+		dhstoreAPI: dhsAPI,
+		pcache:     pcache,
 	}, nil
 }
 
@@ -100,40 +111,17 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan<- model.ProviderResult) error {
 	defer close(resChan)
 
-	smh, err := dhash.SecondMultihash(mh)
-	if err != nil {
-		return err
-	}
-	u := c.dhFindURL.JoinPath(smh.B58String())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Accept", "application/json")
-
-	resp, err := c.c.Do(req)
+	dhmh, err := dhash.SecondMultihash(mh)
 	if err != nil {
 		return err
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-
+	encryptedMultihashResults, err := c.dhstoreAPI.FindMultihash(ctx, dhmh)
 	if err != nil {
 		return err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return apierror.FromResponse(resp.StatusCode, body)
-	}
-
-	encResponse := &model.FindResponse{}
-	err = json.Unmarshal(body, encResponse)
-	if err != nil {
-		return err
-	}
-
-	for _, emhrs := range encResponse.EncryptedMultihashResults {
+	for _, emhrs := range encryptedMultihashResults {
 		for _, evk := range emhrs.EncryptedValueKeys {
 			vk, err := dhash.DecryptValueKey(evk, mh)
 			// skip errors as we don't want to fail the whole query, warn
@@ -176,43 +164,11 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 
 // fetchMetadata fetches and decrypts metadata from a remote server.
 func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, error) {
-	u := c.dhMetadataURL.JoinPath(b58.Encode(dhash.SHA256(vk, nil)))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	encryptedMetadata, err := c.dhstoreAPI.FindMetadata(ctx, vk)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("Accept", "application/json")
-
-	resp, err := c.c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apierror.FromResponse(resp.StatusCode, body)
-	}
-
-	type (
-		GetMetadataResponse struct {
-			EncryptedMetadata []byte `json:"EncryptedMetadata"`
-		}
-	)
-
-	findResponse := &GetMetadataResponse{}
-	err = json.Unmarshal(body, findResponse)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return dhash.DecryptMetadata(findResponse.EncryptedMetadata, vk)
+	return dhash.DecryptMetadata(encryptedMetadata, vk)
 }
 
 func parseURL(su string) (*url.URL, error) {
