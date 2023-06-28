@@ -18,7 +18,6 @@ import (
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
-	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
@@ -509,7 +508,7 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestBackpressureDoesntDeadlock(t *testing.T) {
+func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	t.Parallel()
 	pubHostSys := newHostSystem(t)
 	subHostSys := newHostSystem(t)
@@ -534,7 +533,7 @@ func TestBackpressureDoesntDeadlock(t *testing.T) {
 		Seed:   2,
 	}.BuildWithPrev(t, pubHostSys.lsys, nextLL)
 
-	// Purposefully not pulling from this channel yet to create backpressure
+	// Purposefully not pulling from this channel yet to build up events.
 	onSyncFinishedChan, cncl := sub.OnSyncFinished()
 	defer cncl()
 
@@ -575,52 +574,35 @@ func TestBackpressureDoesntDeadlock(t *testing.T) {
 		syncDoneCh <- err
 	}()
 
-	specificSyncDoneCh := make(chan error)
-	go func() {
-		// A sleep so that the upper sync starts first
-		time.Sleep(time.Second)
-		sel := dagsync.ExploreRecursiveWithStopNode(selector.RecursionLimitDepth(1), nil, nil)
-		_, err = sub.Sync(context.Background(), peerInfo, nextLL.(cidlink.Link).Cid, sel)
-		specificSyncDoneCh <- err
-	}()
-
+	timer := time.NewTimer(10 * time.Second)
 	select {
 	case <-syncDoneCh:
-		t.Fatal("sync should not have finished because it should be blocked by backpressure on the onSyncFinishedChan")
-	case err := <-specificSyncDoneCh:
-		// This sync should finish because it's not blocked by backpressure. This is
-		// because it's a simple sync not trying to setLatest. This is the kind of
-		// sync a user will call explicitly, so it should not be blocked by the
-		// backpressure of SyncFinishedEvent (it doesn't emit a SyncFinishedEvent).
+		// Sync should have finished SyncFinished events are always delivered.
 		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
+	case <-timer.C:
 		t.Fatal("timed out waiting for sync to finish")
 	}
+	timer.Stop()
 
-	// Now pull from onSyncFinishedChan
+	timer.Reset(2 * time.Second)
 	select {
 	case <-onSyncFinishedChan:
-	default:
-		t.Fatal("Expected event to be ready to read from onSyncFinishedChan")
+	case <-timer.C:
+		t.Fatal("did not get event from onSyncFinishedChan")
 	}
-	emptySyncFinishedChan(onSyncFinishedChan)
 
-	// Now the syncDoneCh should be able to proceed
-	err = <-syncDoneCh
-	require.NoError(t, err)
-
-	// So that we can close properly
-	emptySyncFinishedChan(onSyncFinishedChan)
-}
-
-func emptySyncFinishedChan(ch <-chan dagsync.SyncFinished) {
-	for {
+	var count int
+	for done := false; !done; {
 		select {
-		case <-ch:
-		default:
-			return
+		case <-onSyncFinishedChan:
+			count++
+		case <-timer.C:
+			done = true
 		}
 	}
+	timer.Stop()
+
+	require.Equal(t, 3, count)
 }
 
 func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, expectedCid cidlink.Link, watcher <-chan dagsync.SyncFinished) {
