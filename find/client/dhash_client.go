@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -30,7 +29,6 @@ type DHStoreAPI interface {
 }
 
 type DHashClient struct {
-	c          *http.Client
 	dhstoreAPI DHStoreAPI
 	pcache     *providerCache
 }
