@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
@@ -38,7 +39,8 @@ func sha256Multiple(dest []byte, payloads ...[]byte) []byte {
 	return h.Sum(dest)
 }
 
-// SecondMultihash calculates SHA256 over the multihash and wraps it into another multihash with DBL_SHA256 codec
+// SecondMultihash calculates SHA256 over the multihash and wraps it into
+// another multihash with DBL_SHA256 codec.
 func SecondMultihash(mh multihash.Multihash) (multihash.Multihash, error) {
 	digest := SHA256(append(secondHashPrefix, mh...), nil)
 	return multihash.Encode(digest, multihash.DBL_SHA2_256)
@@ -65,15 +67,16 @@ func DecryptAES(nonce, payload, passphrase []byte) ([]byte, error) {
 	return aesgcm.Open(nil, nonce, payload, nil)
 }
 
-// encryptAES uses AESGCM to encrypt the payload with the passphrase and a nonce derived from it.
-// returns nonce and encrypted bytes.
+// encryptAES uses AESGCM to encrypt the payload with the passphrase and a
+// nonce derived from it. returns nonce and encrypted bytes.
 func EncryptAES(payload, passphrase []byte) ([]byte, []byte, error) {
 	// Derive the encryption key
 	derivedKey := deriveKey([]byte(passphrase))
 
-	// Create initialization vector (nonse) to be used during encryption
-	// Nonce is derived from the passphrase concatenated with the payload so that the encrypted payloads
-	// for the same multihash can be compared to each other without having to decrypt them, as it's not possible.
+	// Create initialization vector (nonse) to be used during encryption Nonce
+	// is derived from the passphrase concatenated with the payload so that the
+	// encrypted payloads for the same multihash can be compared to each other
+	// without having to decrypt them, as it's not possible.
 	payloadLen := make([]byte, 8)
 	binary.LittleEndian.PutUint64(payloadLen, uint64(len(payload)))
 	nonce := sha256Multiple(nil, noncePrefix, payloadLen, payload, passphrase)[:nonceLen]
@@ -105,12 +108,14 @@ func EncryptValueKey(valKey, mh multihash.Multihash) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return append(nonce, encValKey...), nil
 }
 
 // DecryptMetadata decrypts metdata using the provided passphrase
 func DecryptMetadata(encMetadata, valueKey []byte) ([]byte, error) {
+	if len(encMetadata) <= nonceLen {
+		return nil, errors.New("encrypted metadata too short")
+	}
 	return DecryptAES(encMetadata[:nonceLen], encMetadata[nonceLen:], valueKey)
 }
 
@@ -120,7 +125,6 @@ func EncryptMetadata(metadata, valueKey []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return append(nonce, encValKey...), nil
 }
 
@@ -136,8 +140,8 @@ func CreateValueKey(pid peer.ID, ctxID []byte) []byte {
 // SplitValueKey splits value key into original components
 func SplitValueKey(valKey []byte) (peer.ID, []byte, error) {
 	// Extract multihiash from the value key before converting it to peer.ID.
-	// Extracting peer.ID directly would fail the length check. There is no overhead in doing that as
-	// none of the operations allocates new memory.
+	// Extracting peer.ID directly would fail the length check. There is no
+	// overhead in doing that as none of the operations allocates new memory.
 	l, mh, err := multihash.MHFromBytes(valKey)
 	if err != nil {
 		return "", nil, err

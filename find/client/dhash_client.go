@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"time"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/dhash"
@@ -13,28 +12,33 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-const (
-	metadataPath = "metadata"
-	// pcacheTTL is the time to live for provider info cache.
-	pcacheTTL = 5 * time.Minute
-)
+const metadataPath = "metadata"
 
 var log = logging.Logger("dhash-client")
 
+// DHStoreAPI defines multihash and metadata find functions. The default
+// implementation defines functions to do this over HTTP. A replacement
+// implementation that implements the interface can optionally be provided when
+// creating a DHashClient.
 type DHStoreAPI interface {
 	// FindMultihash does a dh-multihash lookup and returns a
 	// model.FindResponse with EncryptedMultihashResults.
 	FindMultihash(context.Context, multihash.Multihash) ([]model.EncryptedMultihashResult, error)
+	// FindMetadata takes a value-key-hash, does a metadata lookup, and returns
+	// encrypted metadata.
 	FindMetadata(context.Context, []byte) ([]byte, error)
 }
 
+// DHashClient is a client that does double-hashed lookups on a dhstore. By
+// default, it does multihash and metadata lookups over HTTP. If given a
+// DHStoreAPI, it can do the lookups any the underlying implementation defined.
 type DHashClient struct {
 	dhstoreAPI DHStoreAPI
 	pcache     *providerCache
 }
 
 // NewDHashClient instantiates a new client that uses Reader Privacy API for
-// querying data. It requires more roundtrips to fullfill one query however it
+// querying data. It requires more roundtrips to fulfill one query however it
 // also protects the user from a passive observer. dhstoreURL specifies the URL
 // of the double hashed store that can respond to find encrypted multihash and
 // find encrypted metadata requests.
@@ -49,7 +53,7 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	pcache, err := newProviderCache(sURL, opts.httpClient)
+	pcache, err := newProviderCache(sURL, opts.httpClient, opts.pcacheTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +139,7 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				continue
 			}
 
-			// fetch metadata
+			// fetch and decrypt metadata.
 			metadata, err := c.fetchMetadata(ctx, vk)
 			if err != nil {
 				log.Warnw("Error fetching metadata", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
@@ -160,9 +164,10 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 	return nil
 }
 
-// fetchMetadata fetches and decrypts metadata from a remote server.
+// fetchMetadata fetches metadata from a remote server using a value-key-hash,
+// and then decrypts the metadata using the value-key.
 func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, error) {
-	encryptedMetadata, err := c.dhstoreAPI.FindMetadata(ctx, vk)
+	encryptedMetadata, err := c.dhstoreAPI.FindMetadata(ctx, dhash.SHA256(vk, nil))
 	if err != nil {
 		return nil, err
 	}

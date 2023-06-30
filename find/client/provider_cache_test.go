@@ -95,7 +95,7 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 
 	u, err := url.Parse(testServer.URL)
 	require.NoError(t, err)
-	subject, err := newProviderCache(u, nil)
+	subject, err := newProviderCache(u, nil, defaultPcacheTTL)
 	require.NoError(t, err)
 
 	contextID := []byte("lobster")

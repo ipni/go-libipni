@@ -3,12 +3,19 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"time"
+)
+
+const (
+	// defaultPcacheTTL is the default time to live for provider info cache.
+	defaultPcacheTTL = 5 * time.Minute
 )
 
 type config struct {
 	httpClient *http.Client
 	dhstoreURL string
 	dhstoreAPI DHStoreAPI
+	pcacheTTL  time.Duration
 }
 
 // Option is a function that sets a value in a config.
@@ -18,6 +25,7 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		httpClient: http.DefaultClient,
+		pcacheTTL:  defaultPcacheTTL,
 	}
 	for i, opt := range opts {
 		if err := opt(&cfg); err != nil {
@@ -54,6 +62,14 @@ func WithDHStoreURL(u string) Option {
 func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
 	return func(cfg *config) error {
 		cfg.dhstoreAPI = dhsAPI
+		return nil
+	}
+}
+
+// WithPcacheTTL sets the providers-cache entry time-to-live duration.
+func WithPcacheTTL(ttl time.Duration) Option {
+	return func(cfg *config) error {
+		cfg.pcacheTTL = ttl
 		return nil
 	}
 }
