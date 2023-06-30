@@ -32,7 +32,7 @@ type providerCache struct {
 }
 
 // NewProviderCache creates a new provider cache that can be sahred across multiple clients.
-func newProviderCache(u *url.URL, c *http.Client) (*providerCache, error) {
+func newProviderCache(u *url.URL, c *http.Client, ttl time.Duration) (*providerCache, error) {
 	pUrl := u.JoinPath(providersPath)
 
 	if c == nil {
@@ -40,7 +40,7 @@ func newProviderCache(u *url.URL, c *http.Client) (*providerCache, error) {
 	}
 
 	return &providerCache{
-		ttl:    pcacheTTL,
+		ttl:    ttl,
 		pUrl:   pUrl,
 		c:      c,
 		pinfos: make(map[peer.ID]*pinfoWrapper),

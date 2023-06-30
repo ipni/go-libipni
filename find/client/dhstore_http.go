@@ -8,7 +8,6 @@ import (
 	"net/url"
 
 	"github.com/ipni/go-libipni/apierror"
-	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
 	b58 "github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
@@ -20,6 +19,7 @@ type dhstoreHTTP struct {
 	dhMetadataURL *url.URL
 }
 
+// FindMultihash implements DHStoreAPI.
 func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihash) ([]model.EncryptedMultihashResult, error) {
 	u := d.dhFindURL.JoinPath(dhmh.B58String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -52,8 +52,9 @@ func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihas
 	return encResponse.EncryptedMultihashResults, nil
 }
 
-func (d *dhstoreHTTP) FindMetadata(ctx context.Context, vk []byte) ([]byte, error) {
-	u := d.dhMetadataURL.JoinPath(b58.Encode(dhash.SHA256(vk, nil)))
+// FindMetadata implements DHStoreAPI.
+func (d *dhstoreHTTP) FindMetadata(ctx context.Context, hvk []byte) ([]byte, error) {
+	u := d.dhMetadataURL.JoinPath(b58.Encode(hvk))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
