@@ -16,6 +16,7 @@ type config struct {
 	dhstoreURL string
 	dhstoreAPI DHStoreAPI
 	pcacheTTL  time.Duration
+	preload    bool
 }
 
 // Option is a function that sets a value in a config.
@@ -72,6 +73,15 @@ func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
 func WithPcacheTTL(ttl time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.pcacheTTL = ttl
+		return nil
+	}
+}
+
+// WithPcachePreload enabled preloading the provider information cache.
+// Default is disabled.
+func WithPcachePreload(preload bool) Option {
+	return func(cfg *config) error {
+		cfg.preload = preload
 		return nil
 	}
 }

@@ -1,15 +1,23 @@
-// Package pcache provides a lock-free provider information bulk cache for high
+// Package pcache provides a lock-free provider information cache for high
 // performance concurrent reads.
+//
+// ProviderCache caches provider addresses and extended provider information,
+// which is the information that is needed for IPNI query results. Cached data
+// is retrieved concurrently without lock contention. This enables services
+// that require high-frequency concurrent cache reads in order to quickly
+// deliver IPNI find results.
+//
+// ## All Provider Information Cached
 //
 // The provider cache maintains a unifiied view of all provider information
 // across all data sources. Caching provider information in builk allows the
-// cached data to be refreshed with fewer fetches over the network.
+// cached data to be refreshed with fewer fetches over the network. This is
+// particularly important when there are multiple sources to fetch provider
+// information from.
 //
-// ProviderCache caches provider addresses and extended provider information.
-// This is the provider information that is needed for IPNI query results. This
-// cached data can be concurrently fetched without lock contention. This allows
-// for high-frequency concurrent cache reads, as is needed for services
-// delivering IPNI query results.
+// For services that only need information for a few providers, but want to use
+// the cache for its multiple data source merge capability, cache preloading
+// and automatic refresh can be disabled.
 //
 // ## Cache Refresh
 //

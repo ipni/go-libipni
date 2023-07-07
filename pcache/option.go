@@ -41,6 +41,10 @@ func getOpts(opts []Option) (config, error) {
 // WithPreload enables or disabled preloading the cache. If enabled, all
 // provider information is fetched from all sources before the cache is ready
 // to use.
+//
+// Enable preload for long-running services that anticipate getting provider
+// information for many providers. Disable preload for short-lived use or where
+// information is fetched for a small number of providers.
 func WithPreload(preload bool) Option {
 	return func(cfg *config) error {
 		cfg.preload = preload
@@ -59,7 +63,8 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithRefreshInterval sets the interval to wait between cache refreshes.
+// WithRefreshInterval sets the interval to wait between cache refreshes. If
+// set to 0, then automatic refresh is disabled.
 //
 // Default is 5 minutes
 func WithRefreshInterval(interval time.Duration) Option {

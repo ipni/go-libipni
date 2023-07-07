@@ -54,7 +54,10 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	pc, err := pcache.New(pcache.WithPreload(false), pcache.WithTTL(opts.pcacheTTL), pcache.WithSource(httpSrc))
+	pc, err := pcache.New(
+		pcache.WithPreload(opts.preload),
+		pcache.WithTTL(opts.pcacheTTL),
+		pcache.WithSource(httpSrc))
 	if err != nil {
 		return nil, err
 	}

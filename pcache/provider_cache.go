@@ -279,20 +279,25 @@ func (pc *ProviderCache) run(ctx context.Context, preload bool, refreshIn, ttl t
 		pc.refreshAll(ctx, ttl, seq, write)
 	}
 
-	t := time.NewTimer(refreshIn)
-	defer t.Stop()
+	var timerCh <-chan time.Time
+	var timer *time.Timer
+	if refreshIn != 0 {
+		timer = time.NewTimer(refreshIn)
+		defer timer.Stop()
+		timerCh = timer.C
+	}
 
 	for {
 		select {
-		case <-t.C:
+		case <-timerCh:
 			seq++
 			pc.refreshAll(ctx, ttl, seq, write)
-			t.Reset(refreshIn)
+			timer.Reset(refreshIn)
 		case req := <-pc.refreshReqs:
 			if req == nil {
 				continue
 			}
-			if req.ctx != nil && req.ctx.Err() != nil {
+			if req.ctx.Err() != nil {
 				continue
 			}
 			if req.pid == peer.ID("") {
@@ -303,7 +308,7 @@ func (pc *ProviderCache) run(ctx context.Context, preload bool, refreshIn, ttl t
 				}
 				continue
 			}
-			pinfo := pc.refreshOne(ctx, req.pid, ttl, seq, write)
+			pinfo := pc.fetchMissing(ctx, req.pid, ttl, seq, write)
 			if req.response != nil {
 				req.response <- pinfo
 			}
@@ -321,7 +326,10 @@ func (pc *ProviderCache) loadReadOnly() readOnly {
 	return readOnly{}
 }
 
-func (pc *ProviderCache) refreshOne(ctx context.Context, pid peer.ID, ttl time.Duration, seq uint, write map[peer.ID]*cacheInfo) *ProviderInfo {
+// fetchMissing fetches information about a single provider that is missing
+// from the cache. If that information cannot be fetched, then a negative cache
+// entry is created.
+func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time.Duration, seq uint, write map[peer.ID]*cacheInfo) *ProviderInfo {
 	_, ok := write[pid]
 	if ok {
 		// Stored by previous request.
