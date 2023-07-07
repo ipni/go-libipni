@@ -39,7 +39,9 @@ func getOpts(opts []Option) (config, error) {
 // round tripper / client.
 func WithClient(c *http.Client) Option {
 	return func(cfg *config) error {
-		cfg.httpClient = c
+		if c != nil {
+			cfg.httpClient = c
+		}
 		return nil
 	}
 }

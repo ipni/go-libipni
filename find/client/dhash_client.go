@@ -8,6 +8,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
+	"github.com/ipni/go-libipni/pcache"
 	b58 "github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
 )
@@ -34,7 +35,7 @@ type DHStoreAPI interface {
 // DHStoreAPI, it can do the lookups any the underlying implementation defined.
 type DHashClient struct {
 	dhstoreAPI DHStoreAPI
-	pcache     *providerCache
+	pcache     *pcache.ProviderCache
 }
 
 // NewDHashClient instantiates a new client that uses Reader Privacy API for
@@ -48,12 +49,12 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	sURL, err := parseURL(stiURL)
+	httpSrc, err := pcache.NewHTTPSource(stiURL, opts.httpClient)
 	if err != nil {
 		return nil, err
 	}
 
-	pcache, err := newProviderCache(sURL, opts.httpClient, opts.pcacheTTL)
+	pc, err := pcache.New(pcache.WithPreload(false), pcache.WithTTL(opts.pcacheTTL), pcache.WithSource(httpSrc))
 	if err != nil {
 		return nil, err
 	}
@@ -62,13 +63,16 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 	if opts.dhstoreAPI != nil {
 		dhsAPI = opts.dhstoreAPI
 	} else {
-		dhsURL := sURL
+		var dhsURL *url.URL
 		if len(opts.dhstoreURL) > 0 {
 			dhsURL, err = parseURL(opts.dhstoreURL)
-			if err != nil {
-				return nil, err
-			}
+		} else {
+			dhsURL, err = parseURL(stiURL)
 		}
+		if err != nil {
+			return nil, err
+		}
+
 		dhsAPI = &dhstoreHTTP{
 			c:             opts.httpClient,
 			dhFindURL:     dhsURL.JoinPath(findPath),
@@ -78,7 +82,7 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 
 	return &DHashClient{
 		dhstoreAPI: dhsAPI,
-		pcache:     pcache,
+		pcache:     pc,
 	}, nil
 }
 
@@ -146,7 +150,7 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				continue
 			}
 
-			prs, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
+			prs, err := c.pcache.GetResults(ctx, pid, ctxId, metadata)
 			if err != nil {
 				log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue
