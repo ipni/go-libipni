@@ -381,8 +381,25 @@ func (pc *ProviderCache) refreshOne(ctx context.Context, pid peer.ID, ttl time.D
 	pinfo := apiToCacheInfo(cinfo.addrInfo, cinfo.extended)
 	updates[pid] = pinfo
 
-	// Replace old readOnly with new.
-	pc.read.Store(&readOnly{m: read.m, u: updates})
+	// If the update map is small relative to the main map, do not generate a
+	// new main map yet.
+	if !needMerge(len(updates), len(read.m)) {
+		pc.read.Store(&readOnly{m: read.m, u: updates})
+		return pinfo
+	}
+
+	// Generate main map.
+	m := make(map[peer.ID]*ProviderInfo, len(write))
+	for pid := range write {
+		pinfo, ok := updates[pid]
+		if !ok {
+			pinfo = read.m[pid]
+		}
+		m[pid] = pinfo
+	}
+
+	// Replace old readOnly map with new.
+	pc.read.Store(&readOnly{m: m})
 
 	return pinfo
 }
@@ -473,7 +490,7 @@ func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq 
 
 	// If the update map is small relative to the main map, do not generate a
 	// new main map yet.
-	if len(updates)*4 < len(read.m) {
+	if !needMerge(len(updates), len(read.m)) {
 		pc.read.Store(&readOnly{m: read.m, u: updates})
 		return
 	}
@@ -522,6 +539,17 @@ func apiToCacheInfo(addrInfo peer.AddrInfo, extProviders *model.ExtendedProvider
 	}
 
 	return pinfo
+}
+
+// needMerge returns true if update set u should be merged into main set m, to
+// maintain the lowest overall cost of applying cache updates. The optimal time
+// to merge is when the sum(1..len(u)) > len(m). This is when the cumulative
+// cost of iterating u exceeds the cost of iterating m.
+//
+// For comparisons of different merge calculations, see:
+// https://go.dev/play/p/uxROTy8NxIk
+func needMerge(u, m int) bool {
+	return u*(u+1) > m*2
 }
 
 func maddrsEqual(a, b []multiaddr.Multiaddr) bool {
