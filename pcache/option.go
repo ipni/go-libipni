@@ -13,7 +13,6 @@ const (
 
 type config struct {
 	httpClient *http.Client
-	preload    bool
 	refreshIn  time.Duration
 	sources    []ProviderSource
 	ttl        time.Duration
@@ -26,7 +25,6 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		httpClient: http.DefaultClient,
-		preload:    true,
 		refreshIn:  defaultRefreshIn,
 		ttl:        defaultTTL,
 	}
@@ -36,20 +34,6 @@ func getOpts(opts []Option) (config, error) {
 		}
 	}
 	return cfg, nil
-}
-
-// WithPreload enables or disabled preloading the cache. If enabled, all
-// provider information is fetched from all sources before the cache is ready
-// to use.
-//
-// Enable preload for long-running services that anticipate getting provider
-// information for many providers. Disable preload for short-lived use or where
-// information is fetched for a small number of providers.
-func WithPreload(preload bool) Option {
-	return func(cfg *config) error {
-		cfg.preload = preload
-		return nil
-	}
 }
 
 // WithClient allows creation of the http client using an underlying network

@@ -55,21 +55,19 @@ type cacheInfo struct {
 	updateSeq  uint
 }
 
-type refreshReq struct {
-	ctx      context.Context
-	pid      peer.ID
-	response chan *ProviderInfo
-}
-
 // ProviderCache is a lock-free provider information cache for high-performance
 // concurrent reads.
 type ProviderCache struct {
-	read        atomic.Pointer[readOnly]
-	sources     []ProviderSource
-	stop        context.CancelFunc
-	stopped     chan struct{}
-	refreshReqs chan *refreshReq
+	read    atomic.Pointer[readOnly]
+	sources []ProviderSource
+	ttl     time.Duration
 
+	seq       uint
+	write     map[peer.ID]*cacheInfo
+	writeLock chan struct{}
+
+	refreshIn          time.Duration
+	refreshTimer       *time.Timer
 	updatesLastRefresh atomic.Uint32
 }
 
@@ -95,17 +93,16 @@ func New(options ...Option) (*ProviderCache, error) {
 	}
 
 	pc := &ProviderCache{
-		sources:     opts.sources,
-		stopped:     make(chan struct{}),
-		refreshReqs: make(chan *refreshReq),
+		sources:   opts.sources,
+		ttl:       opts.ttl,
+		refreshIn: opts.refreshIn,
+
+		write:     make(map[peer.ID]*cacheInfo),
+		writeLock: make(chan struct{}, 1),
 	}
 
-	var runCtx context.Context
-	runCtx, pc.stop = context.WithCancel(context.Background())
-	go pc.run(runCtx, opts.preload, opts.refreshIn, opts.ttl)
-
-	if opts.preload {
-		pc.refreshReqs <- nil
+	if opts.refreshIn != 0 {
+		pc.refreshTimer = time.NewTimer(pc.refreshIn)
 	}
 
 	return pc, nil
@@ -124,9 +121,22 @@ func (pc *ProviderCache) Get(ctx context.Context, pid peer.ID) (*ProviderInfo, e
 		pinfo, ok = read.m[pid]
 		if !ok {
 			// Cache miss.
-			return pc.refresh(ctx, pid, true)
+			return pc.fetchMissing(ctx, pid)
 		}
 	}
+
+	// If a refresh interval defined, and elapsed, then trigger a refresh.
+	if pc.refreshTimer != nil {
+		select {
+		case <-pc.refreshTimer.C:
+			go func() {
+				pc.Refresh(context.Background())
+				pc.refreshTimer.Reset(pc.refreshIn)
+			}()
+		default:
+		}
+	}
+
 	// Cache hit.
 	return pinfo, nil
 }
@@ -218,18 +228,6 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 	return results, nil
 }
 
-// Close stops the cache refresh goroutine.
-func (pc *ProviderCache) Close() {
-	pc.stop()
-	<-pc.stopped
-}
-
-// ForceRefresh initiates an immediate cache refresh.
-func (pc *ProviderCache) ForceRefresh(ctx context.Context, wait bool) error {
-	_, err := pc.refresh(ctx, "", wait)
-	return err
-}
-
 func (pc *ProviderCache) Len() int {
 	read := pc.loadReadOnly()
 	return len(read.m) + len(read.u)
@@ -238,85 +236,6 @@ func (pc *ProviderCache) Len() int {
 // UpdatesLastRefresh returns the number of updates seen by the last refresh.
 func (pc *ProviderCache) UpdatesLastRefresh() int {
 	return int(pc.updatesLastRefresh.Load())
-}
-
-func (pc *ProviderCache) refresh(ctx context.Context, pid peer.ID, wait bool) (*ProviderInfo, error) {
-	req := &refreshReq{
-		ctx: ctx,
-		pid: pid,
-	}
-	if wait {
-		req.response = make(chan *ProviderInfo, 1)
-	}
-
-	select {
-	case pc.refreshReqs <- req:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-pc.stopped:
-		return nil, ErrClosed
-	}
-
-	if !wait {
-		return nil, nil
-	}
-
-	select {
-	case pinfo := <-req.response:
-		return pinfo, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-pc.stopped:
-		return nil, ErrClosed
-	}
-}
-
-func (pc *ProviderCache) run(ctx context.Context, preload bool, refreshIn, ttl time.Duration) {
-	var seq uint
-	write := make(map[peer.ID]*cacheInfo)
-
-	if preload {
-		pc.refreshAll(ctx, ttl, seq, write)
-	}
-
-	var timerCh <-chan time.Time
-	var timer *time.Timer
-	if refreshIn != 0 {
-		timer = time.NewTimer(refreshIn)
-		defer timer.Stop()
-		timerCh = timer.C
-	}
-
-	for {
-		select {
-		case <-timerCh:
-			seq++
-			pc.refreshAll(ctx, ttl, seq, write)
-			timer.Reset(refreshIn)
-		case req := <-pc.refreshReqs:
-			if req == nil {
-				continue
-			}
-			if req.ctx.Err() != nil {
-				continue
-			}
-			if req.pid == peer.ID("") {
-				seq++
-				pc.refreshAll(ctx, ttl, seq, write)
-				if req.response != nil {
-					close(req.response)
-				}
-				continue
-			}
-			pinfo := pc.fetchMissing(ctx, req.pid, ttl, seq, write)
-			if req.response != nil {
-				req.response <- pinfo
-			}
-		case <-ctx.Done():
-			close(pc.stopped)
-			return
-		}
-	}
 }
 
 func (pc *ProviderCache) loadReadOnly() readOnly {
@@ -329,22 +248,33 @@ func (pc *ProviderCache) loadReadOnly() readOnly {
 // fetchMissing fetches information about a single provider that is missing
 // from the cache. If that information cannot be fetched, then a negative cache
 // entry is created.
-func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time.Duration, seq uint, write map[peer.ID]*cacheInfo) *ProviderInfo {
-	_, ok := write[pid]
+func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*ProviderInfo, error) {
+	select {
+	case pc.writeLock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() {
+		<-pc.writeLock
+	}()
+
+	seq := pc.seq
+
+	_, ok := pc.write[pid]
 	if ok {
 		// Stored by previous request.
 		read := pc.loadReadOnly()
 		pinfo, ok := read.u[pid]
 		if ok {
-			return pinfo
+			return pinfo, nil
 		}
 		pinfo, ok = read.m[pid]
 		if ok {
-			return pinfo
+			return pinfo, nil
 		}
 		// This should never happen. Appropriate to panic here.
 		log.Errorw("Cached data not found in read-only data", "provider", pid)
-		delete(write, pid)
+		delete(pc.write, pid)
 	}
 
 	cinfo := &cacheInfo{
@@ -357,7 +287,7 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time
 		if err != nil {
 			log.Warnw("Cannot fetch provider info", "err", err, "source", src)
 			if errors.Is(err, context.Canceled) {
-				return nil
+				return nil, ctx.Err()
 			}
 			continue
 		}
@@ -375,9 +305,9 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time
 	}
 	if len(cinfo.addrInfo.Addrs) == 0 {
 		// No provider info, cache negative entry.
-		cinfo.expiresAt = time.Now().Add(ttl)
+		cinfo.expiresAt = time.Now().Add(pc.ttl)
 	}
-	write[pid] = cinfo
+	pc.write[pid] = cinfo
 
 	read := pc.loadReadOnly()
 
@@ -393,12 +323,12 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time
 	// new main map yet.
 	if !needMerge(len(updates), len(read.m)) {
 		pc.read.Store(&readOnly{m: read.m, u: updates})
-		return pinfo
+		return pinfo, nil
 	}
 
 	// Generate main map.
-	m := make(map[peer.ID]*ProviderInfo, len(write))
-	for pid := range write {
+	m := make(map[peer.ID]*ProviderInfo, len(pc.write))
+	for pid := range pc.write {
 		pinfo, ok := updates[pid]
 		if !ok {
 			pinfo = read.m[pid]
@@ -409,17 +339,36 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID, ttl time
 	// Replace old readOnly map with new.
 	pc.read.Store(&readOnly{m: m})
 
-	return pinfo
+	return pinfo, nil
 }
 
-func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq uint, write map[peer.ID]*cacheInfo) {
+// Refresh initiates an immediate cache refresh.
+func (pc *ProviderCache) Refresh(ctx context.Context) error {
+	select {
+	case pc.writeLock <- struct{}{}:
+	default:
+		// Refresh already in progress, wait for it to finish.
+		select {
+		case pc.writeLock <- struct{}{}:
+			<-pc.writeLock
+		case <-ctx.Done():
+		}
+		return ctx.Err()
+	}
+	defer func() {
+		<-pc.writeLock
+	}()
+
+	pc.seq++
+	seq := pc.seq
+
 	for _, src := range pc.sources {
 		// Get provider info from each source.
 		fetchedInfos, err := src.FetchAll(ctx)
 		if err != nil {
 			log.Errorw("cannot fetch provider info", "err", err, "source", src)
-			if errors.Is(err, context.Canceled) {
-				return
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 			continue
 		}
@@ -427,11 +376,11 @@ func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq 
 		// Collect latest info on each provider.
 		for _, fetchedInfo := range fetchedInfos {
 			pid := fetchedInfo.AddrInfo.ID
-			cinfo, ok := write[pid]
+			cinfo, ok := pc.write[pid]
 			if !ok {
 				// Fetched new provider information, add it to cache.
 				lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
-				write[pid] = &cacheInfo{
+				pc.write[pid] = &cacheInfo{
 					addrInfo:   fetchedInfo.AddrInfo,
 					extended:   fetchedInfo.ExtendedProviders,
 					lastUpdate: lastUpdate,
@@ -472,17 +421,17 @@ func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq 
 	}
 
 	var updateCount int
-	for pid, cinfo := range write {
+	for pid, cinfo := range pc.write {
 		if cinfo.seq != seq {
 			// Provider no longer present.
 			now := time.Now()
 			if cinfo.expiresAt.IsZero() {
 				// Set removal timer for dead provider.
-				cinfo.expiresAt = now.Add(ttl)
+				cinfo.expiresAt = now.Add(pc.ttl)
 			} else if now.After(cinfo.expiresAt) {
 				// Dead provider or negative cache entry expired, remove from
 				// cache.
-				delete(write, pid)
+				delete(pc.write, pid)
 				// Store nil in updates to override anything in main map.
 				updates[pid] = nil
 				updateCount++
@@ -500,12 +449,12 @@ func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq 
 	// new main map yet.
 	if !needMerge(len(updates), len(read.m)) {
 		pc.read.Store(&readOnly{m: read.m, u: updates})
-		return
+		return nil
 	}
 
 	// Generate main map.
-	m := make(map[peer.ID]*ProviderInfo, len(write))
-	for pid := range write {
+	m := make(map[peer.ID]*ProviderInfo, len(pc.write))
+	for pid := range pc.write {
 		pinfo, ok := updates[pid]
 		if !ok {
 			pinfo = read.m[pid]
@@ -515,6 +464,7 @@ func (pc *ProviderCache) refreshAll(ctx context.Context, ttl time.Duration, seq 
 
 	// Replace old readOnly map with new.
 	pc.read.Store(&readOnly{m: m})
+	return nil
 }
 
 func apiToCacheInfo(addrInfo peer.AddrInfo, extProviders *model.ExtendedProviders) *ProviderInfo {

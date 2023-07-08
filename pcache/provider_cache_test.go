@@ -70,6 +70,7 @@ func TestProviderCache(t *testing.T) {
 	src := newMockSource(pid1)
 	pc, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
+	pc.Refresh(context.Background())
 	require.Equal(t, 1, pc.Len())
 	require.Equal(t, 1, src.callFetchAll)
 
@@ -89,7 +90,7 @@ func TestProviderCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 
-	err = pc.ForceRefresh(context.Background(), true)
+	err = pc.Refresh(context.Background())
 	require.NoError(t, err)
 
 	// Negative cache hit main
@@ -105,7 +106,7 @@ func TestProviderCache(t *testing.T) {
 	require.Nil(t, pinfo)
 
 	// Refresh single provider.
-	err = pc.ForceRefresh(context.Background(), true)
+	err = pc.Refresh(context.Background())
 	require.NoError(t, err)
 
 	// Should see new provider now.
@@ -113,8 +114,6 @@ func TestProviderCache(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, pid2, pinfo.AddrInfo.ID)
-
-	pc.Close()
 }
 
 func TestOverlappingSources(t *testing.T) {
@@ -132,6 +131,7 @@ func TestOverlappingSources(t *testing.T) {
 
 	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithSource(src2))
 	require.NoError(t, err)
+	pc.Refresh(context.Background())
 	require.Equal(t, 2, pc.Len())
 
 	// Check that provider pid1 came from src2, since it had the later
@@ -143,7 +143,7 @@ func TestOverlappingSources(t *testing.T) {
 
 	// Make src1 have newer timestamp for pid1.
 	src1.infos[0].LastAdvertisementTime = now.Add(5 * time.Second).Format(time.RFC3339)
-	err = pc.ForceRefresh(context.Background(), true)
+	err = pc.Refresh(context.Background())
 	require.NoError(t, err)
 
 	// Refresh and check that provider pid1 came from src1.
@@ -269,6 +269,7 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	// Test ProviderCache
 	subject, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
+	subject.Refresh(context.Background())
 	require.Equal(t, 1, subject.Len())
 
 	contextID := []byte("lobster")
@@ -304,7 +305,7 @@ func TestWithLiveSite(t *testing.T) {
 	// extended info changes.
 	t.Log("Waiting 20s to refresh and check for updates")
 	time.Sleep(20 * time.Second)
-	err = pc.ForceRefresh(context.Background(), true)
+	err = pc.Refresh(context.Background())
 	require.NoError(t, err)
 	t.Log("Updates last refresh:", pc.UpdatesLastRefresh())
 }
