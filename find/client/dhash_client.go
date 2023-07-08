@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 
@@ -43,18 +44,30 @@ type DHashClient struct {
 // also protects the user from a passive observer. dhstoreURL specifies the URL
 // of the double hashed store that can respond to find encrypted multihash and
 // find encrypted metadata requests.
-func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
+func NewDHashClient(options ...Option) (*DHashClient, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
 	}
 
-	httpSrc, err := pcache.NewHTTPSource(stiURL, opts.httpClient)
-	if err != nil {
-		return nil, err
+	if len(opts.providersURLs) == 0 {
+		if opts.dhstoreURL == "" {
+			return nil, errors.New("no source of provider information")
+		}
+		opts.providersURLs = []string{opts.dhstoreURL}
 	}
 
-	pc, err := pcache.New(pcache.WithTTL(opts.pcacheTTL), pcache.WithSource(httpSrc))
+	cacheOpts := make([]pcache.Option, 0, len(opts.providersURLs)+1)
+	for _, purl := range opts.providersURLs {
+		httpSrc, err := pcache.NewHTTPSource(purl, opts.httpClient)
+		if err != nil {
+			return nil, err
+		}
+		cacheOpts = append(cacheOpts, pcache.WithSource(httpSrc))
+	}
+	cacheOpts = append(cacheOpts, pcache.WithTTL(opts.pcacheTTL))
+
+	pc, err := pcache.New(cacheOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -67,15 +80,13 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 		dhsAPI = opts.dhstoreAPI
 	} else {
 		var dhsURL *url.URL
-		if len(opts.dhstoreURL) > 0 {
-			dhsURL, err = parseURL(opts.dhstoreURL)
-		} else {
-			dhsURL, err = parseURL(stiURL)
+		if opts.dhstoreURL == "" {
+			return nil, errors.New("WithDHStoreURL or WithDHStoreAPI must be specified")
 		}
+		dhsURL, err = parseURL(opts.dhstoreURL)
 		if err != nil {
 			return nil, err
 		}
-
 		dhsAPI = &dhstoreHTTP{
 			c:             opts.httpClient,
 			dhFindURL:     dhsURL.JoinPath(findPath),

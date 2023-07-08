@@ -71,10 +71,9 @@ func WithSource(src ProviderSource) Option {
 	}
 }
 
-// WithTTL sets the provider cache entry time-to-live duration. This is the
-// time that provider information remains in the cache after it is not longer
-// available from any of the original sources. The time should be long enough
-// to cover temporary unavailability of sources.
+// WithTTL sets the time that provider information remains in the cache after
+// it is not longer available from any of the original sources. The time should
+// be long enough to cover temporary unavailability of sources.
 //
 // This is also the amount of time that a negative cache entry will remain in
 // the cache before being removed at the next refresh.

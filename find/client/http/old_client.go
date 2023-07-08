@@ -16,5 +16,5 @@ type DHashClient = client.DHashClient
 
 // Deprecated: Use github.com/ipni/go-libipni/find/client
 func NewDHashClient(dhstoreURL, stiURL string, options ...client.Option) (*client.DHashClient, error) {
-	return client.NewDHashClient(stiURL, append(options, client.WithDHStoreURL(dhstoreURL))...)
+	return client.NewDHashClient(append(options, client.WithDHStoreURL(dhstoreURL), client.WithProvidersURLs(stiURL))...)
 }

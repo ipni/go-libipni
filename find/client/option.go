@@ -12,11 +12,12 @@ const (
 )
 
 type config struct {
-	httpClient *http.Client
-	dhstoreURL string
-	dhstoreAPI DHStoreAPI
-	pcacheTTL  time.Duration
-	preload    bool
+	httpClient    *http.Client
+	providersURLs []string
+	dhstoreURL    string
+	dhstoreAPI    DHStoreAPI
+	pcacheTTL     time.Duration
+	preload       bool
 }
 
 // Option is a function that sets a value in a config.
@@ -47,11 +48,21 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithDHStoreURL allows specifying different URLs for dhstore (/multihash and
-// /metadata endpoints) and storetheindex (/providers endpoint). This might be
-// useful as dhstore and storetheindex are different services that might not
-// necessarily be behind the same URL. However the data from both of them is
-// required to assemble results.
+// WithProvidersURLs specifies URLs for retrieving provider information
+// (/providers and /providers/<pid> endpoints). Multiple URLs may be given to
+// specify multiple sources of provider information,
+func WithProvidersURLs(urls ...string) Option {
+	return func(cfg *config) error {
+		for _, u := range urls {
+			cfg.providersURLs = append(cfg.providersURLs, u)
+		}
+		return nil
+	}
+}
+
+// WithDHStoreURL specifies a URL for dhstore (/multihash and /metadata
+// endpoints). If not specified then a WithDHStoreAPI should be used to provide
+// access to dhstore data.
 func WithDHStoreURL(u string) Option {
 	return func(cfg *config) error {
 		cfg.dhstoreURL = u
@@ -69,7 +80,8 @@ func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
 	}
 }
 
-// WithPcacheTTL sets the providers-cache entry time-to-live duration.
+// WithPcacheTTL sets the time that provider information remains in the cache
+// after it is not longer available from any of the original sources.
 func WithPcacheTTL(ttl time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.pcacheTTL = ttl
