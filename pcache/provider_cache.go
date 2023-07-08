@@ -66,6 +66,7 @@ type ProviderCache struct {
 	write     map[peer.ID]*cacheInfo
 	writeLock chan struct{}
 
+	needsRefresh       atomic.Bool
 	refreshIn          time.Duration
 	refreshTimer       *time.Timer
 	updatesLastRefresh atomic.Uint32
@@ -102,7 +103,9 @@ func New(options ...Option) (*ProviderCache, error) {
 	}
 
 	if opts.refreshIn != 0 {
-		pc.refreshTimer = time.NewTimer(pc.refreshIn)
+		pc.refreshTimer = time.AfterFunc(opts.refreshIn, func() {
+			pc.needsRefresh.Store(true)
+		})
 	}
 
 	return pc, nil
@@ -126,15 +129,11 @@ func (pc *ProviderCache) Get(ctx context.Context, pid peer.ID) (*ProviderInfo, e
 	}
 
 	// If a refresh interval defined, and elapsed, then trigger a refresh.
-	if pc.refreshTimer != nil {
-		select {
-		case <-pc.refreshTimer.C:
-			go func() {
-				pc.Refresh(context.Background())
-				pc.refreshTimer.Reset(pc.refreshIn)
-			}()
-		default:
-		}
+	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
+		go func() {
+			pc.Refresh(context.Background())
+			pc.refreshTimer.Reset(pc.refreshIn)
+		}()
 	}
 
 	// Cache hit.
