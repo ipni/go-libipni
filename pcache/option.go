@@ -47,10 +47,12 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithRefreshInterval sets the interval to wait between cache refreshes. If
-// set to 0, then automatic refresh is disabled.
+// WithRefreshInterval sets the minimul time interval to wait between automatic
+// cache refreshes. Once the interval has elapsed since the last refresh, an
+// new refresh is started at nest cache Get. If set to 0, then automatic
+// refresh is disabled.
 //
-// Default is 5 minutes
+// Default is 5 minutes.
 func WithRefreshInterval(interval time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.refreshIn = interval
