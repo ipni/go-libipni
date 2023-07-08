@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/find/model"
@@ -20,6 +21,10 @@ type httpSource struct {
 }
 
 func NewHTTPSource(srcURL string, client *http.Client) (ProviderSource, error) {
+	if !strings.HasPrefix(srcURL, "http://") && !strings.HasPrefix(srcURL, "https://") {
+		srcURL = "http://" + srcURL
+	}
+
 	u, err := url.Parse(srcURL)
 	if err != nil {
 		return nil, err

@@ -284,7 +284,7 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*Provid
 	for _, src := range pc.sources {
 		fetchedInfo, err := src.Fetch(ctx, pid)
 		if err != nil {
-			log.Warnw("Cannot fetch provider info", "err", err, "source", src)
+			log.Errorw("Cannot fetch provider info", "err", err, "source", src)
 			if errors.Is(err, context.Canceled) {
 				return nil, ctx.Err()
 			}
