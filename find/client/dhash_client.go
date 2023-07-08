@@ -65,14 +65,11 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 		}
 		cacheOpts = append(cacheOpts, pcache.WithSource(httpSrc))
 	}
-	cacheOpts = append(cacheOpts, pcache.WithTTL(opts.pcacheTTL))
+	cacheOpts = append(cacheOpts, pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload))
 
 	pc, err := pcache.New(cacheOpts...)
 	if err != nil {
 		return nil, err
-	}
-	if opts.preload {
-		pc.Refresh(context.Background())
 	}
 
 	var dhsAPI DHStoreAPI

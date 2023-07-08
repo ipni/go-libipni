@@ -70,7 +70,6 @@ func TestProviderCache(t *testing.T) {
 	src := newMockSource(pid1)
 	pc, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
-	pc.Refresh(context.Background())
 	require.Equal(t, 1, pc.Len())
 	require.Equal(t, 1, src.callFetchAll)
 
@@ -131,7 +130,6 @@ func TestOverlappingSources(t *testing.T) {
 
 	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithSource(src2))
 	require.NoError(t, err)
-	pc.Refresh(context.Background())
 	require.Equal(t, 2, pc.Len())
 
 	// Check that provider pid1 came from src2, since it had the later
@@ -269,7 +267,6 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	// Test ProviderCache
 	subject, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
-	subject.Refresh(context.Background())
 	require.Equal(t, 1, subject.Len())
 
 	contextID := []byte("lobster")

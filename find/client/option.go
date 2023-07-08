@@ -89,15 +89,11 @@ func WithPcacheTTL(ttl time.Duration) Option {
 	}
 }
 
-// WithPcachePreload enables or disabled preloading the cache. If enabled, all
-// provider information is fetched from all sources before the cache is ready
-// to use.
+// WithPcachePreload enables or disabled preloading the cache. Generally this
+// should be enabled, even for short-lived clients needing to look up few
+// providers.
 //
-// Enable preload for long-running services that anticipate getting provider
-// information for many providers. Disable preload for short-lived use or where
-// information is fetched for a small number of providers.
-//
-// Default is disabled.
+// Default is true (enabled).
 func WithPcachePreload(preload bool) Option {
 	return func(cfg *config) error {
 		cfg.preload = preload

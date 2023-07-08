@@ -102,6 +102,10 @@ func New(options ...Option) (*ProviderCache, error) {
 		writeLock: make(chan struct{}, 1),
 	}
 
+	if opts.preload {
+		_ = pc.Refresh(context.Background())
+	}
+
 	if opts.refreshIn != 0 {
 		pc.refreshTimer = time.AfterFunc(opts.refreshIn, func() {
 			pc.needsRefresh.Store(true)
