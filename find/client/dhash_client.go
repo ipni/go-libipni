@@ -81,7 +81,7 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 	} else {
 		var dhsURL *url.URL
 		if opts.dhstoreURL == "" {
-			return nil, errors.New("WithDHStoreURL or WithDHStoreAPI must be specified")
+			opts.dhstoreURL = opts.providersURLs[0]
 		}
 		dhsURL, err = parseURL(opts.dhstoreURL)
 		if err != nil {
