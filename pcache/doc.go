@@ -25,7 +25,7 @@
 //
 // ## Cache Refresh
 //
-// If the cache refresh interval is non-zero (default is 5 minutes), then after
+// If the cache refresh interval is non-zero (default is 2 minutes), then after
 // that time is elapsed, a timer sets a flag to indicate that refresh is
 // required. The next cache lookup checks the flag and if set, begins a refresh
 // asynchronously (in the background). When the refresh is done, the cached

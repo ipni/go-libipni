@@ -88,6 +88,10 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 	}, nil
 }
 
+func (c *DHashClient) PCache() *pcache.ProviderCache {
+	return c.pcache
+}
+
 // Find launches FindAsync in a separate go routine and assembles the result
 // into FindResponse as if it was a synchronous invocation.
 func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.FindResponse, error) {

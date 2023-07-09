@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultRefreshIn = 5 * time.Minute
+	defaultRefreshIn = 2 * time.Minute
 	defaultTTL       = 10 * time.Minute
 )
 
@@ -66,7 +66,7 @@ func WithClient(c *http.Client) Option {
 // new refresh is started at nest cache Get. If set to 0, then automatic
 // refresh is disabled.
 //
-// Default is 5 minutes.
+// Default is 2 minutes.
 func WithRefreshInterval(interval time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.refreshIn = interval
