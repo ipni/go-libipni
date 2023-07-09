@@ -57,17 +57,8 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 		opts.providersURLs = []string{opts.dhstoreURL}
 	}
 
-	cacheOpts := make([]pcache.Option, 0, len(opts.providersURLs)+1)
-	for _, purl := range opts.providersURLs {
-		httpSrc, err := pcache.NewHTTPSource(purl, opts.httpClient)
-		if err != nil {
-			return nil, err
-		}
-		cacheOpts = append(cacheOpts, pcache.WithSource(httpSrc))
-	}
-	cacheOpts = append(cacheOpts, pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload))
-
-	pc, err := pcache.New(cacheOpts...)
+	pc, err := pcache.New(pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload),
+		pcache.WithSourceURL(opts.providersURLs...))
 	if err != nil {
 		return nil, err
 	}

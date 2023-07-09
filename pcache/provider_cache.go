@@ -10,7 +10,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 )
 
 var log = logging.Logger("pcache")
@@ -24,35 +23,6 @@ var ErrClosed = errors.New("cache closed")
 type ProviderSource interface {
 	Fetch(context.Context, peer.ID) (*model.ProviderInfo, error)
 	FetchAll(context.Context) ([]*model.ProviderInfo, error)
-}
-
-// CtxExtendedInfo contains cached contextual extended provider information.
-type CtxExtendedInfo struct {
-	Override  bool
-	Providers []peer.AddrInfo
-	Metadatas [][]byte
-}
-
-// ExtendedInfo contains cached extended provider information.
-type ExtendedInfo struct {
-	CtxExtended map[string]CtxExtendedInfo
-	Providers   []peer.AddrInfo
-	Metadatas   [][]byte
-}
-
-// ProviderInfo contains cached provider information.
-type ProviderInfo struct {
-	AddrInfo peer.AddrInfo
-	Extended *ExtendedInfo
-}
-
-type cacheInfo struct {
-	addrInfo   peer.AddrInfo
-	extended   *model.ExtendedProviders
-	expiresAt  time.Time
-	lastUpdate time.Time
-	seq        uint
-	updateSeq  uint
 }
 
 // ProviderCache is a lock-free provider information cache for high-performance
@@ -72,14 +42,37 @@ type ProviderCache struct {
 	updatesLastRefresh atomic.Uint32
 }
 
+// cacheInfo contains writable cache info.
+type cacheInfo struct {
+	provider   *model.ProviderInfo
+	expiresAt  time.Time
+	lastUpdate time.Time
+	seq        uint
+	updateSeq  uint
+}
+
+// ctxExtendedInfo contains cached read-only contextual extended provider
+// information.
+type ctxExtendedInfo struct {
+	override  bool
+	providers []peer.AddrInfo
+	metadatas [][]byte
+}
+
+// readProviderInfo contains cached read-only provider information.
+type readProviderInfo struct {
+	provider    *model.ProviderInfo
+	ctxExtended map[string]ctxExtendedInfo
+}
+
 // readOnly is an immutable struct stored atomically in the cache read field.
 // It contains two maps of provider ID to serialized provider info. The m map
 // is the main cache data and the u map contains updates that have not yet been
 // moved into the main map. The reason for the u map is so that a small number
 // of updates do not cause the entire main map to be regenerated.
 type readOnly struct {
-	m map[peer.ID]*ProviderInfo
-	u map[peer.ID]*ProviderInfo
+	m map[peer.ID]*readProviderInfo
+	u map[peer.ID]*readProviderInfo
 }
 
 // New creates a new provider cache.
@@ -115,33 +108,37 @@ func New(options ...Option) (*ProviderCache, error) {
 	return pc, nil
 }
 
-// Get returns the provider information for the provider specified by pid. If
-// provider information is not available, then a nil slice is returned. An
-// error results from the context being canceled or the cache closing.
-//
-// Do not modify values in the returned ProviderInfo.
-func (pc *ProviderCache) Get(ctx context.Context, pid peer.ID) (*ProviderInfo, error) {
+func (pc *ProviderCache) Get(ctx context.Context, pid peer.ID) (*model.ProviderInfo, error) {
+	rpi, err := pc.getReadOnly(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	if rpi == nil {
+		return nil, nil
+	}
+	return rpi.provider, nil
+}
+
+func (pc *ProviderCache) List() []*model.ProviderInfo {
 	read := pc.loadReadOnly()
-
-	pinfo, ok := read.u[pid]
-	if !ok {
-		pinfo, ok = read.m[pid]
-		if !ok {
-			// Cache miss.
-			return pc.fetchMissing(ctx, pid)
-		}
+	size := len(read.m) + len(read.u)
+	if size == 0 {
+		return nil
 	}
-
-	// If a refresh interval defined, and elapsed, then trigger a refresh.
-	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
-		go func() {
-			pc.Refresh(context.Background())
-			pc.refreshTimer.Reset(pc.refreshIn)
-		}()
+	m := make(map[peer.ID]*model.ProviderInfo, size)
+	for pid, rpi := range read.m {
+		m[pid] = rpi.provider
 	}
-
-	// Cache hit.
-	return pinfo, nil
+	for pid, rpi := range read.u {
+		m[pid] = rpi.provider
+	}
+	pinfos := make([]*model.ProviderInfo, len(m))
+	var i int
+	for _, pi := range m {
+		pinfos[i] = pi
+		i++
+	}
+	return pinfos
 }
 
 // GetResults retrieves information about the provicer specified by pid and
@@ -149,13 +146,13 @@ func (pc *ProviderCache) Get(ctx context.Context, pid peer.ID) (*ProviderInfo, e
 // is not available, then a nil slice is returned. An error results from the
 // context being canceled or the cache closing.
 func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, metadata []byte) ([]model.ProviderResult, error) {
-	pinfo, err := pc.Get(ctx, pid)
+	rpi, err := pc.getReadOnly(ctx, pid)
 	if err != nil {
 		// Context canceled or cache closed.
 		return nil, err
 	}
 	// Could not fetch info for specified provider.
-	if pinfo == nil {
+	if rpi == nil {
 		return nil, nil
 	}
 
@@ -163,11 +160,11 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 	results = append(results, model.ProviderResult{
 		ContextID: ctxID,
 		Metadata:  metadata,
-		Provider:  &pinfo.AddrInfo,
+		Provider:  &rpi.provider.AddrInfo,
 	})
 
-	// return results if there are no further extended providers to unpack
-	if pinfo.Extended == nil {
+	// Return results if there are no further extended providers to unpack.
+	if rpi.provider.ExtendedProviders == nil {
 		return results, nil
 	}
 
@@ -176,11 +173,11 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 	var override bool
 
 	// Adding context-level EPs if they exist
-	ctxExtended, ok := pinfo.Extended.CtxExtended[string(ctxID)]
+	ctxExtended, ok := rpi.ctxExtended[string(ctxID)]
 	if ok {
-		override = ctxExtended.Override
-		for i, xpinfo := range ctxExtended.Providers {
-			xmd := ctxExtended.Metadatas[i]
+		override = ctxExtended.override
+		for i, xpinfo := range ctxExtended.providers {
+			xmd := ctxExtended.metadatas[i]
 			// Skippng the main provider's record if its metadata is nil or is
 			// the same as the one retrieved from the indexer, because such EP
 			// record does not advertise any new protocol.
@@ -201,14 +198,15 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 		}
 	}
 
-	// If override is true then do not include chain-level EPs
+	// If override is true then do not include chain-level EPs.
 	if override {
 		return results, nil
 	}
 
 	// Adding chain-level EPs if such exist
-	for i, xpinfo := range pinfo.Extended.Providers {
-		xmd := pinfo.Extended.Metadatas[i]
+	extended := rpi.provider.ExtendedProviders
+	for i, xpinfo := range extended.Providers {
+		xmd := extended.Metadatas[i]
 		// Skippng the main provider's record if its metadata is nil or is the
 		// same as the one retrieved from the indexer, because such EP record
 		// does not advertise any new protocol.
@@ -234,115 +232,6 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 func (pc *ProviderCache) Len() int {
 	read := pc.loadReadOnly()
 	return len(read.m) + len(read.u)
-}
-
-// UpdatesLastRefresh returns the number of updates seen by the last refresh.
-func (pc *ProviderCache) UpdatesLastRefresh() int {
-	return int(pc.updatesLastRefresh.Load())
-}
-
-func (pc *ProviderCache) loadReadOnly() readOnly {
-	if p := pc.read.Load(); p != nil {
-		return *p
-	}
-	return readOnly{}
-}
-
-// fetchMissing fetches information about a single provider that is missing
-// from the cache. If that information cannot be fetched, then a negative cache
-// entry is created.
-func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*ProviderInfo, error) {
-	select {
-	case pc.writeLock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	defer func() {
-		<-pc.writeLock
-	}()
-
-	seq := pc.seq
-
-	_, ok := pc.write[pid]
-	if ok {
-		// Stored by previous request.
-		read := pc.loadReadOnly()
-		pinfo, ok := read.u[pid]
-		if ok {
-			return pinfo, nil
-		}
-		pinfo, ok = read.m[pid]
-		if ok {
-			return pinfo, nil
-		}
-		// This should never happen. Appropriate to panic here.
-		log.Errorw("Cached data not found in read-only data", "provider", pid)
-		delete(pc.write, pid)
-	}
-
-	cinfo := &cacheInfo{
-		seq:       seq,
-		updateSeq: seq,
-	}
-
-	for _, src := range pc.sources {
-		fetchedInfo, err := src.Fetch(ctx, pid)
-		if err != nil {
-			log.Errorw("Cannot fetch provider info", "err", err, "source", src)
-			if errors.Is(err, context.Canceled) {
-				return nil, ctx.Err()
-			}
-			continue
-		}
-		if fetchedInfo == nil {
-			continue
-		}
-		lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
-		if !lastUpdate.After(cinfo.lastUpdate) {
-			// Skip - not newer that what is here already.
-			continue
-		}
-		cinfo.lastUpdate = lastUpdate
-		cinfo.addrInfo = fetchedInfo.AddrInfo
-		cinfo.extended = fetchedInfo.ExtendedProviders
-	}
-	if len(cinfo.addrInfo.Addrs) == 0 {
-		// No provider info, cache negative entry.
-		cinfo.expiresAt = time.Now().Add(pc.ttl)
-	}
-	pc.write[pid] = cinfo
-
-	read := pc.loadReadOnly()
-
-	// Regenerate and add to extended read map.
-	updates := make(map[peer.ID]*ProviderInfo, len(read.u)+1)
-	for id, pinfo := range read.u {
-		updates[id] = pinfo
-	}
-	pinfo := apiToCacheInfo(cinfo.addrInfo, cinfo.extended)
-	updates[pid] = pinfo
-
-	// If the update map is small relative to the main map, do not generate a
-	// new main map yet.
-	if !needMerge(len(updates), len(read.m)) {
-		pc.read.Store(&readOnly{m: read.m, u: updates})
-		return pinfo, nil
-	}
-
-	// Generate main map.
-	m := make(map[peer.ID]*ProviderInfo, len(pc.write))
-	for pid := range pc.write {
-		pinfo, ok := updates[pid]
-		if !ok {
-			pinfo = read.m[pid]
-		}
-		m[pid] = pinfo
-	}
-
-	// Replace old readOnly map with new.
-	pc.read.Store(&readOnly{m: m})
-
-	return pinfo, nil
 }
 
 // Refresh initiates an immediate cache refresh.
@@ -384,8 +273,7 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 				// Fetched new provider information, add it to cache.
 				lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
 				pc.write[pid] = &cacheInfo{
-					addrInfo:   fetchedInfo.AddrInfo,
-					extended:   fetchedInfo.ExtendedProviders,
+					provider:   fetchedInfo,
 					lastUpdate: lastUpdate,
 					seq:        seq,
 					updateSeq:  seq,
@@ -401,16 +289,9 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 				// Skip - not newer than what is here already.
 				continue
 			}
+			// Source has later advertisement in chain, so update cache.
 			cinfo.lastUpdate = lastUpdate
-
-			if maddrsEqual(cinfo.addrInfo.Addrs, fetchedInfo.AddrInfo.Addrs) &&
-				extendedEqual(cinfo.extended, fetchedInfo.ExtendedProviders) {
-				// Skip - addresses and extended info still the same.
-				continue
-			}
-			// Addresses or entended info changed.
-			cinfo.addrInfo = fetchedInfo.AddrInfo
-			cinfo.extended = fetchedInfo.ExtendedProviders
+			cinfo.provider = fetchedInfo
 			cinfo.updateSeq = seq // updated provider info
 		}
 	}
@@ -418,9 +299,9 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 	read := pc.loadReadOnly()
 
 	// Shallow-copy update map.
-	updates := make(map[peer.ID]*ProviderInfo, len(read.u))
-	for pid, pinfo := range read.u {
-		updates[pid] = pinfo
+	updates := make(map[peer.ID]*readProviderInfo, len(read.u))
+	for pid, rpi := range read.u {
+		updates[pid] = rpi
 	}
 
 	var updateCount int
@@ -441,7 +322,7 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 			}
 		} else if cinfo.updateSeq == seq {
 			// Address updated, update read-only data.
-			updates[pid] = apiToCacheInfo(cinfo.addrInfo, cinfo.extended)
+			updates[pid] = apiToCacheInfo(cinfo.provider)
 			updateCount++
 		}
 	}
@@ -456,13 +337,13 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 	}
 
 	// Generate main map.
-	m := make(map[peer.ID]*ProviderInfo, len(pc.write))
+	m := make(map[peer.ID]*readProviderInfo, len(pc.write))
 	for pid := range pc.write {
-		pinfo, ok := updates[pid]
+		rpi, ok := updates[pid]
 		if !ok {
-			pinfo = read.m[pid]
+			rpi = read.m[pid]
 		}
-		m[pid] = pinfo
+		m[pid] = rpi
 	}
 
 	// Replace old readOnly map with new.
@@ -470,36 +351,171 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func apiToCacheInfo(addrInfo peer.AddrInfo, extProviders *model.ExtendedProviders) *ProviderInfo {
+// UpdatesLastRefresh returns the number of updates seen by the last refresh.
+func (pc *ProviderCache) UpdatesLastRefresh() int {
+	return int(pc.updatesLastRefresh.Load())
+}
+
+// get returns the provider information for the provider specified by pid. If
+// provider information is not available, then a nil slice is returned. An
+// error results from the context being canceled or the cache closing.
+//
+// Do not modify values in the returned readProviderInfo.
+func (pc *ProviderCache) getReadOnly(ctx context.Context, pid peer.ID) (*readProviderInfo, error) {
+	read := pc.loadReadOnly()
+
+	rpi, ok := read.u[pid]
+	if !ok {
+		rpi, ok = read.m[pid]
+		if !ok {
+			// Cache miss.
+			var err error
+			rpi, err = pc.fetchMissing(ctx, pid)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// If a refresh interval defined, and elapsed, then trigger a refresh.
+	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
+		go func() {
+			pc.Refresh(context.Background())
+			pc.refreshTimer.Reset(pc.refreshIn)
+		}()
+	}
+
+	// Cache hit.
+	return rpi, nil
+}
+
+func (pc *ProviderCache) loadReadOnly() readOnly {
+	if p := pc.read.Load(); p != nil {
+		return *p
+	}
+	return readOnly{}
+}
+
+// fetchMissing fetches information about a single provider that is missing
+// from the cache. If that information cannot be fetched, then a negative cache
+// entry is created.
+func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*readProviderInfo, error) {
+	select {
+	case pc.writeLock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() {
+		<-pc.writeLock
+	}()
+
+	seq := pc.seq
+
+	_, ok := pc.write[pid]
+	if ok {
+		// Stored by previous request.
+		read := pc.loadReadOnly()
+		rpi, ok := read.u[pid]
+		if ok {
+			return rpi, nil
+		}
+		rpi, ok = read.m[pid]
+		if ok {
+			return rpi, nil
+		}
+		// This should never happen. Appropriate to panic here.
+		log.Errorw("Cached data not found in read-only data", "provider", pid)
+		delete(pc.write, pid)
+	}
+
+	cinfo := &cacheInfo{
+		seq:       seq,
+		updateSeq: seq,
+	}
+
+	for _, src := range pc.sources {
+		fetchedInfo, err := src.Fetch(ctx, pid)
+		if err != nil {
+			log.Errorw("Cannot fetch provider info", "err", err, "source", src)
+			if errors.Is(err, context.Canceled) {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if fetchedInfo == nil {
+			continue
+		}
+		lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
+		if !lastUpdate.After(cinfo.lastUpdate) {
+			// Skip - not newer that what is here already.
+			continue
+		}
+		cinfo.lastUpdate = lastUpdate
+		cinfo.provider = fetchedInfo
+	}
+	if cinfo.provider == nil {
+		// No provider info, cache negative entry.
+		cinfo.expiresAt = time.Now().Add(pc.ttl)
+	}
+	pc.write[pid] = cinfo
+
+	read := pc.loadReadOnly()
+
+	// Regenerate and add to extended read map.
+	updates := make(map[peer.ID]*readProviderInfo, len(read.u)+1)
+	for id, rpi := range read.u {
+		updates[id] = rpi
+	}
+	rpinfo := apiToCacheInfo(cinfo.provider)
+	updates[pid] = rpinfo
+
+	// If the update map is small relative to the main map, do not generate a
+	// new main map yet.
+	if !needMerge(len(updates), len(read.m)) {
+		pc.read.Store(&readOnly{m: read.m, u: updates})
+		return rpinfo, nil
+	}
+
+	// Generate main map.
+	m := make(map[peer.ID]*readProviderInfo, len(pc.write))
+	for pid := range pc.write {
+		rpi, ok := updates[pid]
+		if !ok {
+			rpi = read.m[pid]
+		}
+		m[pid] = rpi
+	}
+
+	// Replace old readOnly map with new.
+	pc.read.Store(&readOnly{m: m})
+
+	return rpinfo, nil
+}
+
+func apiToCacheInfo(provider *model.ProviderInfo) *readProviderInfo {
 	// Return nil if this is a negative cache entry.
-	if len(addrInfo.Addrs) == 0 {
+	if provider == nil {
 		return nil
 	}
 
-	pinfo := &ProviderInfo{
-		AddrInfo: addrInfo,
+	rpinfo := &readProviderInfo{
+		provider: provider,
 	}
 
-	if extProviders != nil {
-		pinfo.Extended = &ExtendedInfo{
-			Providers: extProviders.Providers,
-			Metadatas: extProviders.Metadatas,
-		}
-
-		if len(extProviders.Contextual) != 0 {
-			cxps := make(map[string]CtxExtendedInfo, len(extProviders.Contextual))
-			for _, cxp := range extProviders.Contextual {
-				cxps[cxp.ContextID] = CtxExtendedInfo{
-					Override:  cxp.Override,
-					Providers: cxp.Providers,
-					Metadatas: cxp.Metadatas,
-				}
+	extProviders := provider.ExtendedProviders
+	if extProviders != nil && len(extProviders.Contextual) != 0 {
+		cxps := make(map[string]ctxExtendedInfo, len(extProviders.Contextual))
+		for _, cxp := range extProviders.Contextual {
+			cxps[cxp.ContextID] = ctxExtendedInfo{
+				override:  cxp.Override,
+				providers: cxp.Providers,
+				metadatas: cxp.Metadatas,
 			}
-			pinfo.Extended.CtxExtended = cxps
 		}
+		rpinfo.ctxExtended = cxps
 	}
 
-	return pinfo
+	return rpinfo
 }
 
 // needMerge returns true if update set u should be merged into main set m, to
@@ -511,68 +527,4 @@ func apiToCacheInfo(addrInfo peer.AddrInfo, extProviders *model.ExtendedProvider
 // https://go.dev/play/p/uxROTy8NxIk
 func needMerge(u, m int) bool {
 	return u*(u+1) > m*2
-}
-
-func maddrsEqual(a, b []multiaddr.Multiaddr) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !a[i].Equal(b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func extendedEqual(a, b *model.ExtendedProviders) bool {
-	if a == b {
-		return true
-	}
-	if len(a.Providers) != len(b.Providers) {
-		return false
-	}
-	if len(a.Metadatas) != len(b.Metadatas) {
-		return false
-	}
-	if len(a.Contextual) != len(b.Contextual) {
-		return false
-	}
-
-	for i := range a.Providers {
-		if a.Providers[i].ID != b.Providers[i].ID {
-			return false
-		}
-		if !maddrsEqual(a.Providers[i].Addrs, b.Providers[i].Addrs) {
-			return false
-		}
-	}
-	for i := range a.Metadatas {
-		if !bytes.Equal(a.Metadatas[i], b.Metadatas[i]) {
-			return false
-		}
-	}
-	for i, ctxA := range a.Contextual {
-		ctxB := a.Contextual[i]
-		if ctxA.Override != ctxB.Override {
-			return false
-		}
-		if ctxA.ContextID != ctxB.ContextID {
-			return false
-		}
-		for j := range ctxA.Providers {
-			if ctxA.Providers[j].ID != ctxB.Providers[j].ID {
-				return false
-			}
-			if !maddrsEqual(ctxA.Providers[j].Addrs, ctxB.Providers[j].Addrs) {
-				return false
-			}
-		}
-		for j := range ctxA.Metadatas {
-			if !bytes.Equal(ctxA.Metadatas[j], ctxB.Metadatas[j]) {
-				return false
-			}
-		}
-	}
-	return true
 }

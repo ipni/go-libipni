@@ -48,14 +48,12 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
-// WithProvidersURLs specifies URLs for retrieving provider information
-// (/providers and /providers/<pid> endpoints). Multiple URLs may be given to
-// specify multiple sources of provider information,
-func WithProvidersURLs(urls ...string) Option {
+// WithProvidersURL specifies one or more URLs for retrieving provider
+// information (/providers and /providers/<pid> endpoints). Multiple URLs may
+// be given to specify multiple sources of provider information,
+func WithProvidersURL(urls ...string) Option {
 	return func(cfg *config) error {
-		for _, u := range urls {
-			cfg.providersURLs = append(cfg.providersURLs, u)
-		}
+		cfg.providersURLs = append(cfg.providersURLs, urls...)
 		return nil
 	}
 }

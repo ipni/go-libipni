@@ -74,13 +74,30 @@ func WithRefreshInterval(interval time.Duration) Option {
 	}
 }
 
-// WithSource adds a new provider information source for the cache to pull
-// provider information from. If multiple sources provide the information for
-// the same providers, then the provider record with the most recent
-// LastAdvertisementTime is uesd.
-func WithSource(src ProviderSource) Option {
+// WithSource adds one or more new provider information sources for the cache
+// to pull provider information from. If multiple sources provide the
+// information for the same providers, then the provider record with the most
+// recent LastAdvertisementTime is uesd.
+func WithSource(src ...ProviderSource) Option {
 	return func(cfg *config) error {
-		cfg.sources = append(cfg.sources, src)
+		cfg.sources = append(cfg.sources, src...)
+		return nil
+	}
+}
+
+// WithSourceURL adds one or more new HTTP sources of provider information. It
+// is a convenient alternative to calling NewHTTPSource and WithSource for each
+// source URL. To use an alternative HTTP client with each source, call
+// WithClient first.
+func WithSourceURL(urls ...string) Option {
+	return func(cfg *config) error {
+		for _, u := range urls {
+			httpSrc, err := NewHTTPSource(u, cfg.httpClient)
+			if err != nil {
+				return err
+			}
+			cfg.sources = append(cfg.sources, httpSrc)
+		}
 		return nil
 	}
 }

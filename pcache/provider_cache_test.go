@@ -128,7 +128,7 @@ func TestOverlappingSources(t *testing.T) {
 	src2 := newMockSource(pid2, pid1)
 	src2.infos[1].LastAdvertisementTime = now.Add(time.Second).Format(time.RFC3339)
 
-	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithSource(src2))
+	pc, err := pcache.New(pcache.WithSource(src1, src2))
 	require.NoError(t, err)
 	require.Equal(t, 2, pc.Len())
 
@@ -300,9 +300,11 @@ func TestWithLiveSite(t *testing.T) {
 	// Providers with extended provider info should have hade updates within
 	// this time window. Updates should not be expected unless addresses or
 	// extended info changes.
-	t.Log("Waiting 20s to refresh and check for updates")
-	time.Sleep(20 * time.Second)
-	err = pc.Refresh(context.Background())
-	require.NoError(t, err)
-	t.Log("Updates last refresh:", pc.UpdatesLastRefresh())
+	for i := 0; i < 2; i++ {
+		t.Log("Waiting 10s to refresh and check for updates")
+		time.Sleep(10 * time.Second)
+		err = pc.Refresh(context.Background())
+		require.NoError(t, err)
+		t.Log("Updates last refresh:", pc.UpdatesLastRefresh())
+	}
 }
