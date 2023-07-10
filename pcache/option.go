@@ -52,6 +52,7 @@ func WithPreload(preload bool) Option {
 	}
 }
 
+// WithClient sets the HTTP client to use when WithSourceURL is used.
 func WithClient(c *http.Client) Option {
 	return func(cfg *config) error {
 		if c != nil {

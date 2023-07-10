@@ -18,6 +18,7 @@ const providersPath = "providers"
 type httpSource struct {
 	url    *url.URL
 	client *http.Client
+	header http.Header
 }
 
 func NewHTTPSource(srcURL string, client *http.Client) (ProviderSource, error) {
@@ -42,11 +43,23 @@ func NewHTTPSource(srcURL string, client *http.Client) (ProviderSource, error) {
 	}, nil
 }
 
+func (s *httpSource) AddHeader(key, value string) {
+	if s.header == nil {
+		s.header = make(map[string][]string)
+	}
+	s.header.Add(key, value)
+}
+
 func (s *httpSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInfo, error) {
 	u := s.url.JoinPath(pid.String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+	for key, vals := range s.header {
+		for _, val := range vals {
+			req.Header.Add(key, val)
+		}
 	}
 	req.Header.Add("Accept", "application/json")
 
@@ -78,6 +91,11 @@ func (s *httpSource) FetchAll(ctx context.Context) ([]*model.ProviderInfo, error
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+	for key, vals := range s.header {
+		for _, val := range vals {
+			req.Header.Add(key, val)
+		}
 	}
 	req.Header.Add("Accept", "application/json")
 
