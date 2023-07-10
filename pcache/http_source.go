@@ -3,10 +3,10 @@ package pcache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/find/model"
@@ -22,13 +22,12 @@ type httpSource struct {
 }
 
 func NewHTTPSource(srcURL string, client *http.Client) (ProviderSource, error) {
-	if !strings.HasPrefix(srcURL, "http://") && !strings.HasPrefix(srcURL, "https://") {
-		srcURL = "http://" + srcURL
-	}
-
 	u, err := url.Parse(srcURL)
 	if err != nil {
 		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, errors.New("url must have http or https scheme")
 	}
 	u.Path = ""
 	u = u.JoinPath(providersPath)
