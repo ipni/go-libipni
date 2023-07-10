@@ -280,8 +280,62 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	require.Nil(t, got)
 }
 
+func TestNoPreload(t *testing.T) {
+	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
+	require.NoError(t, err)
+
+	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
+	require.NoError(t, err)
+
+	src1 := newMockSource(pid1)
+	src2 := newMockSource(pid2)
+
+	pc, err := pcache.New(pcache.WithSource(src1, src2), pcache.WithPreload(false))
+	require.NoError(t, err)
+	require.Equal(t, 0, pc.Len())
+	require.Equal(t, 0, src1.callFetchAll)
+	require.Equal(t, 0, src2.callFetchAll)
+
+	pinfo, err := pc.Get(context.Background(), pid1)
+	require.NoError(t, err)
+	require.NotNil(t, pinfo)
+	require.Equal(t, 1, pc.Len())
+
+	pinfo, err = pc.Get(context.Background(), pid2)
+	require.NoError(t, err)
+	require.NotNil(t, pinfo)
+	require.Equal(t, 2, pc.Len())
+}
+
+func TestNoTimestamp(t *testing.T) {
+	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
+	require.NoError(t, err)
+
+	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
+	require.NoError(t, err)
+
+	src1 := newMockSource(pid1)
+	src2 := newMockSource(pid2)
+
+	// Test get missing and refresh with no timestamp.
+	src1.infos[0].LastAdvertisementTime = ""
+	src2.infos[0].LastAdvertisementTime = ""
+	pc, err := pcache.New(pcache.WithSource(src1, src2), pcache.WithPreload(false))
+	require.NoError(t, err)
+	require.Equal(t, 0, pc.Len())
+
+	pinfo, err := pc.Get(context.Background(), pid1)
+	require.NoError(t, err)
+	require.NotNil(t, pinfo)
+	require.Equal(t, 1, pc.Len())
+
+	err = pc.Refresh(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 2, pc.Len())
+}
+
 func TestWithLiveSite(t *testing.T) {
-	t.Skip("Only for manual testing")
+	t.Skip("For manual test only")
 
 	src, err := pcache.NewHTTPSource("https://inga.prod.cid.contact", nil)
 	require.NoError(t, err)

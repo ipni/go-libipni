@@ -285,6 +285,10 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 			cinfo.expiresAt = time.Time{}
 
 			lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
+			if lastUpdate.IsZero() {
+				// Use a non-zero time to prevent unnecessary updates.
+				lastUpdate = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+			}
 			if !lastUpdate.After(cinfo.lastUpdate) {
 				// Skip - not newer than what is here already.
 				continue
@@ -446,6 +450,10 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*readPr
 			continue
 		}
 		lastUpdate, _ := time.Parse(time.RFC3339, fetchedInfo.LastAdvertisementTime)
+		if lastUpdate.IsZero() {
+			// Use a non-zero time to prevent unnecessary updates.
+			lastUpdate = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+		}
 		if !lastUpdate.After(cinfo.lastUpdate) {
 			// Skip - not newer that what is here already.
 			continue
