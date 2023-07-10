@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,8 +35,8 @@ func init() {
 type mockSource struct {
 	infos []*model.ProviderInfo
 
-	callFetch    int
-	callFetchAll int
+	callFetch    atomic.Int32
+	callFetchAll atomic.Int32
 }
 
 func newMockSource(pids ...peer.ID) *mockSource {
@@ -62,7 +63,7 @@ func (s *mockSource) addInfo(pid peer.ID) {
 }
 
 func (s *mockSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInfo, error) {
-	s.callFetch++
+	s.callFetch.Add(1)
 	for _, info := range s.infos {
 		if pid == info.AddrInfo.ID {
 			return info, nil
@@ -72,7 +73,7 @@ func (s *mockSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInf
 }
 
 func (s *mockSource) FetchAll(ctx context.Context) ([]*model.ProviderInfo, error) {
-	s.callFetchAll++
+	s.callFetchAll.Add(1)
 	return s.infos, nil
 }
 
@@ -81,7 +82,7 @@ func TestProviderCache(t *testing.T) {
 	pc, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
 	require.Equal(t, 1, pc.Len())
-	require.Equal(t, 1, src.callFetchAll)
+	require.Equal(t, int32(1), src.callFetchAll.Load())
 
 	// Cache hit main
 	pinfo, err := pc.Get(context.Background(), pid1)
@@ -288,8 +289,8 @@ func TestNoPreload(t *testing.T) {
 	pc, err := pcache.New(pcache.WithSource(src1, src2), pcache.WithPreload(false))
 	require.NoError(t, err)
 	require.Zero(t, pc.Len())
-	require.Zero(t, src1.callFetchAll)
-	require.Zero(t, src2.callFetchAll)
+	require.Zero(t, src1.callFetchAll.Load())
+	require.Zero(t, src2.callFetchAll.Load())
 
 	pinfos := pc.List()
 	require.Zero(t, len(pinfos))
@@ -332,24 +333,24 @@ func TestAutoRefresh(t *testing.T) {
 	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(100*time.Millisecond))
 	require.NoError(t, err)
 	require.Equal(t, 1, pc.Len())
-	require.Equal(t, 1, src1.callFetchAll)
+	require.Equal(t, int32(1), src1.callFetchAll.Load())
 
 	time.Sleep(110 * time.Millisecond)
 	_, err = pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
 
 	time.Sleep(110 * time.Millisecond)
-	require.Equal(t, 2, src1.callFetchAll)
+	require.Equal(t, int32(2), src1.callFetchAll.Load())
 	_, err = pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
 
 	time.Sleep(110 * time.Millisecond)
-	require.Equal(t, 3, src1.callFetchAll)
+	require.Equal(t, int32(3), src1.callFetchAll.Load())
 	_, err = pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
 
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, 4, src1.callFetchAll)
+	require.Equal(t, int32(4), src1.callFetchAll.Load())
 }
 
 func TestTTL(t *testing.T) {
@@ -358,7 +359,7 @@ func TestTTL(t *testing.T) {
 		pcache.WithTTL(200*time.Millisecond))
 	require.NoError(t, err)
 	require.Equal(t, 1, pc.Len())
-	require.Equal(t, 1, src.callFetchAll)
+	require.Equal(t, int32(1), src.callFetchAll.Load())
 
 	// Test TTL of disappeared provider
 	origInfos := src.infos
@@ -379,14 +380,14 @@ func TestTTL(t *testing.T) {
 	pinfo, err := pc.Get(context.Background(), pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
-	require.Equal(t, 1, src.callFetch)
+	require.Equal(t, int32(1), src.callFetch.Load())
 
 	src.infos = nil // Cause cache update that moves neg entry to main map
 	require.NoError(t, pc.Refresh(context.Background()))
 	pinfo, err = pc.Get(context.Background(), pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
-	require.Equal(t, 1, src.callFetch)
+	require.Equal(t, int32(1), src.callFetch.Load())
 
 	// Refresh after TTL should remove negative cache entry, and next Get
 	// should call Fetch again.
@@ -395,5 +396,5 @@ func TestTTL(t *testing.T) {
 	pinfo, err = pc.Get(context.Background(), pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
-	require.Equal(t, 2, src.callFetch)
+	require.Equal(t, int32(2), src.callFetch.Load())
 }
