@@ -36,10 +36,9 @@ type ProviderCache struct {
 	write     map[peer.ID]*cacheInfo
 	writeLock chan struct{}
 
-	needsRefresh       atomic.Bool
-	refreshIn          time.Duration
-	refreshTimer       *time.Timer
-	updatesLastRefresh atomic.Uint32
+	needsRefresh atomic.Bool
+	refreshIn    time.Duration
+	refreshTimer *time.Timer
 }
 
 // cacheInfo contains writable cache info.
@@ -127,10 +126,17 @@ func (pc *ProviderCache) List() []*model.ProviderInfo {
 	}
 	m := make(map[peer.ID]*model.ProviderInfo, size)
 	for pid, rpi := range read.m {
-		m[pid] = rpi.provider
+		if rpi != nil {
+			m[pid] = rpi.provider
+		}
 	}
 	for pid, rpi := range read.u {
-		m[pid] = rpi.provider
+		if rpi != nil {
+			m[pid] = rpi.provider
+		} else {
+			// Negative cache update; remove from output.
+			delete(m, pid)
+		}
 	}
 	pinfos := make([]*model.ProviderInfo, len(m))
 	var i int
@@ -308,7 +314,6 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 		updates[pid] = rpi
 	}
 
-	var updateCount int
 	for pid, cinfo := range pc.write {
 		if cinfo.seq != seq {
 			// Provider no longer present.
@@ -322,16 +327,12 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 				delete(pc.write, pid)
 				// Store nil in updates to override anything in main map.
 				updates[pid] = nil
-				updateCount++
 			}
 		} else if cinfo.updateSeq == seq {
 			// Address updated, update read-only data.
 			updates[pid] = apiToCacheInfo(cinfo.provider)
-			updateCount++
 		}
 	}
-
-	pc.updatesLastRefresh.Store(uint32(updateCount))
 
 	// If the update map is small relative to the main map, do not generate a
 	// new main map yet.
@@ -353,11 +354,6 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 	// Replace old readOnly map with new.
 	pc.read.Store(&readOnly{m: m})
 	return nil
-}
-
-// UpdatesLastRefresh returns the number of updates seen by the last refresh.
-func (pc *ProviderCache) UpdatesLastRefresh() int {
-	return int(pc.updatesLastRefresh.Load())
 }
 
 // get returns the provider information for the provider specified by pid. If

@@ -17,9 +17,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var pid1, pid2 peer.ID
+
+func init() {
+	var err error
+	pid1, err = peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
+	if err != nil {
+		panic(err)
+	}
+	pid2, err = peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
+	if err != nil {
+		panic(err)
+	}
+}
+
 type mockSource struct {
 	infos []*model.ProviderInfo
 
+	callFetch    int
 	callFetchAll int
 }
 
@@ -47,6 +62,7 @@ func (s *mockSource) addInfo(pid peer.ID) {
 }
 
 func (s *mockSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInfo, error) {
+	s.callFetch++
 	for _, info := range s.infos {
 		if pid == info.AddrInfo.ID {
 			return info, nil
@@ -61,12 +77,6 @@ func (s *mockSource) FetchAll(ctx context.Context) ([]*model.ProviderInfo, error
 }
 
 func TestProviderCache(t *testing.T) {
-	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
-	require.NoError(t, err)
-
-	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
-	require.NoError(t, err)
-
 	src := newMockSource(pid1)
 	pc, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
@@ -113,15 +123,12 @@ func TestProviderCache(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, pid2, pinfo.AddrInfo.ID)
+
+	pinfos := pc.List()
+	require.Equal(t, 2, len(pinfos))
 }
 
 func TestOverlappingSources(t *testing.T) {
-	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
-	require.NoError(t, err)
-
-	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
-	require.NoError(t, err)
-
 	now := time.Now()
 
 	src1 := newMockSource(pid1)
@@ -152,14 +159,8 @@ func TestOverlappingSources(t *testing.T) {
 }
 
 func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
-	pid, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
-	require.NoError(t, err)
-
-	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
-	require.NoError(t, err)
-
 	var want []model.ProviderResult
-	err = json.Unmarshal([]byte(`[
+	err := json.Unmarshal([]byte(`[
   {
     "ContextID": "bG9ic3Rlcg==",
     "Metadata": "YmFycmVsZXll",
@@ -251,10 +252,10 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	src, err := pcache.NewHTTPSource(testServer.URL, nil)
 	require.NoError(t, err)
 
-	pi, err := src.Fetch(context.Background(), pid)
+	pi, err := src.Fetch(context.Background(), pid1)
 	require.NoError(t, err)
 	require.NotNil(t, pi)
-	require.Equal(t, pid, pi.AddrInfo.ID)
+	require.Equal(t, pid1, pi.AddrInfo.ID)
 
 	_, err = src.Fetch(context.Background(), pid2)
 	require.Error(t, err)
@@ -262,7 +263,7 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	pis, err := src.FetchAll(context.Background())
 	require.NoError(t, err)
 	require.NotZero(t, len(pis))
-	require.Equal(t, pid, pis[0].AddrInfo.ID)
+	require.Equal(t, pid1, pis[0].AddrInfo.ID)
 
 	// Test ProviderCache
 	subject, err := pcache.New(pcache.WithSource(src))
@@ -271,7 +272,7 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 
 	contextID := []byte("lobster")
 	metadata := []byte("barreleye")
-	got, err := subject.GetResults(context.Background(), pid, contextID, metadata)
+	got, err := subject.GetResults(context.Background(), pid1, contextID, metadata)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 
@@ -281,20 +282,17 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 }
 
 func TestNoPreload(t *testing.T) {
-	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
-	require.NoError(t, err)
-
-	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
-	require.NoError(t, err)
-
 	src1 := newMockSource(pid1)
 	src2 := newMockSource(pid2)
 
 	pc, err := pcache.New(pcache.WithSource(src1, src2), pcache.WithPreload(false))
 	require.NoError(t, err)
-	require.Equal(t, 0, pc.Len())
-	require.Equal(t, 0, src1.callFetchAll)
-	require.Equal(t, 0, src2.callFetchAll)
+	require.Zero(t, pc.Len())
+	require.Zero(t, src1.callFetchAll)
+	require.Zero(t, src2.callFetchAll)
+
+	pinfos := pc.List()
+	require.Zero(t, len(pinfos))
 
 	pinfo, err := pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
@@ -308,12 +306,6 @@ func TestNoPreload(t *testing.T) {
 }
 
 func TestNoTimestamp(t *testing.T) {
-	pid1, err := peer.Decode("12D3KooWNSRG5wTShNu6EXCPTkoH7dWsphKAPrbvQchHa5arfsDC")
-	require.NoError(t, err)
-
-	pid2, err := peer.Decode("12D3KooWHf7cahZvAVB36SGaVXc7fiVDoJdRJq42zDRcN2s2512h")
-	require.NoError(t, err)
-
 	src1 := newMockSource(pid1)
 	src2 := newMockSource(pid2)
 
@@ -322,7 +314,7 @@ func TestNoTimestamp(t *testing.T) {
 	src2.infos[0].LastAdvertisementTime = ""
 	pc, err := pcache.New(pcache.WithSource(src1, src2), pcache.WithPreload(false))
 	require.NoError(t, err)
-	require.Equal(t, 0, pc.Len())
+	require.Zero(t, pc.Len())
 
 	pinfo, err := pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
@@ -334,31 +326,70 @@ func TestNoTimestamp(t *testing.T) {
 	require.Equal(t, 2, pc.Len())
 }
 
-func TestWithLiveSite(t *testing.T) {
-	t.Skip("For manual test only")
+func TestAutoRefresh(t *testing.T) {
+	src1 := newMockSource(pid1)
 
-	src, err := pcache.NewHTTPSource("https://inga.prod.cid.contact", nil)
+	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(250*time.Millisecond))
 	require.NoError(t, err)
+	require.Equal(t, 1, pc.Len())
+	require.Equal(t, 1, src1.callFetchAll)
 
-	pc, err := pcache.New(pcache.WithSource(src))
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			time.Sleep(10 * time.Millisecond)
+			_, err = pc.Get(context.Background(), pid1)
+			require.NoError(t, err)
+		}
+		close(done)
+	}()
+	<-done
+
+	require.Equal(t, 5, src1.callFetchAll)
+}
+
+func TestTTL(t *testing.T) {
+	src := newMockSource(pid1)
+	pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(0),
+		pcache.WithTTL(200*time.Millisecond))
 	require.NoError(t, err)
-	t.Log("Cache size:", pc.Len())
+	require.Equal(t, 1, pc.Len())
+	require.Equal(t, 1, src.callFetchAll)
 
-	pid, err := peer.Decode("QmQzqxhK82kAmKvARFZSkUVS6fo9sySaiogAnx5EnZ6ZmC")
+	// Test TTL of disappeared provider
+	origInfos := src.infos
+	src.infos = nil
+	require.NoError(t, pc.Refresh(context.Background()))
+	require.Equal(t, 1, len(pc.List()))
+
+	time.Sleep(220 * time.Millisecond)
+	require.NoError(t, pc.Refresh(context.Background()))
+	require.Zero(t, len(pc.List()))
+
+	// Provider reappears.
+	src.infos = origInfos
+	require.NoError(t, pc.Refresh(context.Background()))
+	require.Equal(t, 1, len(pc.List()))
+
+	// Test TTL of negative entry
+	pinfo, err := pc.Get(context.Background(), pid2)
 	require.NoError(t, err)
+	require.Nil(t, pinfo)
+	require.Equal(t, 1, src.callFetch)
 
-	pinfo, err := pc.Get(context.Background(), pid)
+	src.infos = nil // Cause cache update that moves neg entry to main map
+	require.NoError(t, pc.Refresh(context.Background()))
+	pinfo, err = pc.Get(context.Background(), pid2)
 	require.NoError(t, err)
-	require.NotNil(t, pinfo)
+	require.Nil(t, pinfo)
+	require.Equal(t, 1, src.callFetch)
 
-	// Providers with extended provider info should have hade updates within
-	// this time window. Updates should not be expected unless addresses or
-	// extended info changes.
-	for i := 0; i < 2; i++ {
-		t.Log("Waiting 10s to refresh and check for updates")
-		time.Sleep(10 * time.Second)
-		err = pc.Refresh(context.Background())
-		require.NoError(t, err)
-		t.Log("Updates last refresh:", pc.UpdatesLastRefresh())
-	}
+	// Refresh after TTL should remove negative cache entry, and next Get
+	// should call Fetch again.
+	time.Sleep(220 * time.Millisecond)
+	require.NoError(t, pc.Refresh(context.Background()))
+	pinfo, err = pc.Get(context.Background(), pid2)
+	require.NoError(t, err)
+	require.Nil(t, pinfo)
+	require.Equal(t, 2, src.callFetch)
 }
