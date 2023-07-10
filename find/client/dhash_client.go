@@ -2,12 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
+	"github.com/ipni/go-libipni/pcache"
 	b58 "github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
 )
@@ -34,7 +36,7 @@ type DHStoreAPI interface {
 // DHStoreAPI, it can do the lookups any the underlying implementation defined.
 type DHashClient struct {
 	dhstoreAPI DHStoreAPI
-	pcache     *providerCache
+	pcache     *pcache.ProviderCache
 }
 
 // NewDHashClient instantiates a new client that uses Reader Privacy API for
@@ -42,18 +44,21 @@ type DHashClient struct {
 // also protects the user from a passive observer. dhstoreURL specifies the URL
 // of the double hashed store that can respond to find encrypted multihash and
 // find encrypted metadata requests.
-func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
+func NewDHashClient(options ...Option) (*DHashClient, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
 	}
 
-	sURL, err := parseURL(stiURL)
-	if err != nil {
-		return nil, err
+	if len(opts.providersURLs) == 0 {
+		if opts.dhstoreURL == "" {
+			return nil, errors.New("no source of provider information")
+		}
+		opts.providersURLs = []string{opts.dhstoreURL}
 	}
 
-	pcache, err := newProviderCache(sURL, opts.httpClient, opts.pcacheTTL)
+	pc, err := pcache.New(pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload),
+		pcache.WithSourceURL(opts.providersURLs...))
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +67,13 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 	if opts.dhstoreAPI != nil {
 		dhsAPI = opts.dhstoreAPI
 	} else {
-		dhsURL := sURL
-		if len(opts.dhstoreURL) > 0 {
-			dhsURL, err = parseURL(opts.dhstoreURL)
-			if err != nil {
-				return nil, err
-			}
+		var dhsURL *url.URL
+		if opts.dhstoreURL == "" {
+			opts.dhstoreURL = opts.providersURLs[0]
+		}
+		dhsURL, err = parseURL(opts.dhstoreURL)
+		if err != nil {
+			return nil, err
 		}
 		dhsAPI = &dhstoreHTTP{
 			c:             opts.httpClient,
@@ -78,8 +84,12 @@ func NewDHashClient(stiURL string, options ...Option) (*DHashClient, error) {
 
 	return &DHashClient{
 		dhstoreAPI: dhsAPI,
-		pcache:     pcache,
+		pcache:     pc,
 	}, nil
+}
+
+func (c *DHashClient) PCache() *pcache.ProviderCache {
+	return c.pcache
 }
 
 // Find launches FindAsync in a separate go routine and assembles the result
@@ -146,7 +156,7 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				continue
 			}
 
-			prs, err := c.pcache.getResults(ctx, pid, ctxId, metadata)
+			prs, err := c.pcache.GetResults(ctx, pid, ctxId, metadata)
 			if err != nil {
 				log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue

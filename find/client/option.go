@@ -12,10 +12,12 @@ const (
 )
 
 type config struct {
-	httpClient *http.Client
-	dhstoreURL string
-	dhstoreAPI DHStoreAPI
-	pcacheTTL  time.Duration
+	httpClient    *http.Client
+	providersURLs []string
+	dhstoreURL    string
+	dhstoreAPI    DHStoreAPI
+	pcacheTTL     time.Duration
+	preload       bool
 }
 
 // Option is a function that sets a value in a config.
@@ -39,16 +41,26 @@ func getOpts(opts []Option) (config, error) {
 // round tripper / client.
 func WithClient(c *http.Client) Option {
 	return func(cfg *config) error {
-		cfg.httpClient = c
+		if c != nil {
+			cfg.httpClient = c
+		}
 		return nil
 	}
 }
 
-// WithDHStoreURL allows specifying different URLs for dhstore (/multihash and
-// /metadata endpoints) and storetheindex (/providers endpoint). This might be
-// useful as dhstore and storetheindex are different services that might not
-// necessarily be behind the same URL. However the data from both of them is
-// required to assemble results.
+// WithProvidersURL specifies one or more URLs for retrieving provider
+// information (/providers and /providers/<pid> endpoints). Multiple URLs may
+// be given to specify multiple sources of provider information,
+func WithProvidersURL(urls ...string) Option {
+	return func(cfg *config) error {
+		cfg.providersURLs = append(cfg.providersURLs, urls...)
+		return nil
+	}
+}
+
+// WithDHStoreURL specifies a URL for dhstore (/multihash and /metadata
+// endpoints). If not specified then a WithDHStoreAPI should be used to provide
+// access to dhstore data.
 func WithDHStoreURL(u string) Option {
 	return func(cfg *config) error {
 		cfg.dhstoreURL = u
@@ -66,10 +78,23 @@ func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
 	}
 }
 
-// WithPcacheTTL sets the providers-cache entry time-to-live duration.
+// WithPcacheTTL sets the time that provider information remains in the cache
+// after it is not longer available from any of the original sources.
 func WithPcacheTTL(ttl time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.pcacheTTL = ttl
+		return nil
+	}
+}
+
+// WithPcachePreload enables or disabled preloading the cache. Generally this
+// should be enabled, even for short-lived clients needing to look up few
+// providers.
+//
+// Default is true (enabled).
+func WithPcachePreload(preload bool) Option {
+	return func(cfg *config) error {
+		cfg.preload = preload
 		return nil
 	}
 }
