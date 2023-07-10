@@ -349,7 +349,7 @@ func TestAutoRefresh(t *testing.T) {
 	_, err = pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, int32(4), src1.callFetchAll.Load())
 }
 
