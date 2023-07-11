@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -21,8 +23,12 @@ var ErrClosed = errors.New("cache closed")
 // information. The cache can be configured with any number of sources that
 // supply provider information.
 type ProviderSource interface {
+	// Fetch gets provider information for a specific provider.
 	Fetch(context.Context, peer.ID) (*model.ProviderInfo, error)
+	// Fetch gets provider information for all providers.
 	FetchAll(context.Context) ([]*model.ProviderInfo, error)
+	// String returns a description of the source.
+	String() string
 }
 
 // ProviderCache is a lock-free provider information cache for high-performance
@@ -436,6 +442,10 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*readPr
 	for _, src := range pc.sources {
 		fetchedInfo, err := src.Fetch(ctx, pid)
 		if err != nil {
+			var apiErr *apierror.Error
+			if errors.As(err, &apiErr) && apiErr.Status() == http.StatusNotFound {
+				continue
+			}
 			log.Errorw("Cannot fetch provider info", "err", err, "source", src)
 			if errors.Is(err, context.Canceled) {
 				return nil, ctx.Err()
@@ -460,6 +470,7 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*readPr
 	if cinfo.provider == nil {
 		// No provider info, cache negative entry.
 		cinfo.expiresAt = time.Now().Add(pc.ttl)
+		log.Infow("Provider info not found at any source", "provider", pid)
 	}
 	pc.write[pid] = cinfo
 

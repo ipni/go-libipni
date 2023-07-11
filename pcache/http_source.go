@@ -74,6 +74,9 @@ func (s *httpSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInf
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusNotFound {
+			return nil, nil
+		}
 		return nil, apierror.FromResponse(resp.StatusCode, body)
 	}
 
@@ -121,4 +124,8 @@ func (s *httpSource) FetchAll(ctx context.Context) ([]*model.ProviderInfo, error
 		return nil, err
 	}
 	return providers, nil
+}
+
+func (s *httpSource) String() string {
+	return s.url.String()
 }

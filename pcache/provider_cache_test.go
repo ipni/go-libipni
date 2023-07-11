@@ -77,6 +77,10 @@ func (s *mockSource) FetchAll(ctx context.Context) ([]*model.ProviderInfo, error
 	return s.infos, nil
 }
 
+func (s *mockSource) String() string {
+	return "mockSource"
+}
+
 func TestProviderCache(t *testing.T) {
 	src := newMockSource(pid1)
 	pc, err := pcache.New(pcache.WithSource(src))
