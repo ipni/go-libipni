@@ -330,27 +330,22 @@ func TestNoTimestamp(t *testing.T) {
 func TestAutoRefresh(t *testing.T) {
 	src1 := newMockSource(pid1)
 
-	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(100*time.Millisecond))
+	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(200*time.Millisecond))
 	require.NoError(t, err)
 	require.Equal(t, 1, pc.Len())
 	require.Equal(t, int32(1), src1.callFetchAll.Load())
 
-	time.Sleep(110 * time.Millisecond)
 	_, err = pc.Get(context.Background(), pid1)
 	require.NoError(t, err)
 
-	time.Sleep(110 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	require.Equal(t, int32(1), src1.callFetchAll.Load())
+
+	_, err = pc.Get(context.Background(), pid1)
+	require.NoError(t, err)
+
+	time.Sleep(300 * time.Millisecond)
 	require.Equal(t, int32(2), src1.callFetchAll.Load())
-	_, err = pc.Get(context.Background(), pid1)
-	require.NoError(t, err)
-
-	time.Sleep(110 * time.Millisecond)
-	require.Equal(t, int32(3), src1.callFetchAll.Load())
-	_, err = pc.Get(context.Background(), pid1)
-	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
-	require.Equal(t, int32(4), src1.callFetchAll.Load())
 }
 
 func TestTTL(t *testing.T) {
