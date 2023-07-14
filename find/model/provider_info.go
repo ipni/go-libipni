@@ -24,9 +24,6 @@ type ProviderInfo struct {
 	// provider's advertisement publisher. Content advertisements are available
 	// at these addresses.
 	Publisher *peer.AddrInfo `json:",omitempty"`
-	// IndexCount is the number of current (not deleted) indexes that the
-	// indexer knowns about for this provider.
-	IndexCount uint64 `json:",omitempty"`
 	// ExtendedProviders describes extended providers registered for this
 	// provider.
 	ExtendedProviders *ExtendedProviders `json:",omitempty"`

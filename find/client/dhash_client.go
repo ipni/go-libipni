@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
-	"strings"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipni/go-libipni/dhash"
@@ -71,9 +71,12 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 		if opts.dhstoreURL == "" {
 			opts.dhstoreURL = opts.providersURLs[0]
 		}
-		dhsURL, err = parseURL(opts.dhstoreURL)
+		dhsURL, err = url.Parse(opts.dhstoreURL)
 		if err != nil {
 			return nil, err
+		}
+		if dhsURL.Scheme != "http" && dhsURL.Scheme != "https" {
+			return nil, fmt.Errorf("url must have http or https scheme: %s", opts.dhstoreURL)
 		}
 		dhsAPI = &dhstoreHTTP{
 			c:             opts.httpClient,
@@ -182,11 +185,4 @@ func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, err
 		return nil, err
 	}
 	return dhash.DecryptMetadata(encryptedMetadata, vk)
-}
-
-func parseURL(su string) (*url.URL, error) {
-	if !strings.HasPrefix(su, "http://") && !strings.HasPrefix(su, "https://") {
-		su = "http://" + su
-	}
-	return url.Parse(su)
 }
