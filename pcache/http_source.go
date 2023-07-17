@@ -3,7 +3,7 @@ package pcache
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,7 +27,7 @@ func NewHTTPSource(srcURL string, client *http.Client) (ProviderSource, error) {
 		return nil, err
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, errors.New("url must have http or https scheme")
+		return nil, fmt.Errorf("url must have http or https scheme: %s", srcURL)
 	}
 	u.Path = ""
 	u = u.JoinPath(providersPath)

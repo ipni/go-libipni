@@ -3,10 +3,10 @@ package client
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/ipfs/go-cid"
 	"github.com/ipni/go-libipni/announce/message"
@@ -42,13 +42,12 @@ func New(baseURL string, options ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		baseURL = "http://" + baseURL
-	}
-
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("url must have http or https scheme: %s", baseURL)
 	}
 	u.Path = ""
 
