@@ -24,6 +24,7 @@ const (
 type ResponseWriter struct {
 	w          http.ResponseWriter
 	f          http.Flusher
+	cid        cid.Cid
 	encoder    *json.Encoder
 	mh         multihash.Multihash
 	mhCode     uint64
@@ -70,20 +71,26 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 	}
 
 	var b []byte
+	var cidKey cid.Cid
+	var mh multihash.Multihash
+	var err error
+
 	pathType := path.Base(path.Dir(r.URL.Path))
 	switch pathType {
 	case "multihash":
-		var err error
 		b, err = base58.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
 			return ResponseWriter{}, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
 		}
+		mh = multihash.Multihash(b)
+		cidKey = cid.NewCidV1(cid.Raw, mh)
 	case "cid":
-		c, err := cid.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
+		cidKey, err = cid.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
 			return ResponseWriter{}, apierror.New(err, http.StatusBadRequest)
 		}
-		b = c.Hash()
+		b = cidKey.Hash()
+		mh = multihash.Multihash(b)
 	default:
 		return ResponseWriter{}, apierror.New(errors.New("unsupported resource type"), http.StatusBadRequest)
 	}
@@ -105,8 +112,9 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 	return ResponseWriter{
 		w:          w,
 		f:          flusher,
+		cid:        cidKey,
 		encoder:    json.NewEncoder(w),
-		mh:         multihash.Multihash(b),
+		mh:         mh,
 		mhCode:     dm.Code,
 		nd:         nd,
 		pathType:   pathType,
@@ -140,6 +148,10 @@ func (w *ResponseWriter) WriteND() error {
 		w.f.Flush()
 	}
 	return nil
+}
+
+func (w *ResponseWriter) Cid() cid.Cid {
+	return w.cid
 }
 
 func (w *ResponseWriter) Encoder() *json.Encoder {
