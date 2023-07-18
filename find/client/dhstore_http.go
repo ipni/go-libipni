@@ -19,7 +19,8 @@ type dhstoreHTTP struct {
 	dhMetadataURL *url.URL
 }
 
-// FindMultihash implements DHStoreAPI.
+// FindMultihash implements DHStoreAPI. Returns no data and no error if data
+// not found.
 func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihash) ([]model.EncryptedMultihashResult, error) {
 	u := d.dhFindURL.JoinPath(dhmh.B58String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -41,6 +42,9 @@ func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihas
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
 		return nil, apierror.FromResponse(resp.StatusCode, body)
 	}
 
@@ -52,7 +56,8 @@ func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihas
 	return encResponse.EncryptedMultihashResults, nil
 }
 
-// FindMetadata implements DHStoreAPI.
+// FindMetadata implements DHStoreAPI. Returns no data and no error if metadata
+// not found.
 func (d *dhstoreHTTP) FindMetadata(ctx context.Context, hvk []byte) ([]byte, error) {
 	u := d.dhMetadataURL.JoinPath(b58.Encode(hvk))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -74,6 +79,9 @@ func (d *dhstoreHTTP) FindMetadata(ctx context.Context, hvk []byte) ([]byte, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
 		return nil, apierror.FromResponse(resp.StatusCode, body)
 	}
 

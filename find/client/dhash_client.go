@@ -24,10 +24,12 @@ var log = logging.Logger("dhash-client")
 // creating a DHashClient.
 type DHStoreAPI interface {
 	// FindMultihash does a dh-multihash lookup and returns a
-	// model.FindResponse with EncryptedMultihashResults.
+	// model.FindResponse with EncryptedMultihashResults. Returns no data and
+	// no error, (nil, nil), if data not found.
 	FindMultihash(context.Context, multihash.Multihash) ([]model.EncryptedMultihashResult, error)
 	// FindMetadata takes a value-key-hash, does a metadata lookup, and returns
-	// encrypted metadata.
+	// encrypted metadata. Returns no data and no error, (nil, nil), if
+	// metadata not found
 	FindMetadata(context.Context, []byte) ([]byte, error)
 }
 
@@ -158,6 +160,13 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				log.Warnw("Error fetching metadata", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue
 			}
+			if len(metadata) == 0 {
+				// Metadata not found; multihash has no metadata. This was
+				// probably deleted by context ID and the associated
+				// multihashes were not removed.
+				log.Debug("Metadata not found for multihash encrypted value key", "multihash", mh.B58String())
+				continue
+			}
 
 			prs, err := c.pcache.GetResults(ctx, pid, ctxId, metadata)
 			if err != nil {
@@ -183,6 +192,9 @@ func (c *DHashClient) fetchMetadata(ctx context.Context, vk []byte) ([]byte, err
 	encryptedMetadata, err := c.dhstoreAPI.FindMetadata(ctx, dhash.SHA256(vk, nil))
 	if err != nil {
 		return nil, err
+	}
+	if len(encryptedMetadata) == 0 {
+		return nil, nil
 	}
 	return dhash.DecryptMetadata(encryptedMetadata, vk)
 }
