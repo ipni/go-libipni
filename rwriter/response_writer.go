@@ -22,19 +22,23 @@ const (
 )
 
 type ResponseWriter struct {
-	w          http.ResponseWriter
-	f          http.Flusher
-	cid        cid.Cid
-	encoder    *json.Encoder
-	mh         multihash.Multihash
-	mhCode     uint64
-	nd         bool
-	pathType   string
-	preferJson bool
-	status     int
+	w        http.ResponseWriter
+	f        http.Flusher
+	cid      cid.Cid
+	encoder  *json.Encoder
+	mh       multihash.Multihash
+	mhCode   uint64
+	nd       bool
+	pathType string
+	status   int
 }
 
-func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWriter, error) {
+func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWriter, error) {
+	opts, err := getOpts(options)
+	if err != nil {
+		return ResponseWriter{}, err
+	}
+
 	accepts := r.Header.Values("Accept")
 	var nd, okJson bool
 	for _, accept := range accepts {
@@ -50,7 +54,7 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 			case mediaTypeJson:
 				okJson = true
 			case mediaTypeAny:
-				nd = !preferJson
+				nd = !opts.preferJson
 				okJson = true
 			}
 			if nd && okJson {
@@ -60,7 +64,7 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 	}
 
 	if len(accepts) == 0 {
-		if !preferJson {
+		if !opts.preferJson {
 			// If there is no `Accept` header and JSON is preferred then be
 			// forgiving and fall back onto JSON media type. Otherwise,
 			// strictly require `Accept` header.
@@ -73,18 +77,20 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 	var b []byte
 	var cidKey cid.Cid
 	var mh multihash.Multihash
-	var err error
 
 	pathType := path.Base(path.Dir(r.URL.Path))
+	if pathType == "" {
+		return ResponseWriter{}, apierror.New(errors.New("missing resource type"), http.StatusBadRequest)
+	}
 	switch pathType {
-	case "multihash":
+	case opts.mhPathType:
 		b, err = base58.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
 			return ResponseWriter{}, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
 		}
 		mh = multihash.Multihash(b)
 		cidKey = cid.NewCidV1(cid.Raw, mh)
-	case "cid":
+	case opts.cidPathType:
 		cidKey, err = cid.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
 			return ResponseWriter{}, apierror.New(err, http.StatusBadRequest)
@@ -110,16 +116,15 @@ func New(w http.ResponseWriter, r *http.Request, preferJson bool) (ResponseWrite
 	}
 
 	return ResponseWriter{
-		w:          w,
-		f:          flusher,
-		cid:        cidKey,
-		encoder:    json.NewEncoder(w),
-		mh:         mh,
-		mhCode:     dm.Code,
-		nd:         nd,
-		pathType:   pathType,
-		preferJson: preferJson,
-		status:     http.StatusOK,
+		w:        w,
+		f:        flusher,
+		cid:      cidKey,
+		encoder:  json.NewEncoder(w),
+		mh:       mh,
+		mhCode:   dm.Code,
+		nd:       nd,
+		pathType: pathType,
+		status:   http.StatusOK,
 	}, nil
 }
 
