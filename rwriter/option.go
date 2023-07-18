@@ -34,7 +34,7 @@ func WithCidPathType(pathElem string) Option {
 	}
 }
 
-func WithMHPathType(pathElem string) Option {
+func WithMultihashPathType(pathElem string) Option {
 	return func(cfg *config) error {
 		cfg.mhPathType = pathElem
 		return nil
