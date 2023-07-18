@@ -164,7 +164,6 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				// Metadata not found; multihash has no metadata. This was
 				// probably deleted by context ID and the associated
 				// multihashes were not removed.
-				log.Debug("Metadata not found for multihash encrypted value key", "multihash", mh.B58String())
 				continue
 			}
 
