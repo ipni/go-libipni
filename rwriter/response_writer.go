@@ -144,15 +144,10 @@ func (w *ResponseWriter) PathType() string {
 	return w.pathType
 }
 
-func (w *ResponseWriter) WriteND() error {
-	_, err := w.w.Write([]byte("\n"))
-	if err != nil {
-		return err
-	}
+func (w *ResponseWriter) Flush() {
 	if w.f != nil {
 		w.f.Flush()
 	}
-	return nil
 }
 
 func (w *ResponseWriter) Cid() cid.Cid {
