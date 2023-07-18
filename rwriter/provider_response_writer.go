@@ -28,9 +28,7 @@ func (pw *ProviderResponseWriter) WriteProviderResult(pr model.ProviderResult) e
 		if err != nil {
 			return err
 		}
-		if err = pw.WriteND(); err != nil {
-			return err
-		}
+		pw.Flush()
 	} else {
 		pw.result.ProviderResults = append(pw.result.ProviderResults, pr)
 	}
