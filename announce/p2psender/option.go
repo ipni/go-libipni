@@ -8,7 +8,8 @@ import (
 
 // config contains all options for configuring dtsync.publisher.
 type config struct {
-	topic *pubsub.Topic
+	topic     *pubsub.Topic
+	extraData []byte
 }
 
 // Option is a function that sets a value in a config.
@@ -29,6 +30,16 @@ func getOpts(opts []Option) (config, error) {
 func WithTopic(topic *pubsub.Topic) Option {
 	return func(c *config) error {
 		c.topic = topic
+		return nil
+	}
+}
+
+// WithExtraData sets the extra data to include in the announce message.
+func WithExtraData(data []byte) Option {
+	return func(c *config) error {
+		if len(data) != 0 {
+			c.extraData = data
+		}
 		return nil
 	}
 }

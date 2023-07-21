@@ -17,20 +17,8 @@ type Publisher interface {
 	ID() peer.ID
 	// Protocol returns multiaddr protocol code (P_P2P or P_HTTP).
 	Protocol() int
-	// AnnounceHead sends an announce messag, via all senders, to announce the
-	// current head advertisement CID. If there is no head, then does nothing.
-	AnnounceHead(context.Context) error
-	// AnnounceHeadWithAddrs sends an announce messag containing the specified
-	// addresses, via all senders, to announce the current head advertisement
-	// CID. If there is no head, then does nothing.
-	AnnounceHeadWithAddrs(context.Context, []multiaddr.Multiaddr) error
 	// SetRoot sets the root CID without publishing it.
-	SetRoot(context.Context, cid.Cid) error
-	// UpdateRoot sets the root CID and publishes its update via all senders.
-	UpdateRoot(context.Context, cid.Cid) error
-	// UpdateRootWithAddrs publishes an update for the DAG, using custom
-	// multiaddrs, via all senders.
-	UpdateRootWithAddrs(context.Context, cid.Cid, []multiaddr.Multiaddr) error
+	SetRoot(cid.Cid)
 	// Close publisher.
 	Close() error
 }

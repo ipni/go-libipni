@@ -41,9 +41,7 @@ func ExamplePublisher() {
 	if err != nil {
 		panic(err)
 	}
-	if err = pub.UpdateRoot(context.Background(), lnk1.(cidlink.Link).Cid); err != nil {
-		panic(err)
-	}
+	pub.SetRoot(lnk1.(cidlink.Link).Cid)
 	log.Print("Publish 1:", lnk1.(cidlink.Link).Cid)
 
 	// Update root on publisher one with item
@@ -52,9 +50,7 @@ func ExamplePublisher() {
 	if err != nil {
 		panic(err)
 	}
-	if err = pub.UpdateRoot(context.Background(), lnk2.(cidlink.Link).Cid); err != nil {
-		panic(err)
-	}
+	pub.SetRoot(lnk2.(cidlink.Link).Cid)
 	log.Print("Publish 2:", lnk2.(cidlink.Link).Cid)
 }
 

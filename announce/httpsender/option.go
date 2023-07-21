@@ -11,8 +11,9 @@ import (
 const defaultTimeout = time.Minute
 
 type config struct {
-	timeout   time.Duration
 	client    *http.Client
+	extraData []byte
+	timeout   time.Duration
 	userAgent string
 }
 
@@ -31,6 +32,16 @@ func getOpts(opts []Option) (config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// WithExtraData sets the extra data to include in the announce message.
+func WithExtraData(data []byte) Option {
+	return func(c *config) error {
+		if len(data) != 0 {
+			c.extraData = data
+		}
+		return nil
+	}
 }
 
 // WithTimeout configures the timeout to wait for a response.

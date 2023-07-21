@@ -16,6 +16,7 @@ import (
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
@@ -35,7 +36,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber) {
+func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
 	srcHost := test.MkTestHost()
 	dstHost := test.MkTestHost()
 
@@ -43,10 +44,10 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host,
 
 	srcLnkS := test.MkLinkSystem(srcStore)
 
-	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
+	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]), p2psender.WithExtraData([]byte("t01000")))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithExtraData([]byte("t01000")), dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
@@ -61,7 +62,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host,
 
 	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
 
-	return srcHost, dstHost, pub, sub
+	return srcHost, dstHost, pub, sub, p2pSender
 }
 
 func TestAllowPeerReject(t *testing.T) {
@@ -69,7 +70,7 @@ func TestAllowPeerReject(t *testing.T) {
 	// Init dagsync publisher and subscriber
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, dstHost, pub, sub := initPubSub(t, srcStore, dstStore)
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore)
 	defer srcHost.Close()
 	defer dstHost.Close()
 	defer pub.Close()
@@ -87,7 +88,8 @@ func TestAllowPeerReject(t *testing.T) {
 	c := mkLnk(t, srcStore)
 
 	// Update root with item
-	err := pub.UpdateRoot(context.Background(), c)
+	pub.SetRoot(c)
+	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
 	require.NoError(t, err)
 
 	select {
@@ -102,7 +104,7 @@ func TestAllowPeerAllows(t *testing.T) {
 	// Init dagsync publisher and subscriber
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, dstHost, pub, sub := initPubSub(t, srcStore, dstStore)
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore)
 	defer srcHost.Close()
 	defer dstHost.Close()
 	defer pub.Close()
@@ -119,7 +121,8 @@ func TestAllowPeerAllows(t *testing.T) {
 	c := mkLnk(t, srcStore)
 
 	// Update root with item
-	err := pub.UpdateRoot(context.Background(), c)
+	pub.SetRoot(c)
+	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
 	require.NoError(t, err)
 
 	select {
@@ -156,7 +159,7 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAllowPeer(allowPeer), dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAllowPeer(allowPeer))
 	require.NoError(t, err)
 	defer pub.Close()
 
@@ -179,7 +182,8 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	c := mkLnk(t, srcStore)
 
 	// Update root with item
-	err = pub.UpdateRoot(context.Background(), c)
+	pub.SetRoot(c)
+	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
 	require.NoError(t, err)
 
 	select {
@@ -196,7 +200,8 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	c = mkLnk(t, srcStore)
 
 	// Update root with item
-	err = pub.UpdateRoot(context.Background(), c)
+	pub.SetRoot(c)
+	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
 	require.NoError(t, err)
 
 	select {
@@ -219,8 +224,7 @@ func TestIdleHandlerCleaner(t *testing.T) {
 
 	rootLnk, err := test.Store(te.srcStore, basicnode.NewString("hello world"))
 	require.NoError(t, err)
-	err = te.pub.SetRoot(context.Background(), rootLnk.(cidlink.Link).Cid)
-	require.NoError(t, err)
+	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

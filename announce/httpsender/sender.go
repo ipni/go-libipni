@@ -22,6 +22,7 @@ const DefaultAnnouncePath = "/announce"
 type Sender struct {
 	announceURLs []string
 	client       *http.Client
+	extraData    []byte
 	peerID       peer.ID
 	userAgent    string
 }
@@ -68,6 +69,7 @@ func New(announceURLs []*url.URL, peerID peer.ID, options ...Option) (*Sender, e
 
 	return &Sender{
 		announceURLs: urls,
+		extraData:    opts.extraData,
 		client:       client,
 		peerID:       peerID,
 		userAgent:    opts.userAgent,
@@ -86,6 +88,9 @@ func (s *Sender) Send(ctx context.Context, msg message.Message) error {
 	if err != nil {
 		return fmt.Errorf("cannot add p2p id to message addrs: %w", err)
 	}
+	if len(s.extraData) != 0 {
+		msg.ExtraData = s.extraData
+	}
 	buf := bytes.NewBuffer(nil)
 	if err = msg.MarshalCBOR(buf); err != nil {
 		return fmt.Errorf("cannot cbor encode announce message: %w", err)
@@ -97,6 +102,9 @@ func (s *Sender) SendJson(ctx context.Context, msg message.Message) error {
 	err := s.addIDToAddrs(&msg)
 	if err != nil {
 		return fmt.Errorf("cannot add p2p id to message addrs: %w", err)
+	}
+	if len(s.extraData) != 0 {
+		msg.ExtraData = s.extraData
 	}
 	buf := new(bytes.Buffer)
 	if err = json.NewEncoder(buf).Encode(msg); err != nil {

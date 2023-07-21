@@ -146,7 +146,7 @@ func TestDTSync_CallsBlockHookWhenCIDsArePartiallyFoundLocally(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
 		// Publish head.
-		require.NoError(t, pub.SetRoot(ctx, l3.(cidlink.Link).Cid))
+		pub.SetRoot(l3.(cidlink.Link).Cid)
 	}
 
 	// Set up a syncer.

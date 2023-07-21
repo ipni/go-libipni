@@ -64,8 +64,7 @@ func TestFetchLatestHead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cid.Undef, c, "Expected cid undef because there is no root")
 
-	err = p.UpdateRoot(context.Background(), rootLnk.(cidlink.Link).Cid)
-	require.NoError(t, err)
+	p.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	c, err = head.QueryRootCid(ctx, client, testTopic, publisher.ID())
 	require.NoError(t, err)
@@ -91,8 +90,7 @@ func TestOldProtocolID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = p.UpdateRoot(context.Background(), rootLnk.(cidlink.Link).Cid)
-	require.NoError(t, err)
+	p.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	c, err := head.QueryRootCid(ctx, client, testTopic, publisher.ID())
 	require.NoError(t, err)

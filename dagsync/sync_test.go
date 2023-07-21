@@ -12,6 +12,7 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
@@ -39,7 +40,7 @@ func TestLatestSyncSuccess(t *testing.T) {
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 	defer pub.Close()
 
@@ -55,11 +56,11 @@ func TestLatestSyncSuccess(t *testing.T) {
 	// Store the whole chain in source node
 	chainLnks := test.MkChain(srcLnkS, true)
 
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[2], false, chainLnks[2].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[2], false, chainLnks[2].(cidlink.Link).Cid)
 	require.NoError(t, err)
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[1], false, chainLnks[1].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[1], false, chainLnks[1].(cidlink.Link).Cid)
 	require.NoError(t, err)
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
 	require.NoError(t, err)
 }
 
@@ -82,7 +83,7 @@ func TestSyncFn(t *testing.T) {
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 	defer pub.Close()
 
@@ -150,7 +151,8 @@ func TestSyncFn(t *testing.T) {
 
 	// Assert the latestSync is updated by explicit sync when cid and selector are unset.
 	newHead := chainLnks[0].(cidlink.Link).Cid
-	err = pub.UpdateRoot(context.Background(), newHead)
+	pub.SetRoot(newHead)
+	err = announce.Send(context.Background(), newHead, pub.Addrs(), p2pSender)
 	require.NoError(t, err)
 
 	select {
@@ -201,7 +203,7 @@ func TestPartialSync(t *testing.T) {
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 	defer pub.Close()
 	test.MkChain(srcLnkS, true)
@@ -222,7 +224,7 @@ func TestPartialSync(t *testing.T) {
 	defer cncl()
 
 	// Fetching first few nodes.
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[2], false, chainLnks[2].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[2], false, chainLnks[2].(cidlink.Link).Cid)
 	require.NoError(t, err)
 
 	// Check that first nodes hadn't been synced
@@ -236,7 +238,7 @@ func TestPartialSync(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update all the chain from scratch again.
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
 	require.NoError(t, err)
 
 	// Check if the node we pass through was retrieved
@@ -261,7 +263,7 @@ func TestStepByStepSync(t *testing.T) {
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAnnounceSenders(p2pSender))
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 	defer pub.Close()
 
@@ -282,9 +284,9 @@ func TestStepByStepSync(t *testing.T) {
 	test.MkChain(dstLnkS, true)
 
 	// Sync the rest of the chain
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[1], false, chainLnks[1].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[1], false, chainLnks[1].(cidlink.Link).Cid)
 	require.NoError(t, err)
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[0], false, chainLnks[0].(cidlink.Link).Cid)
 	require.NoError(t, err)
 }
 
@@ -325,7 +327,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	watcher, cncl := sub.OnSyncFinished()
 
 	t.Log("Testing sync fail when the other end does not have the data")
-	err = newUpdateTest(pub, sub, dstStore, watcher, srcHost.ID(), cidlink.Link{Cid: cid.Undef}, true, chainLnks[3].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, nil, sub, dstStore, watcher, srcHost.ID(), cidlink.Link{Cid: cid.Undef}, true, chainLnks[3].(cidlink.Link).Cid)
 	cncl()
 	require.NoError(t, err)
 	sub.Close()
@@ -340,7 +342,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	watcher, cncl = sub2.OnSyncFinished()
 
 	t.Log("Testing sync fail when not able to run the full exchange")
-	err = newUpdateTest(pub, sub2, dstStore, watcher, srcHost.ID(), chainLnks[2], true, chainLnks[3].(cidlink.Link).Cid)
+	err = newUpdateTest(pub, nil, sub2, dstStore, watcher, srcHost.ID(), chainLnks[2], true, chainLnks[3].(cidlink.Link).Cid)
 	cncl()
 	require.NoError(t, err)
 }
@@ -411,8 +413,7 @@ func TestCancelDeadlock(t *testing.T) {
 	chainLnks := test.MkChain(srcLnkS, true)
 
 	c := chainLnks[2].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), c)
-	require.NoError(t, err)
+	pub.SetRoot(c)
 
 	peerInfo := peer.AddrInfo{
 		ID:    srcHost.ID(),
@@ -423,8 +424,7 @@ func TestCancelDeadlock(t *testing.T) {
 	// Now there should be an event on the watcher channel.
 
 	c = chainLnks[1].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), c)
-	require.NoError(t, err)
+	pub.SetRoot(c)
 
 	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
 	require.NoError(t, err)
@@ -455,10 +455,7 @@ func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore da
 	var err error
 	c := lnk.(cidlink.Link).Cid
 	if c != cid.Undef {
-		err = pub.SetRoot(context.Background(), c)
-		if err != nil {
-			return err
-		}
+		pub.SetRoot(c)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -486,11 +483,12 @@ func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore da
 	return assertLatestSyncEquals(sub, peerID, expectedSync)
 }
 
-func newUpdateTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerID peer.ID, lnk ipld.Link, withFailure bool, expectedSync cid.Cid) error {
+func newUpdateTest(pub dagsync.Publisher, sender announce.Sender, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerID peer.ID, lnk ipld.Link, withFailure bool, expectedSync cid.Cid) error {
 	var err error
 	c := lnk.(cidlink.Link).Cid
 	if c != cid.Undef {
-		err = pub.UpdateRoot(context.Background(), c)
+		pub.SetRoot(c)
+		err = announce.Send(context.Background(), c, pub.Addrs(), sender)
 		if err != nil {
 			return err
 		}
