@@ -153,7 +153,7 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 			na.AssembleEntry("fish0").AssignString("lobster0")
 		}))
 	require.NoError(t, err)
-	require.NoError(t, pub.SetRoot(ctx, link.(cidlink.Link).Cid))
+	pub.SetRoot(link.(cidlink.Link).Cid)
 
 	ls := cidlink.DefaultLinkSystem()
 	store := &memstore.Store{}

@@ -18,6 +18,7 @@ const shutdownTime = 5 * time.Second
 type Sender struct {
 	cancelPubSub context.CancelFunc
 	topic        *pubsub.Topic
+	extraData    []byte
 }
 
 // New creates a new Sender that sends announce messages over pubsub.
@@ -41,6 +42,7 @@ func New(p2pHost host.Host, topicName string, options ...Option) (*Sender, error
 	return &Sender{
 		cancelPubSub: cancelPubsub,
 		topic:        topic,
+		extraData:    opts.extraData,
 	}, nil
 }
 
@@ -65,6 +67,9 @@ func (s *Sender) Close() error {
 
 // Send sends the Message to the pubsub topic.
 func (s *Sender) Send(ctx context.Context, msg message.Message) error {
+	if len(s.extraData) != 0 {
+		msg.ExtraData = s.extraData
+	}
 	buf := bytes.NewBuffer(nil)
 	if err := msg.MarshalCBOR(buf); err != nil {
 		return err

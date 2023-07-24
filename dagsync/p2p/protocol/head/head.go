@@ -25,7 +25,7 @@ const closeTimeout = 30 * time.Second
 var log = logging.Logger("dagsync/head")
 
 type Publisher struct {
-	rl     sync.RWMutex
+	lock   sync.Mutex
 	root   cid.Cid
 	server *http.Server
 }
@@ -134,11 +134,13 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.rl.RLock()
-	defer p.rl.RUnlock()
+	p.lock.Lock()
+	rootCid := p.root
+	p.lock.Unlock()
+
 	var out []byte
-	if p.root != cid.Undef {
-		currentHead := p.root.String()
+	if rootCid != cid.Undef {
+		currentHead := rootCid.String()
 		log.Debug("Found current head: %s", currentHead)
 		out = []byte(currentHead)
 	} else {
@@ -151,12 +153,11 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// UpdateRoot sets the CID being published.
-func (p *Publisher) UpdateRoot(_ context.Context, c cid.Cid) error {
-	p.rl.Lock()
-	defer p.rl.Unlock()
+// SetRoot sets the CID being published.
+func (p *Publisher) SetRoot(c cid.Cid) {
+	p.lock.Lock()
 	p.root = c
-	return nil
+	p.lock.Unlock()
 }
 
 // Close stops the server.
@@ -168,7 +169,7 @@ func (p *Publisher) Close() error {
 
 // Root returns the current root being publisher.
 func (p *Publisher) Root() cid.Cid {
-	p.rl.Lock()
-	defer p.rl.Unlock()
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	return p.root
 }

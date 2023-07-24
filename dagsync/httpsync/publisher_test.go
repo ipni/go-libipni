@@ -50,11 +50,12 @@ func TestNewPublisherForListener(t *testing.T) {
 			privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 			req.NoError(err)
 			sender := &fakeSender{}
-			subject, err := httpsync.NewPublisherForListener(l, handlerPath, lsys, privKey, httpsync.WithAnnounceSenders(sender))
+			subject, err := httpsync.NewPublisherForListener(l, handlerPath, lsys, privKey)
 			req.NoError(err)
 
-			subject.SetRoot(ctx, rootLnk.(cidlink.Link).Cid)
-			req.NoError(subject.AnnounceHead(ctx))
+			rootCid := rootLnk.(cidlink.Link).Cid
+			subject.SetRoot(rootCid)
+			req.NoError(announce.Send(ctx, rootCid, subject.Addrs(), sender))
 			req.Len(sender.msgs, 1)
 			req.Equal(rootLnk.(cidlink.Link).Cid, sender.msgs[0].Cid)
 			req.Len(sender.msgs[0].Addrs, 1)

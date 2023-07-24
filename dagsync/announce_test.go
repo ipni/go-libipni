@@ -58,8 +58,7 @@ func TestAnnounceReplace(t *testing.T) {
 	hnd.subscriber.scopedBlockHookMutex.Lock()
 
 	firstCid := chainLnks[2].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), firstCid)
-	require.NoError(t, err)
+	pub.SetRoot(firstCid)
 
 	// Have the subscriber receive an announce.  This is the same as if it was
 	// published by the publisher without having to wait for it to arrive.
@@ -79,16 +78,14 @@ func TestAnnounceReplace(t *testing.T) {
 
 	// Announce two more times.
 	c := chainLnks[1].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), c)
-	require.NoError(t, err)
+	pub.SetRoot(c)
 
 	err = sub.Announce(context.Background(), c, srcHost.ID(), srcHost.Addrs())
 	require.NoError(t, err)
 
 	t.Log("Sent announce for second CID", c)
 	lastCid := chainLnks[0].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), lastCid)
-	require.NoError(t, err)
+	pub.SetRoot(lastCid)
 
 	err = sub.Announce(context.Background(), lastCid, srcHost.ID(), srcHost.Addrs())
 	require.NoError(t, err)
@@ -240,8 +237,7 @@ func TestAnnounceRepublish(t *testing.T) {
 	chainLnks := test.MkChain(srcLnkS, true)
 
 	firstCid := chainLnks[2].(cidlink.Link).Cid
-	err = pub.SetRoot(context.Background(), firstCid)
-	require.NoError(t, err)
+	pub.SetRoot(firstCid)
 
 	// Announce one CID to subscriber1.
 	err = sub1.Announce(context.Background(), firstCid, srcHost.ID(), srcHost.Addrs())

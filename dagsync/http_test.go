@@ -77,8 +77,7 @@ func TestManualSync(t *testing.T) {
 
 	rootLnk, err := test.Store(te.srcStore, basicnode.NewString("hello world"))
 	require.NoError(t, err)
-	err = te.pub.SetRoot(context.Background(), rootLnk.(cidlink.Link).Cid)
-	require.NoError(t, err)
+	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -101,8 +100,7 @@ func TestSyncHttpFailsUnexpectedPeer(t *testing.T) {
 
 	rootLnk, err := test.Store(te.srcStore, basicnode.NewString("hello world"))
 	require.NoError(t, err)
-	err = te.pub.SetRoot(context.Background(), rootLnk.(cidlink.Link).Cid)
-	require.NoError(t, err)
+	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 
@@ -158,8 +156,7 @@ func TestSyncFnHttp(t *testing.T) {
 
 	// Assert the latestSync is updated by explicit sync when cid and selector are unset.
 	newHead := chainLnks[0].(cidlink.Link).Cid
-	err = te.pub.SetRoot(context.Background(), newHead)
-	require.NoError(t, err)
+	te.pub.SetRoot(newHead)
 
 	lnk := chainLnks[1]
 

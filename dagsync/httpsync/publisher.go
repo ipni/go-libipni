@@ -1,7 +1,6 @@
 package httpsync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,22 +11,18 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
-	"github.com/ipni/go-libipni/announce"
-	"github.com/ipni/go-libipni/announce/message"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-// Publisher is an HTTP publisher that announces the head of an advertisement
-// chain to a set of configured senders.
+// Publisher serves an advertisement chain over HTTP.
 type Publisher struct {
 	addr        multiaddr.Multiaddr
 	closer      io.Closer
@@ -35,22 +30,15 @@ type Publisher struct {
 	handlerPath string
 	peerID      peer.ID
 	privKey     ic.PrivKey
-	rl          sync.RWMutex
+	lock        sync.Mutex
 	root        cid.Cid
-	senders     []announce.Sender
-	extraData   []byte
 }
 
 var _ http.Handler = (*Publisher)(nil)
 
 // NewPublisher creates a new http publisher, listening on the specified
 // address.
-func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
-	opts, err := getOpts(options)
-	if err != nil {
-		return nil, err
-	}
-
+func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
 	if privKey == nil {
 		return nil, errors.New("private key required to sign head requests")
 	}
@@ -72,13 +60,11 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 	proto, _ := multiaddr.NewMultiaddr("/http")
 
 	pub := &Publisher{
-		addr:      multiaddr.Join(maddr, proto),
-		closer:    l,
-		lsys:      lsys,
-		peerID:    peerID,
-		privKey:   privKey,
-		senders:   opts.senders,
-		extraData: opts.extraData,
+		addr:    multiaddr.Join(maddr, proto),
+		closer:  l,
+		lsys:    lsys,
+		peerID:  peerID,
+		privKey: privKey,
 	}
 
 	// Run service on configured port.
@@ -98,8 +84,8 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 // requests on, e.g. "ipni" for `/ipni/...` requests.
 //
 // DEPRECATED: use NewPublisherWithoutServer(listener.Addr(), ...)
-func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
-	return NewPublisherWithoutServer(listener.Addr().String(), handlerPath, lsys, privKey, options...)
+func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
+	return NewPublisherWithoutServer(listener.Addr().String(), handlerPath, lsys, privKey)
 }
 
 // NewPublisherWithoutServer creates a new http publisher for an existing
@@ -107,12 +93,7 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 // the HTTP server is the caller's responsibility. ServeHTTP on the
 // returned Publisher can be used to handle requests. handlerPath is the
 // path to handle requests on, e.g. "ipni" for `/ipni/...` requests.
-func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
-	opts, err := getOpts(options)
-	if err != nil {
-		return nil, err
-	}
-
+func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
 	if privKey == nil {
 		return nil, errors.New("private key required to sign head requests")
 	}
@@ -147,8 +128,6 @@ func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.Lin
 		handlerPath: handlerPath,
 		peerID:      peerID,
 		privKey:     privKey,
-		senders:     opts.senders,
-		extraData:   opts.extraData,
 	}, nil
 }
 
@@ -169,83 +148,16 @@ func (p *Publisher) Protocol() int {
 	return multiaddr.P_HTTP
 }
 
-// AnnounceHead announces the head of the advertisement chain to the configured
-// senders.
-func (p *Publisher) AnnounceHead(ctx context.Context) error {
-	p.rl.Lock()
-	c := p.root
-	p.rl.Unlock()
-	return p.announce(ctx, c, p.Addrs())
-}
-
-// AnnounceHeadWithAddrs announces the head of the advertisement chain to the
-// configured senders, with the provided addresses.
-func (p *Publisher) AnnounceHeadWithAddrs(ctx context.Context, addrs []multiaddr.Multiaddr) error {
-	p.rl.Lock()
-	c := p.root
-	p.rl.Unlock()
-	return p.announce(ctx, c, addrs)
-}
-
-func (p *Publisher) announce(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
-	// Do nothing if nothing to announce or no means to announce it.
-	if c == cid.Undef || len(p.senders) == 0 {
-		return nil
-	}
-
-	log.Debugf("Publishing CID and addresses over HTTP: %s", c)
-	msg := message.Message{
-		Cid:       c,
-		ExtraData: p.extraData,
-	}
-	msg.SetAddrs(addrs)
-
-	var errs error
-	for _, sender := range p.senders {
-		if err := sender.Send(ctx, msg); err != nil {
-			errs = multierror.Append(errs, err)
-		}
-	}
-	return errs
-}
-
 // SetRoot sets the head of the advertisement chain.
-func (p *Publisher) SetRoot(_ context.Context, c cid.Cid) error {
-	p.rl.Lock()
-	defer p.rl.Unlock()
+func (p *Publisher) SetRoot(c cid.Cid) {
+	p.lock.Lock()
 	p.root = c
-	return nil
+	p.lock.Unlock()
 }
 
-// UpdateRoot updates the head of the advertisement chain and announces it to
-// the configured senders.
-func (p *Publisher) UpdateRoot(ctx context.Context, c cid.Cid) error {
-	return p.UpdateRootWithAddrs(ctx, c, p.Addrs())
-}
-
-// UpdateRootWithAddrs updates the head of the advertisement chain and announces
-// it to the configured senders, with the provided addresses.
-func (p *Publisher) UpdateRootWithAddrs(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr) error {
-	err := p.SetRoot(ctx, c)
-	if err != nil {
-		return err
-	}
-	return p.announce(ctx, c, addrs)
-}
-
-// Close closes the Publisher and all of its senders.
+// Close closes the Publisher.
 func (p *Publisher) Close() error {
-	var errs error
-	err := p.closer.Close()
-	if err != nil {
-		errs = multierror.Append(errs, err)
-	}
-	for _, sender := range p.senders {
-		if err = sender.Close(); err != nil {
-			errs = multierror.Append(errs, err)
-		}
-	}
-	return errs
+	return p.closer.Close()
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -262,14 +174,15 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if ask == "head" {
 		// serve the head
-		p.rl.RLock()
-		defer p.rl.RUnlock()
+		p.lock.Lock()
+		rootCid := p.root
+		p.lock.Unlock()
 
-		if p.root == cid.Undef {
+		if rootCid == cid.Undef {
 			http.Error(w, "", http.StatusNoContent)
 			return
 		}
-		marshalledMsg, err := newEncodedSignedHead(p.root, p.privKey)
+		marshalledMsg, err := newEncodedSignedHead(rootCid, p.privKey)
 		if err != nil {
 			http.Error(w, "Failed to encode", http.StatusInternalServerError)
 			log.Errorw("Failed to serve root", "err", err)
