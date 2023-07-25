@@ -33,10 +33,10 @@ type ResponseWriter struct {
 	status   int
 }
 
-func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWriter, error) {
+func New(w http.ResponseWriter, r *http.Request, options ...Option) (*ResponseWriter, error) {
 	opts, err := getOpts(options)
 	if err != nil {
-		return ResponseWriter{}, err
+		return nil, err
 	}
 
 	accepts := r.Header.Values("Accept")
@@ -46,7 +46,7 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWri
 		for _, amt := range amts {
 			mt, _, err := mime.ParseMediaType(amt)
 			if err != nil {
-				return ResponseWriter{}, apierror.New(errors.New("invalid Accept header"), http.StatusBadRequest)
+				return nil, apierror.New(errors.New("invalid Accept header"), http.StatusBadRequest)
 			}
 			switch mt {
 			case mediaTypeNDJson:
@@ -68,10 +68,10 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWri
 			// If there is no `Accept` header and JSON is preferred then be
 			// forgiving and fall back onto JSON media type. Otherwise,
 			// strictly require `Accept` header.
-			return ResponseWriter{}, apierror.New(errors.New("accept header must be specified"), http.StatusBadRequest)
+			return nil, apierror.New(errors.New("accept header must be specified"), http.StatusBadRequest)
 		}
 	} else if !okJson && !nd {
-		return ResponseWriter{}, apierror.New(fmt.Errorf("media type not supported: %s", accepts), http.StatusBadRequest)
+		return nil, apierror.New(fmt.Errorf("media type not supported: %s", accepts), http.StatusBadRequest)
 	}
 
 	var b []byte
@@ -80,30 +80,30 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWri
 
 	pathType := path.Base(path.Dir(r.URL.Path))
 	if pathType == "" {
-		return ResponseWriter{}, apierror.New(errors.New("missing resource type"), http.StatusBadRequest)
+		return nil, apierror.New(errors.New("missing resource type"), http.StatusBadRequest)
 	}
 	switch pathType {
 	case opts.mhPathType:
 		b, err = base58.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
-			return ResponseWriter{}, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
+			return nil, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
 		}
 		mh = multihash.Multihash(b)
 		cidKey = cid.NewCidV1(cid.Raw, mh)
 	case opts.cidPathType:
 		cidKey, err = cid.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
 		if err != nil {
-			return ResponseWriter{}, apierror.New(err, http.StatusBadRequest)
+			return nil, apierror.New(err, http.StatusBadRequest)
 		}
 		b = cidKey.Hash()
 		mh = multihash.Multihash(b)
 	default:
-		return ResponseWriter{}, apierror.New(errors.New("unsupported resource type"), http.StatusBadRequest)
+		return nil, apierror.New(errors.New("unsupported resource type"), http.StatusBadRequest)
 	}
 
 	dm, err := multihash.Decode(b)
 	if err != nil {
-		return ResponseWriter{}, apierror.New(err, http.StatusBadRequest)
+		return nil, apierror.New(err, http.StatusBadRequest)
 	}
 
 	flusher, _ := w.(http.Flusher)
@@ -115,7 +115,7 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (ResponseWri
 		w.Header().Set("Content-Type", mediaTypeJson)
 	}
 
-	return ResponseWriter{
+	return &ResponseWriter{
 		w:        w,
 		f:        flusher,
 		cid:      cidKey,
@@ -166,12 +166,14 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	return w.w.Write(b)
 }
 
-func (w *ResponseWriter) WriteHeader(code int) {
-	w.status = code
-	w.w.WriteHeader(code)
+func (w *ResponseWriter) WriteHeader(statusCode int) {
+	if statusCode != http.StatusOK {
+		w.status = statusCode
+		w.w.WriteHeader(statusCode)
+	}
 }
 
-func (w *ResponseWriter) Status() int {
+func (w *ResponseWriter) StatusCode() int {
 	return w.status
 }
 
