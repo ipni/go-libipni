@@ -52,7 +52,7 @@ type Receiver struct {
 	hostID    peer.ID
 
 	announceCache *stringLRU
-	// announceMutex protects announceCache, and allowPeer, topicSub
+	// announceMutex protects announceCache and topicSub.
 	announceMutex sync.Mutex
 
 	closed bool
@@ -204,16 +204,6 @@ func (r *Receiver) Close() error {
 	return err
 }
 
-// SetAllowPeer configures Subscriber with a function to evaluate whether to
-// allow or reject messages from a peer. Setting nil removes any filtering and
-// allows messages from all peers. Calling SetAllowPeer replaces any previously
-// configured AllowPeerFunc.
-func (r *Receiver) SetAllowPeer(allowPeer AllowPeerFunc) {
-	r.announceMutex.Lock()
-	r.allowPeer = allowPeer
-	r.announceMutex.Unlock()
-}
-
 // UncacheCid removes a CID from the announce cache.
 func (r *Receiver) UncacheCid(adCid cid.Cid) {
 	r.announceMutex.Lock()
@@ -234,7 +224,6 @@ func (r *Receiver) watch(ctx context.Context) {
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, pubsub.ErrSubscriptionCancelled) {
 				// This is a normal result of shutting down the Subscriber.
-				log.Debug("Canceled watching pubsub subscription")
 				break
 			}
 			log.Errorw("Error reading from pubsub", "err", err)
@@ -299,6 +288,9 @@ func (r *Receiver) watch(ctx context.Context) {
 		}
 		err = r.handleAnnounce(ctx, amsg, false)
 		if err != nil {
+			if errors.Is(err, ErrClosed) || errors.Is(err, context.Canceled) {
+				break
+			}
 			log.Errorw("Cannot process message", "err", err)
 			continue
 		}
@@ -319,10 +311,10 @@ func (r *Receiver) Direct(ctx context.Context, nextCid cid.Cid, peerID peer.ID, 
 		PeerID: peerID,
 		Addrs:  addrs,
 	}
-	return r.handleAnnounce(ctx, amsg, true)
+	return r.handleAnnounce(ctx, amsg, r.resend)
 }
 
-func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, direct bool) error {
+func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, resend bool) error {
 	err := r.announceCheck(amsg)
 	if err != nil {
 		if err == ErrClosed {
@@ -339,7 +331,7 @@ func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, direct boo
 		// address in their peer store.
 	}
 
-	if direct && r.resend {
+	if resend {
 		err = r.republish(ctx, amsg)
 		if err != nil {
 			log.Errorw("Cannot republish announce message", "err", err)
@@ -350,6 +342,8 @@ func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, direct boo
 
 	select {
 	case r.outChan <- amsg:
+	case <-r.done:
+		return ErrClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -358,16 +352,16 @@ func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, direct boo
 }
 
 func (r *Receiver) announceCheck(amsg Announce) error {
+	// Check callback to see if peer ID allowed.
+	if r.allowPeer != nil && !r.allowPeer(amsg.PeerID) {
+		return errSourceNotAllowed
+	}
+
 	r.announceMutex.Lock()
 	defer r.announceMutex.Unlock()
 
 	if r.closed {
 		return ErrClosed
-	}
-
-	// Check callback to see if peer ID allowed.
-	if r.allowPeer != nil && !r.allowPeer(amsg.PeerID) {
-		return errSourceNotAllowed
 	}
 
 	// Check if a previous announce for this CID was already seen.

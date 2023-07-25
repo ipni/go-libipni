@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
+func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer func(peer.ID) bool) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
 	srcHost := test.MkTestHost()
 	dstHost := test.MkTestHost()
 
@@ -54,7 +54,8 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host,
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 
 	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
@@ -67,20 +68,24 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching) (host.Host,
 
 func TestAllowPeerReject(t *testing.T) {
 	t.Parallel()
+
+	// Set function to reject anything except dstHost, which is not the one
+	// generating the update.
+	var destID peer.ID
+	allow := func(peerID peer.ID) bool {
+		return peerID == destID
+	}
+
 	// Init dagsync publisher and subscriber
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore)
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore, allow)
 	defer srcHost.Close()
 	defer dstHost.Close()
 	defer pub.Close()
 	defer sub.Close()
 
-	// Set function to reject anything except dstHost, which is not the one
-	// generating the update.
-	sub.SetAllowPeer(func(peerID peer.ID) bool {
-		return peerID == dstHost.ID()
-	})
+	destID = dstHost.ID()
 
 	watcher, cncl := sub.OnSyncFinished()
 	defer cncl()
@@ -101,19 +106,20 @@ func TestAllowPeerReject(t *testing.T) {
 
 func TestAllowPeerAllows(t *testing.T) {
 	t.Parallel()
+
+	// Set function to allow any peer.
+	allow := func(_ peer.ID) bool {
+		return true
+	}
+
 	// Init dagsync publisher and subscriber
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore)
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore, allow)
 	defer srcHost.Close()
 	defer dstHost.Close()
 	defer pub.Close()
 	defer sub.Close()
-
-	// Set function to allow any peer.
-	sub.SetAllowPeer(func(_ peer.ID) bool {
-		return true
-	})
 
 	watcher, cncl := sub.OnSyncFinished()
 	defer cncl()
@@ -167,7 +173,7 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 

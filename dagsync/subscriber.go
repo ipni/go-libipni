@@ -98,7 +98,8 @@ type Subscriber struct {
 
 	segDepthLimit int64
 
-	receiver *announce.Receiver
+	receiver  *announce.Receiver
+	topicName string
 
 	// Track explicit Sync calls in progress and allow them to complete before
 	// closing subscriber.
@@ -160,7 +161,7 @@ func wrapBlockHook() (*sync.RWMutex, map[peer.ID]func(peer.ID, cid.Cid), func(pe
 
 // NewSubscriber creates a new Subscriber that processes pubsub messages and
 // syncs dags advertised using the specified selector.
-func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topic string, dss ipld.Node, options ...Option) (*Subscriber, error) {
+func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topic string, options ...Option) (*Subscriber, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -187,22 +188,12 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		return nil, err
 	}
 
-	rcvr, err := announce.NewReceiver(host, topic,
-		announce.WithAllowPeer(opts.allowPeer),
-		announce.WithFilterIPs(opts.filterIPs),
-		announce.WithResend(opts.resendAnnounce),
-		announce.WithTopic(opts.topic))
-	if err != nil {
-		return nil, err
-	}
-
 	s := &Subscriber{
-		dss:  dss,
+		dss:  opts.dss,
 		host: host,
 
-		addrTTL:   opts.addrTTL,
-		closing:   make(chan struct{}),
-		watchDone: make(chan struct{}),
+		addrTTL: opts.addrTTL,
+		closing: make(chan struct{}),
 
 		handlers: make(map[peer.ID]*handler),
 		inEvents: make(chan SyncFinished, 1),
@@ -225,12 +216,18 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		lastKnownSync:     opts.lastKnownSync,
 
 		segDepthLimit: opts.segDepthLimit,
-
-		receiver: rcvr,
+		topicName:     topic,
 	}
 
-	// Start watcher to read announce messages.
-	go s.watch()
+	if opts.hasRcvr {
+		s.receiver, err = announce.NewReceiver(host, topic, opts.rcvrOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create announcement receiver: %w", err)
+		}
+		s.watchDone = make(chan struct{})
+		// Start watcher to read announce messages.
+		go s.watch()
+	}
 	// Start distributor to send SyncFinished messages to interested parties.
 	go s.distributeEvents()
 	// Start goroutine to remove idle publisher handlers.
@@ -269,14 +266,6 @@ func (s *Subscriber) SetLatestSync(peerID peer.ID, latestSync cid.Cid) error {
 	return nil
 }
 
-// SetAllowPeer configures Subscriber with a function to evaluate whether to
-// allow or reject messages from a peer. Setting nil removes any filtering and
-// allows messages from all peers. Calling SetAllowPeer replaces any previously
-// configured AllowPeerFunc.
-func (s *Subscriber) SetAllowPeer(allowPeer announce.AllowPeerFunc) {
-	s.receiver.SetAllowPeer(allowPeer)
-}
-
 // Close shuts down the Subscriber.
 func (s *Subscriber) Close() error {
 	var err error
@@ -297,17 +286,19 @@ func (s *Subscriber) doClose() error {
 	// Wait for explicit Syncs calls to finish.
 	s.expSyncWG.Wait()
 
-	// Close receiver and wait for watch to exit.
-	err := s.receiver.Close()
-	if err != nil {
-		log.Errorw("error closing receiver", "err", err)
+	if s.receiver != nil {
+		// Close receiver and wait for watch to exit.
+		err := s.receiver.Close()
+		if err != nil {
+			log.Errorw("error closing receiver", "err", err)
+		}
+		<-s.watchDone
 	}
-	<-s.watchDone
 
 	// Wait for any syncs to complete.
 	s.asyncWG.Wait()
 
-	err = s.dtSync.Close()
+	err := s.dtSync.Close()
 
 	// Stop the distribution goroutine.
 	close(s.inEvents)
@@ -629,6 +620,9 @@ func (s *Subscriber) watch() {
 // an announce message announces the availability of an advertisement and where
 // to retrieve it from.
 func (s *Subscriber) Announce(ctx context.Context, nextCid cid.Cid, peerID peer.ID, peerAddrs []multiaddr.Multiaddr) error {
+	if s.receiver == nil {
+		return nil
+	}
 	return s.receiver.Direct(ctx, nextCid, peerID, peerAddrs)
 }
 
@@ -664,7 +658,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration) (
 		peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, addrTTL)
 	}
 
-	return s.dtSync.NewSyncer(peerInfo.ID, s.receiver.TopicName()), false, nil
+	return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), false, nil
 }
 
 // handleAsync starts a goroutine to process the latest announce message
@@ -704,7 +698,9 @@ func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Synce
 			h.syncMutex.Unlock()
 			if err != nil {
 				// Failed to handle the sync, so allow another announce for the same CID.
-				h.subscriber.receiver.UncacheCid(c)
+				if h.subscriber.receiver != nil {
+					h.subscriber.receiver.UncacheCid(c)
+				}
 				log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
 				if strings.Contains(err.Error(), "response rejected") {
 					// A "response rejected" error happens when the indexer

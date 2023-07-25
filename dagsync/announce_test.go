@@ -11,6 +11,7 @@ import (
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/httpsync"
 	"github.com/ipni/go-libipni/dagsync/test"
@@ -40,7 +41,7 @@ func TestAnnounceReplace(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	sub, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, RecvAnnounce())
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -163,7 +164,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	defer pubh.Close()
 	subds := dssync.MutexWrap(datastore.NewMapDatastore())
 	subls := test.MkLinkSystem(subds)
-	sub, err := NewSubscriber(subh, subds, subls, testTopic, nil)
+	sub, err := NewSubscriber(subh, subds, subls, testTopic, RecvAnnounce())
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -217,11 +218,13 @@ func TestAnnounceRepublish(t *testing.T) {
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, dstHost, dstHost2)
 
-	sub2, err := NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic, nil, Topic(topics[1]))
+	sub2, err := NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic,
+		RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub2.Close()
 
-	sub1, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, Topic(topics[0]), ResendAnnounce(true))
+	sub1, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)))
 	require.NoError(t, err)
 	defer sub1.Close()
 
