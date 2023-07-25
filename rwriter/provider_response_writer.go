@@ -13,9 +13,9 @@ type ProviderResponseWriter struct {
 	result model.MultihashResult
 }
 
-func NewProviderResponseWriter(w ResponseWriter) *ProviderResponseWriter {
+func NewProviderResponseWriter(w *ResponseWriter) *ProviderResponseWriter {
 	return &ProviderResponseWriter{
-		ResponseWriter: w,
+		ResponseWriter: *w,
 		result: model.MultihashResult{
 			Multihash: w.Multihash(),
 		},
