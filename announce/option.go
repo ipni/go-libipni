@@ -29,7 +29,7 @@ func getOpts(opts []Option) (config, error) {
 }
 
 // WithAllowPeer sets the function that determines whether to allow or reject
-// messages from a peer.
+// messages from a peer. When not set or nil, allows messages from all peers.
 func WithAllowPeer(allowPeer AllowPeerFunc) Option {
 	return func(c *config) error {
 		c.allowPeer = allowPeer

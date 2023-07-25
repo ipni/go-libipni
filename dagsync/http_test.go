@@ -49,7 +49,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	dstLinkSys := test.MkLinkSystem(dstStore)
 	dstHost := test.MkTestHost()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, nil, subscriberOptions...)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, subscriberOptions...)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		sub.Close()

@@ -44,7 +44,7 @@ func TestLatestSyncSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -94,7 +94,8 @@ func TestSyncFn(t *testing.T) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]), dagsync.BlockHook(blockHook))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.BlockHook(blockHook),
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -208,7 +209,7 @@ func TestPartialSync(t *testing.T) {
 	defer pub.Close()
 	test.MkChain(srcLnkS, true)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -267,7 +268,7 @@ func TestStepByStepSync(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[1]))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -312,7 +313,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	t.Log("source host:", srcHost.ID())
 	t.Log("targer host:", dstHost.ID())
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce())
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -333,7 +334,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	sub.Close()
 
 	dstStore = dssync.MutexWrap(datastore.NewMapDatastore())
-	sub2, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	sub2, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic)
 	require.NoError(t, err)
 	defer sub2.Close()
 
@@ -364,7 +365,7 @@ func TestAnnounce(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce())
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -401,7 +402,7 @@ func TestCancelDeadlock(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic)
 	require.NoError(t, err)
 	defer sub.Close()
 

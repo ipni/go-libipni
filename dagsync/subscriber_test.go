@@ -66,7 +66,7 @@ func TestScopedBlockHook(t *testing.T) {
 			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
 			var calledGeneralBlockHookTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, nil, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 				atomic.AddInt64(&calledGeneralBlockHookTimes, 1)
 			}))
 			require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 
 			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, nil)
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic)
 			require.NoError(t, err)
 
 			onFinished, cancel := sub.OnSyncFinished()
@@ -192,7 +192,7 @@ func TestConcurrentSync(t *testing.T) {
 			subLsys := test.MkLinkSystem(subDS)
 
 			var calledTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, nil, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 				atomic.AddInt64(&calledTimes, 1)
 			}))
 			require.NoError(t, err)
@@ -352,7 +352,7 @@ func TestRoundTripSimple(t *testing.T) {
 	// Init dagsync publisher and subscriber
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore)
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore, nil)
 	defer srcHost.Close()
 	defer dstHost.Close()
 	defer pub.Close()
@@ -421,7 +421,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Log("block hook got", c, "from", p)
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, nil, dagsync.Topic(topics[2]), dagsync.BlockHook(blockHook))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[2])), dagsync.BlockHook(blockHook))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -617,7 +617,7 @@ func TestCloseSubscriber(t *testing.T) {
 	sh := test.MkTestHost()
 	lsys := test.MkLinkSystem(st)
 
-	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic, nil)
+	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic)
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -696,7 +696,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 		require.NoError(t, test.WaitForP2PPublisher(pub, subSys.host, topicName))
 	}
 
-	sub, err := dagsync.NewSubscriber(subSys.host, subSys.ds, subSys.lsys, topicName, nil, subOpts...)
+	sub, err := dagsync.NewSubscriber(subSys.host, subSys.ds, subSys.lsys, topicName, subOpts...)
 	require.NoError(t, err)
 
 	return pub, sub, senders

@@ -8,6 +8,7 @@ import (
 	dt "github.com/filecoin-project/go-data-transfer/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-graphsync"
+	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipni/go-libipni/announce"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -33,9 +34,7 @@ type LastKnownSyncFunc func(peer.ID) (cid.Cid, bool)
 
 // config contains all options for configuring Subscriber.
 type config struct {
-	addrTTL   time.Duration
-	allowPeer announce.AllowPeerFunc
-	filterIPs bool
+	addrTTL time.Duration
 
 	topic *pubsub.Topic
 
@@ -45,12 +44,14 @@ type config struct {
 	blockHook  BlockHookFunc
 	httpClient *http.Client
 
+	dss          ipld.Node
 	syncRecLimit selector.RecursionLimit
 
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
 
-	resendAnnounce bool
+	hasRcvr  bool
+	rcvrOpts []announce.Option
 
 	segDepthLimit int64
 
@@ -79,15 +80,6 @@ func getOpts(opts []Option) (config, error) {
 	return cfg, nil
 }
 
-// AllowPeer sets the function that determines whether to allow or reject
-// messages from a peer.
-func AllowPeer(allowPeer announce.AllowPeerFunc) Option {
-	return func(c *config) error {
-		c.allowPeer = allowPeer
-		return nil
-	}
-}
-
 // AddrTTL sets the peerstore address time-to-live for addresses discovered
 // from pubsub messages.
 func AddrTTL(addrTTL time.Duration) Option {
@@ -101,6 +93,15 @@ func AddrTTL(addrTTL time.Duration) Option {
 func Topic(topic *pubsub.Topic) Option {
 	return func(c *config) error {
 		c.topic = topic
+		return nil
+	}
+}
+
+// DefaultSelectorSeq sets the default selector sequence passed to
+// ExploreRecursiveWithStopNode.
+func DefaultSelectorSeq(dss ipld.Node) Option {
+	return func(c *config) error {
+		c.dss = dss
 		return nil
 	}
 }
@@ -129,15 +130,6 @@ func HttpClient(client *http.Client) Option {
 func BlockHook(blockHook BlockHookFunc) Option {
 	return func(c *config) error {
 		c.blockHook = blockHook
-		return nil
-	}
-}
-
-// FilterIPs removes any private, loopback, or unspecified IP multiaddrs from
-// addresses supplied in announce messages.
-func FilterIPs(enable bool) Option {
-	return func(c *config) error {
-		c.filterIPs = enable
 		return nil
 	}
 }
@@ -171,11 +163,11 @@ func SyncRecursionLimit(limit selector.RecursionLimit) Option {
 	}
 }
 
-// ResendAnnounce determines whether to resend the direct announce mesages
-// (those that are not received via pubsub) over pubsub.
-func ResendAnnounce(enable bool) Option {
+// RecvAnnounce enables an announcement message receiver.
+func RecvAnnounce(opts ...announce.Option) Option {
 	return func(c *config) error {
-		c.resendAnnounce = enable
+		c.hasRcvr = true
+		c.rcvrOpts = opts
 		return nil
 	}
 }
