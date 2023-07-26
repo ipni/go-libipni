@@ -256,6 +256,16 @@ func Test_MismatchingNodeIsError(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "faild to convert node prototype"))
 }
 
+func Test_LinkLoadNoEntries(t *testing.T) {
+	ls := cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ls.SetReadStorage(store)
+	ls.SetWriteStorage(store)
+
+	_, err := ls.Load(ipld.LinkContext{}, stischema.NoEntries, stischema.AdvertisementPrototype)
+	require.Equal(t, "404", err.Error())
+}
+
 func generateAdvertisement() *stischema.Advertisement {
 	mhs := test.RandomMultihashes(7)
 	prev := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
