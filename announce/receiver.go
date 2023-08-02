@@ -276,9 +276,9 @@ func (r *Receiver) watch(ctx context.Context) {
 				log.Errorw("Cannot read peerID from republished announce", "err", err)
 				continue
 			}
-			log.Infow("Handling re-published pubsub announce", "originPeer", srcPeer, "relayPeer", relayPeer)
+			log.Infow("Handling re-published pubsub announce", "originPeer", srcPeer, "relayPeer", relayPeer, "addrs", addrs)
 		} else {
-			log.Infow("Handling pubsub announce", "peer", srcPeer)
+			log.Infow("Handling pubsub announce", "peer", srcPeer, "addrs", addrs)
 		}
 
 		amsg := Announce{
@@ -305,7 +305,7 @@ func (r *Receiver) watch(ctx context.Context) {
 // publisher, since an announce message announces the availability of an
 // advertisement and where to retrieve it from.
 func (r *Receiver) Direct(ctx context.Context, nextCid cid.Cid, peerID peer.ID, addrs []multiaddr.Multiaddr) error {
-	log.Infow("Handling direct announce", "peer", peerID)
+	log.Infow("Handling direct announce", "peer", peerID, "addrs", addrs)
 	amsg := Announce{
 		Cid:    nextCid,
 		PeerID: peerID,
