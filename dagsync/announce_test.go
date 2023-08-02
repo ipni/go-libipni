@@ -28,10 +28,9 @@ func TestAnnounceReplace(t *testing.T) {
 	t.Parallel()
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
-
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
@@ -139,8 +138,7 @@ func TestAnnounceReplace(t *testing.T) {
 
 func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	// Instantiate a HTTP publisher
-	pubh := test.MkTestHost()
-	defer pubh.Close()
+	pubh := test.MkTestHost(t)
 	pubds := dssync.MutexWrap(datastore.NewMapDatastore())
 	publs := test.MkLinkSystem(pubds)
 	pub, err := httpsync.NewPublisher("0.0.0.0:0", publs, pubh.Peerstore().PrivKey(pubh.ID()))
@@ -160,8 +158,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	anotherC := anotherLink.(cidlink.Link).Cid
 
 	// Instantiate a subscriber
-	subh := test.MkTestHost()
-	defer pubh.Close()
+	subh := test.MkTestHost(t)
 	subds := dssync.MutexWrap(datastore.NewMapDatastore())
 	subls := test.MkLinkSystem(subds)
 	sub, err := NewSubscriber(subh, subds, subls, testTopic, RecvAnnounce())
@@ -203,10 +200,9 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 func TestAnnounceRepublish(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
-
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
@@ -214,7 +210,7 @@ func TestAnnounceRepublish(t *testing.T) {
 
 	dstStore2 := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstLnkS2 := test.MkLinkSystem(dstStore2)
-	dstHost2 := test.MkTestHost()
+	dstHost2 := test.MkTestHost(t)
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, dstHost, dstHost2)
 

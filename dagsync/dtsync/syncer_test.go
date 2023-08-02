@@ -60,13 +60,14 @@ func TestDTSync_CallsBlockHookWhenCIDsAreFullyFoundLocally(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start a publisher to sync from.
-	pubh := test.MkTestHost()
+	pubh := test.MkTestHost(t)
 	pub, err := dtsync.NewPublisher(pubh, dssync.MutexWrap(datastore.NewMapDatastore()), ls, topic)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
 	// Set up a syncer.
-	subh := test.MkTestHost()
+	subh := test.MkTestHost(t)
+
 	subh.Peerstore().AddAddrs(pubh.ID(), pubh.Addrs(), peerstore.PermanentAddrTTL)
 	var gotCids []cid.Cid
 	testHook := func(id peer.ID, cid cid.Cid) {
@@ -140,7 +141,7 @@ func TestDTSync_CallsBlockHookWhenCIDsArePartiallyFoundLocally(t *testing.T) {
 		}
 
 		// Start a publisher to sync from.
-		pubh = test.MkTestHost()
+		pubh = test.MkTestHost(t)
 		pub, err := dtsync.NewPublisher(pubh, dssync.MutexWrap(datastore.NewMapDatastore()), publs, topic)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, pub.Close()) })
@@ -150,7 +151,7 @@ func TestDTSync_CallsBlockHookWhenCIDsArePartiallyFoundLocally(t *testing.T) {
 	}
 
 	// Set up a syncer.
-	subh := test.MkTestHost()
+	subh := test.MkTestHost(t)
 	subh.Peerstore().AddAddrs(pubh.ID(), pubh.Addrs(), peerstore.PermanentAddrTTL)
 	var gotCids []cid.Cid
 	testHook := func(id peer.ID, cid cid.Cid) {

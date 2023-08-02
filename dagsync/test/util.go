@@ -192,12 +192,14 @@ func Store(srcStore datastore.Batching, n ipld.Node) (ipld.Link, error) {
 	return lsys.Store(ipld.LinkContext{}, schema.Linkproto, n)
 }
 
-func MkTestHost(options ...libp2p.Option) host.Host {
+func MkTestHost(t *testing.T, options ...libp2p.Option) host.Host {
 	options = append(options, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	h, err := libp2p.New(options...)
+	require.NoError(t, err)
 	if err != nil {
 		panic(err)
 	}
+	t.Cleanup(func() { h.Close() })
 	return h
 }
 

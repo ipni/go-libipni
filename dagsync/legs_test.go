@@ -37,8 +37,8 @@ func TestMain(m *testing.M) {
 }
 
 func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer func(peer.ID) bool) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
-	srcHost := test.MkTestHost()
-	dstHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
+	dstHost := test.MkTestHost(t)
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -144,10 +144,8 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 
-	srcHost := test.MkTestHost()
-	dstHost := test.MkTestHost()
-	defer srcHost.Close()
-	defer dstHost.Close()
+	srcHost := test.MkTestHost(t)
+	dstHost := test.MkTestHost(t)
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 

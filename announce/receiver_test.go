@@ -53,6 +53,7 @@ func init() {
 
 func TestReceiverBasic(t *testing.T) {
 	srcHost, _ := libp2p.New()
+	t.Cleanup(func() { srcHost.Close() })
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 
@@ -68,6 +69,7 @@ func TestReceiverBasic(t *testing.T) {
 
 func TestReceiverCloseWaitingNext(t *testing.T) {
 	srcHost, _ := libp2p.New()
+	t.Cleanup(func() { srcHost.Close() })
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 
@@ -91,6 +93,7 @@ func TestReceiverCloseWaitingNext(t *testing.T) {
 
 func TestReceiverCloseWaitingDirect(t *testing.T) {
 	srcHost, _ := libp2p.New()
+	t.Cleanup(func() { srcHost.Close() })
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 
@@ -117,6 +120,7 @@ func TestReceiverCloseWaitingDirect(t *testing.T) {
 
 func TestReceiverCidCache(t *testing.T) {
 	srcHost, _ := libp2p.New()
+	t.Cleanup(func() { srcHost.Close() })
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 

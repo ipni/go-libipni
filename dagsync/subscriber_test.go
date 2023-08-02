@@ -46,7 +46,8 @@ func TestScopedBlockHook(t *testing.T) {
 	err := quick.Check(func(ll llBuilder) bool {
 		return t.Run("Quickcheck", func(t *testing.T) {
 			ds := dssync.MutexWrap(datastore.NewMapDatastore())
-			pubHost := test.MkTestHost()
+			pubHost := test.MkTestHost(t)
+
 			lsys := test.MkLinkSystem(ds)
 			pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
 			require.NoError(t, err)
@@ -59,7 +60,7 @@ func TestScopedBlockHook(t *testing.T) {
 
 			pub.SetRoot(head.(cidlink.Link).Cid)
 
-			subHost := test.MkTestHost()
+			subHost := test.MkTestHost(t)
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
 
@@ -110,7 +111,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 	err := quick.Check(func(ll llBuilder) bool {
 		return t.Run("Quickcheck", func(t *testing.T) {
 			ds := dssync.MutexWrap(datastore.NewMapDatastore())
-			pubHost := test.MkTestHost()
+			pubHost := test.MkTestHost(t)
 			lsys := test.MkLinkSystem(ds)
 			pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
 			require.NoError(t, err)
@@ -123,7 +124,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 
 			pub.SetRoot(head.(cidlink.Link).Cid)
 
-			subHost := test.MkTestHost()
+			subHost := test.MkTestHost(t)
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
 
@@ -167,11 +168,12 @@ func TestConcurrentSync(t *testing.T) {
 			// limit to at most 10 concurrent publishers
 			publisherCount := int(publisherCount)%10 + 1
 
-			subHost := test.MkTestHost()
+			subHost := test.MkTestHost(t)
 
 			for i := 0; i < publisherCount; i++ {
 				ds := dssync.MutexWrap(datastore.NewMapDatastore())
-				pubHost := test.MkTestHost()
+				pubHost := test.MkTestHost(t)
+
 				lsys := test.MkLinkSystem(ds)
 				pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
 				require.NoError(t, err)
@@ -244,8 +246,6 @@ func TestSync(t *testing.T) {
 			t.Parallel()
 			pubSys := newHostSystem(t)
 			subSys := newHostSystem(t)
-			defer pubSys.close()
-			defer subSys.close()
 
 			calledTimes := 0
 			pub, sub, _ := dpsb.Build(t, testTopic, pubSys, subSys,
@@ -296,13 +296,13 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 			pubDs := dssync.MutexWrap(datastore.NewMapDatastore())
 			pubSys := hostSystem{
 				privKey: pubPrivKey,
-				host:    test.MkTestHost(libp2p.Identity(pubPrivKey)),
+				host:    test.MkTestHost(t, libp2p.Identity(pubPrivKey)),
 				ds:      pubDs,
 				lsys:    test.MkLinkSystem(pubDs),
 			}
 			subDs := dssync.MutexWrap(datastore.NewMapDatastore())
 			subSys := hostSystem{
-				host: test.MkTestHost(),
+				host: test.MkTestHost(t),
 				ds:   subDs,
 				lsys: test.MkLinkSystem(subDs),
 			}
@@ -385,18 +385,15 @@ func TestRoundTripSimple(t *testing.T) {
 func TestRoundTrip(t *testing.T) {
 	// Init dagsync publisher and subscriber
 	srcStore1 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost1 := test.MkTestHost()
-	defer srcHost1.Close()
+	srcHost1 := test.MkTestHost(t)
 	srcLnkS1 := test.MkLinkSystem(srcStore1)
 
 	srcStore2 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost2 := test.MkTestHost()
-	defer srcHost2.Close()
+	srcHost2 := test.MkTestHost(t)
 	srcLnkS2 := test.MkLinkSystem(srcStore2)
 
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	dstHost := test.MkTestHost()
-	defer dstHost.Close()
+	dstHost := test.MkTestHost(t)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
 	topics := test.WaitForMeshWithMessage(t, "testTopic", srcHost1, srcHost2, dstHost)
@@ -467,8 +464,6 @@ func TestRoundTrip(t *testing.T) {
 func TestHttpPeerAddrPeerstore(t *testing.T) {
 	pubHostSys := newHostSystem(t)
 	subHostSys := newHostSystem(t)
-	defer pubHostSys.close()
-	defer subHostSys.close()
 
 	pub, sub, _ := dagsyncPubSubBuilder{
 		IsHttp: true,
@@ -510,8 +505,6 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	t.Parallel()
 	pubHostSys := newHostSystem(t)
 	subHostSys := newHostSystem(t)
-	defer pubHostSys.close()
-	defer subHostSys.close()
 
 	pub, sub, _ := dagsyncPubSubBuilder{}.Build(t, testTopic, pubHostSys, subHostSys, nil)
 
@@ -614,7 +607,8 @@ func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, e
 
 func TestCloseSubscriber(t *testing.T) {
 	st := dssync.MutexWrap(datastore.NewMapDatastore())
-	sh := test.MkTestHost()
+	sh := test.MkTestHost(t)
+
 	lsys := test.MkLinkSystem(st)
 
 	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic)
@@ -666,14 +660,10 @@ func newHostSystem(t *testing.T) hostSystem {
 	ds := dssync.MutexWrap(datastore.NewMapDatastore())
 	return hostSystem{
 		privKey: privKey,
-		host:    test.MkTestHost(libp2p.Identity(privKey)),
+		host:    test.MkTestHost(t, libp2p.Identity(privKey)),
 		ds:      ds,
 		lsys:    test.MkLinkSystem(ds),
 	}
-}
-
-func (h *hostSystem) close() {
-	h.host.Close()
 }
 
 func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostSystem, subSys hostSystem, subOpts []dagsync.Option) (dagsync.Publisher, *dagsync.Subscriber, []announce.Sender) {

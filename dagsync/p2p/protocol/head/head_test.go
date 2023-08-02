@@ -25,8 +25,8 @@ const testTopic = "/testtopic"
 func TestFetchLatestHead(t *testing.T) {
 	const ipPrefix = "/ip4/127.0.0.1/tcp/"
 
-	publisher := test.MkTestHost()
-	client := test.MkTestHost()
+	publisher := test.MkTestHost(t)
+	client := test.MkTestHost(t)
 
 	var addrs []multiaddr.Multiaddr
 	for _, a := range publisher.Addrs() {
@@ -73,8 +73,8 @@ func TestFetchLatestHead(t *testing.T) {
 }
 
 func TestOldProtocolID(t *testing.T) {
-	publisher := test.MkTestHost()
-	client := test.MkTestHost()
+	publisher := test.MkTestHost(t)
+	client := test.MkTestHost(t)
 
 	// Provide multiaddrs to connect to
 	client.Peerstore().AddAddrs(publisher.ID(), publisher.Addrs(), time.Hour)
