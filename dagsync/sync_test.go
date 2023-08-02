@@ -25,15 +25,13 @@ import (
 func TestLatestSyncSuccess(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
 
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
-	defer srcHost.Close()
-	defer dstHost.Close()
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -68,15 +66,13 @@ func TestSyncFn(t *testing.T) {
 	t.Parallel()
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
 
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
-	defer srcHost.Close()
-	defer dstHost.Close()
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -185,19 +181,16 @@ func TestPartialSync(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	testStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
 	testLnkS := test.MkLinkSystem(testStore)
 
 	chainLnks := test.MkChain(testLnkS, true)
 
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
-
-	defer srcHost.Close()
-	defer dstHost.Close()
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -252,10 +245,8 @@ func TestStepByStepSync(t *testing.T) {
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLnkS := test.MkLinkSystem(srcStore)
 
-	srcHost := test.MkTestHost()
-	dstHost := test.MkTestHost()
-	defer srcHost.Close()
-	defer dstHost.Close()
+	srcHost := test.MkTestHost(t)
+	dstHost := test.MkTestHost(t)
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -295,8 +286,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	t.Parallel()
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
-	defer srcHost.Close()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
 	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
@@ -304,8 +294,7 @@ func TestLatestSyncFailure(t *testing.T) {
 
 	chainLnks := test.MkChain(srcLnkS, true)
 
-	dstHost := test.MkTestHost()
-	defer dstHost.Close()
+	dstHost := test.MkTestHost(t)
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
@@ -351,11 +340,9 @@ func TestLatestSyncFailure(t *testing.T) {
 func TestAnnounce(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
-	dstHost := test.MkTestHost()
-	defer srcHost.Close()
-	defer dstHost.Close()
+	dstHost := test.MkTestHost(t)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
@@ -388,11 +375,9 @@ func TestAnnounce(t *testing.T) {
 func TestCancelDeadlock(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost()
+	srcHost := test.MkTestHost(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
-	dstHost := test.MkTestHost()
-	defer srcHost.Close()
-	defer dstHost.Close()
+	dstHost := test.MkTestHost(t)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)

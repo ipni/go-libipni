@@ -36,9 +36,10 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	srcPrivKey, _, err := ic.GenerateECDSAKeyPair(rand.Reader)
 	require.NoError(t, err, "Err generating private key")
 
-	srcHost = test.MkTestHost(libp2p.Identity(srcPrivKey))
+	srcHost = test.MkTestHost(t, libp2p.Identity(srcPrivKey))
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLinkSys := test.MkLinkSystem(srcStore)
+
 	pub, err := httpsync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -47,7 +48,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstLinkSys := test.MkLinkSystem(dstStore)
-	dstHost := test.MkTestHost()
+	dstHost := test.MkTestHost(t)
 
 	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, subscriberOptions...)
 	require.NoError(t, err)

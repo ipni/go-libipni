@@ -10,8 +10,7 @@ import (
 )
 
 func Test_registerVoucherHandlesAlreadyRegisteredGracefully(t *testing.T) {
-	h := test.MkTestHost()
-
+	h := test.MkTestHost(t)
 	dt, _, close, err := makeDataTransfer(h, datastore.NewMapDatastore(), cidlink.DefaultLinkSystem(), nil, 0, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, close()) })

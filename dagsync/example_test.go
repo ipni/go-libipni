@@ -27,6 +27,7 @@ func ExamplePublisher() {
 	// Init dagsync publisher and subscriber.
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcHost, _ = libp2p.New()
+	defer srcHost.Close()
 	srcLnkS := makeLinkSystem(srcStore)
 
 	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
@@ -56,6 +57,7 @@ func ExamplePublisher() {
 
 func ExampleSubscriber() {
 	dstHost, _ := libp2p.New()
+	defer dstHost.Close()
 
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstLnkSys := makeLinkSystem(dstStore)
