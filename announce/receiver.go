@@ -325,7 +325,7 @@ func (r *Receiver) handleAnnounce(ctx context.Context, amsg Announce, resend boo
 	}
 
 	if r.filterIPs {
-		amsg.Addrs = mautil.FilterPrivateIPs(amsg.Addrs)
+		amsg.Addrs = mautil.FilterPublic(amsg.Addrs)
 		// Even if there are no addresses left after filtering, continue
 		// because the others receiving the announce may be able to look up the
 		// address in their peer store.
