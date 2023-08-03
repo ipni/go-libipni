@@ -9,10 +9,9 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-// FilterPrivateIPs returns a new slice of multiaddrs with any private,
-// loopback, or unspecified IP multiaddrs removed. If no multiaddrs are
-// removed, then returns the original slice.
-func FilterPrivateIPs(maddrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+// FilterPublic returns a new slice of multiaddrs with any private, loopback,
+// or unspecified multiaddrs removed.
+func FilterPublic(maddrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 	filtered := multiaddr.FilterAddrs(maddrs, func(target multiaddr.Multiaddr) bool {
 		if target == nil {
 			return true
@@ -23,7 +22,7 @@ func FilterPrivateIPs(maddrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
 		}
 		switch c.Protocol().Code {
 		case multiaddr.P_IP4, multiaddr.P_IP6, multiaddr.P_IP6ZONE, multiaddr.P_IPCIDR:
-			return manet.IsPublicAddr(target)
+			return manet.IsPublicAddr(target) && !manet.IsIPUnspecified(target)
 		case multiaddr.P_DNS, multiaddr.P_DNS4, multiaddr.P_DNS6, multiaddr.P_DNSADDR:
 			return c.Value() != "localhost"
 		}
