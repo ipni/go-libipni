@@ -168,17 +168,17 @@ func TestPublisherWithLibp2pHTTP(t *testing.T) {
 			clientHost, err := libp2phttp.New()
 			req.NoError(err)
 
-			c, err := clientHost.NamespacedClient(nil, protoID, peer.AddrInfo{Addrs: []multiaddr.Multiaddr{serverHTTPMa}})
+			c, err := clientHost.NamespacedClient(protoID, peer.AddrInfo{Addrs: []multiaddr.Multiaddr{serverHTTPMa}})
 			req.NoError(err)
 			return &c
 		}},
 		{"libp2p stream transport", func(t *testing.T) *http.Client {
 			clientStreamHost, err := libp2p.New(libp2p.NoListenAddrs)
 			req.NoError(err)
-			clientHost, err := libp2phttp.New()
+			clientHost, err := libp2phttp.New(libp2phttp.StreamHost(clientStreamHost))
 			req.NoError(err)
 
-			c, err := clientHost.NamespacedClient(clientStreamHost, protoID, peer.AddrInfo{ID: publisherStreamHost.ID(), Addrs: []multiaddr.Multiaddr{serverStreamMa}})
+			c, err := clientHost.NamespacedClient(protoID, peer.AddrInfo{ID: publisherStreamHost.ID(), Addrs: []multiaddr.Multiaddr{serverStreamMa}})
 			req.NoError(err)
 
 			wk, err := clientHost.GetAndStorePeerProtoMap(c.Transport, publisherStreamHost.ID())
