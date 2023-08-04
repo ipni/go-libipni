@@ -69,6 +69,15 @@ func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Sync
 	}, nil
 }
 
+func (s *Sync) NewSyncerWithoutAddrs(peerID peer.ID) (*Syncer, error) {
+	return &Syncer{
+		peerID:  peerID,
+		rootURL: url.URL{Path: "/"},
+		urls:    nil,
+		sync:    s,
+	}, nil
+}
+
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
 }

@@ -131,6 +131,26 @@ func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.Lin
 	}, nil
 }
 
+// NewPublisherHandler returns a Publisher for use as an http.Handler. Doesn't listen or know about a url prefix.
+func NewPublisherHandler(lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
+	if privKey == nil {
+		return nil, errors.New("private key required to sign head requests")
+	}
+	peerID, err := peer.IDFromPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
+	}
+
+	return &Publisher{
+		addr:        nil,
+		closer:      io.NopCloser(nil),
+		lsys:        lsys,
+		handlerPath: "",
+		peerID:      peerID,
+		privKey:     privKey,
+	}, nil
+}
+
 // Addrs returns the addresses, as []multiaddress, that the Publisher is
 // listening on.
 func (p *Publisher) Addrs() []multiaddr.Multiaddr {
