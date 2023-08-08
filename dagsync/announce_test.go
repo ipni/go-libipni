@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipld/go-ipld-prime"
@@ -68,35 +67,27 @@ func TestAnnounceReplace(t *testing.T) {
 
 	// This first announce should start the handler goroutine and clear the
 	// pending cid.
-	var pendingCid cid.Cid
 	require.Eventually(t, func() bool {
-		hnd.qlock.Lock()
-		pendingCid = hnd.pendingCid
-		hnd.qlock.Unlock()
-		return pendingCid == cid.Undef
+		return hnd.pendingMsg.Load() == nil
 	}, 2*time.Second, 100*time.Millisecond)
 
 	// Announce two more times.
 	c := chainLnks[1].(cidlink.Link).Cid
 	pub.SetRoot(c)
-
 	err = sub.Announce(context.Background(), c, srcHost.ID(), srcHost.Addrs())
 	require.NoError(t, err)
-
 	t.Log("Sent announce for second CID", c)
+
 	lastCid := chainLnks[0].(cidlink.Link).Cid
 	pub.SetRoot(lastCid)
-
 	err = sub.Announce(context.Background(), lastCid, srcHost.ID(), srcHost.Addrs())
 	require.NoError(t, err)
 	t.Log("Sent announce for last CID", lastCid)
 
 	// Check that the pending CID gets set to the last one announced.
 	require.Eventually(t, func() bool {
-		hnd.qlock.Lock()
-		pendingCid = hnd.pendingCid
-		hnd.qlock.Unlock()
-		return pendingCid == lastCid
+		amsg := hnd.pendingMsg.Load()
+		return amsg != nil && amsg.Cid == lastCid
 	}, 2*time.Second, 100*time.Millisecond)
 
 	// Unblock the first handler goroutine
@@ -107,10 +98,10 @@ func TestAnnounceReplace(t *testing.T) {
 	case <-time.After(updateTimeout):
 		t.Fatal("timed out waiting for sync to propagate")
 	case downstream, open := <-watcher:
-		require.True(t, open, "event channle closed without receiving event")
+		require.True(t, open, "event channel closed without receiving event")
 		require.Equal(t, firstCid, downstream.Cid, "sync returned unexpected first cid")
 		_, err = dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
-		require.NoError(t, err, "data not in receiver store")
+		require.NoError(t, err, downstream.Cid.String()+" not in receiver store")
 		t.Log("Received sync notification for first CID:", firstCid)
 	}
 
@@ -122,7 +113,7 @@ func TestAnnounceReplace(t *testing.T) {
 		require.True(t, open, "event channle closed without receiving event")
 		require.Equal(t, lastCid, downstream.Cid, "sync returned unexpected last cid")
 		_, err = dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
-		require.NoError(t, err, "data not in receiver store")
+		require.NoError(t, err, downstream.Cid.String()+" not in receiver store")
 		t.Log("Received sync notification for last CID:", lastCid)
 	}
 
@@ -161,7 +152,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	subh := test.MkTestHost(t)
 	subds := dssync.MutexWrap(datastore.NewMapDatastore())
 	subls := test.MkLinkSystem(subds)
-	sub, err := NewSubscriber(subh, subds, subls, testTopic, RecvAnnounce())
+	sub, err := NewSubscriber(subh, subds, subls, testTopic, RecvAnnounce(), StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -187,7 +178,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	peerInfo := peer.AddrInfo{
 		ID: pubh.ID(),
 	}
-	gotc, err := sub.Sync(ctx, peerInfo, anotherC, nil)
+	gotc, err := sub.SyncAdChain(ctx, peerInfo, WithHeadAdCid(anotherC))
 	require.NoError(t, err)
 	require.Equal(t, anotherC, gotc)
 	gotNode, err := subls.Load(ipld.LinkContext{Ctx: ctx}, anotherLink, basicnode.Prototype.String)
@@ -215,12 +206,13 @@ func TestAnnounceRepublish(t *testing.T) {
 	topics := test.WaitForMeshWithMessage(t, testTopic, dstHost, dstHost2)
 
 	sub2, err := NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic,
-		RecvAnnounce(announce.WithTopic(topics[1])))
+		RecvAnnounce(announce.WithTopic(topics[1])), StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub2.Close()
 
 	sub1, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)))
+		RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)),
+		StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub1.Close()
 
