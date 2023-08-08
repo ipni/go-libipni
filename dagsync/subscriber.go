@@ -410,10 +410,10 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 	s.expSyncMutex.Unlock()
 	defer s.expSyncWG.Done()
 
-	defaultOptions := []SyncOption{
-		ScopedBlockHook(s.generalBlockHook),
-		ScopedSegmentDepthLimit(s.segDepthLimit)}
-	opts := getSyncOpts(append(defaultOptions, options...))
+	opts := getSyncOpts(options)
+	if opts.blockHook == nil {
+		opts.blockHook = s.generalBlockHook
+	}
 
 	var err error
 	peerInfo, err = removeIDFromAddrs(peerInfo)
@@ -481,7 +481,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	hnd.syncMutex.Lock()
-	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, opts.segDepthLimit)
+	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, s.segDepthLimit)
 	hnd.syncMutex.Unlock()
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)
@@ -507,6 +507,9 @@ func (s *Subscriber) SyncOneEntry(ctx context.Context, peerInfo peer.AddrInfo, e
 // SyncEntries syncs the entries chain starting with block identified by entCid.
 func (s *Subscriber) SyncEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, options ...SyncOption) error {
 	opts := getSyncOpts(options)
+	if opts.blockHook == nil {
+		opts.blockHook = s.generalBlockHook
+	}
 
 	// If a scoped depth limit is specified, then create a new entries selector
 	// for that depth limit. Otherwise, use the existing entries selector that
@@ -519,14 +522,8 @@ func (s *Subscriber) SyncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 				efsb.Insert("Next", ssb.ExploreRecursiveEdge())
 			})).Node()
 	}
-	if opts.blockHook == nil {
-		opts.blockHook = s.generalBlockHook
-	}
-	if opts.segDepthLimit == 0 {
-		opts.segDepthLimit = s.segDepthLimit
-	}
 
-	return s.syncEntries(ctx, peerInfo, entCid, selectorEnts, opts.blockHook, opts.segDepthLimit)
+	return s.syncEntries(ctx, peerInfo, entCid, selectorEnts, opts.blockHook, s.segDepthLimit)
 }
 
 func (s *Subscriber) SyncHAMTEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, options ...SyncOption) error {
@@ -570,12 +567,6 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 	// none, create one if allowed.
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 
-	if bh == nil {
-		bh = s.generalBlockHook
-	}
-	if segdl == 0 {
-		segdl = s.segDepthLimit
-	}
 	hnd.syncMutex.Lock()
 	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl)
 	hnd.syncMutex.Unlock()
