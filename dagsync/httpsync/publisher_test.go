@@ -15,16 +15,23 @@ import (
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
 	"github.com/ipld/go-ipld-prime/datamodel"
+	"github.com/ipld/go-ipld-prime/fluent"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	"github.com/ipld/go-ipld-prime/traversal"
+	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,6 +99,149 @@ func TestNewPublisherForListener(t *testing.T) {
 			req.Equal(expectedSig, sig)
 			// nothing extra?
 			req.ElementsMatch([]string{"head", "pubkey", "sig"}, mapKeys(t, respNode))
+		})
+	}
+}
+
+func TestPublisherWithLibp2pHTTP(t *testing.T) {
+	ctx := context.Background()
+	req := require.New(t)
+
+	publisherStore := &correctedMemStore{&memstore.Store{
+		Bag: make(map[string][]byte),
+	}}
+	publisherLsys := cidlink.DefaultLinkSystem()
+	publisherLsys.TrustedStorage = true
+	publisherLsys.SetReadStorage(publisherStore)
+	publisherLsys.SetWriteStorage(publisherStore)
+
+	privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 256, rand.Reader)
+	req.NoError(err)
+
+	publisher, err := httpsync.NewPublisherHandler(publisherLsys, privKey)
+	req.NoError(err)
+
+	// Use same identity as publisher. This is necessary so that same ID that
+	// the publisher uses to sign head/ query responses is the same as the ID
+	// used to identify the publisherStreamHost. Otherwise, it would be
+	// necessary for the sync client to know both IDs: one for the stream host
+	// to connect to, and one for the publisher to validate the dignatuse with.
+	publisherStreamHost, err := libp2p.New(libp2p.Identity(privKey), libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	req.NoError(err)
+
+	// This is the "HTTP Host". It's like the libp2p "stream host" (aka core
+	// host.Host), but it uses HTTP semantics instead of stream semantics.
+	//
+	// You can pass in options on creation like a stream host to do HTTP over
+	// libp2p streams, and multiaddrs to create listeners on.
+	publisherHost, err := libp2phttp.New(
+		libp2phttp.StreamHost(publisherStreamHost),
+		libp2phttp.ListenAddrs([]multiaddr.Multiaddr{multiaddr.StringCast("/ip4/127.0.0.1/tcp/0/http")}),
+	)
+	req.NoError(err)
+
+	go publisherHost.Serve()
+	defer publisherHost.Close()
+
+	protoID := protocol.ID("/ipni-sync/1")
+
+	serverStreamMa := publisherHost.Addrs()[0]
+	serverHTTPMa := publisherHost.Addrs()[1]
+	req.Contains(serverHTTPMa.String(), "/http")
+
+	t.Log("libp2p stream server address:", serverStreamMa.String())
+	t.Log("libp2p http server address:", serverHTTPMa.String())
+
+	// Here is where we attach our request handler. Note that we are mounting
+	// the "/ipni-sync/1" protocol at /ipni/. libp2phttp manages this mapping
+	// and clients can learn about the mapping at .well-known/libp2p.
+	//
+	// In this case we also want out HTTP handler to not even know about the
+	// prefix, so we use the stdlib http.StripPrefix.
+	publisherHost.SetHttpHandlerAtPath(protoID, "/ipni/", http.StripPrefix("/ipni/", publisher))
+
+	link, err := publisherLsys.Store(
+		ipld.LinkContext{Ctx: ctx},
+		cidlink.LinkPrototype{
+			Prefix: cid.Prefix{
+				Version:  1,
+				Codec:    uint64(multicodec.DagJson),
+				MhType:   uint64(multicodec.Sha2_256),
+				MhLength: -1,
+			},
+		},
+		fluent.MustBuildMap(basicnode.Prototype.Map, 4, func(na fluent.MapAssembler) {
+			na.AssembleEntry("fish").AssignString("lobster")
+			na.AssembleEntry("fish1").AssignString("lobster1")
+			na.AssembleEntry("fish2").AssignString("lobster2")
+			na.AssembleEntry("fish0").AssignString("lobster0")
+		}))
+	req.NoError(err)
+	publisher.SetRoot(link.(cidlink.Link).Cid)
+
+	testCases := []struct {
+		name          string
+		publisher     peer.AddrInfo
+		newClientHost func(t *testing.T) *libp2phttp.HTTPHost
+	}{
+		{
+			"HTTP transport",
+			peer.AddrInfo{Addrs: []multiaddr.Multiaddr{serverHTTPMa}},
+			func(t *testing.T) *libp2phttp.HTTPHost {
+				clientHost, err := libp2phttp.New()
+				req.NoError(err)
+				return clientHost
+			},
+		},
+		{
+			"libp2p stream transport",
+			peer.AddrInfo{ID: publisherStreamHost.ID(), Addrs: []multiaddr.Multiaddr{serverStreamMa}},
+			func(t *testing.T) *libp2phttp.HTTPHost {
+				clientStreamHost, err := libp2p.New(libp2p.NoListenAddrs)
+				req.NoError(err)
+				clientHost, err := libp2phttp.New(libp2phttp.StreamHost(clientStreamHost))
+				req.NoError(err)
+				return clientHost
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Plumbing to set up the test.
+			clientStore := &correctedMemStore{&memstore.Store{
+				Bag: make(map[string][]byte),
+			}}
+			clientLsys := cidlink.DefaultLinkSystem()
+			clientLsys.TrustedStorage = true
+			clientLsys.SetReadStorage(clientStore)
+			clientLsys.SetWriteStorage(clientStore)
+			clientSync := httpsync.NewLibp2pSync(clientLsys, tc.newClientHost(t), protoID, nil)
+
+			clientSyncer, err := clientSync.NewSyncer(tc.publisher.ID, tc.publisher.Addrs)
+			req.NoError(err)
+			wk := clientSyncer.PeerProtoMap()
+			if wk != nil {
+				req.Contains(wk, protoID)
+			}
+
+			headCid, err := clientSyncer.GetHead(ctx)
+			req.NoError(err)
+
+			req.Equal(link.(cidlink.Link).Cid, headCid)
+
+			clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+			require.NoError(t, err)
+
+			// Assert that data is loadable from the link system.
+			wantLink := cidlink.Link{Cid: headCid}
+			node, err := clientLsys.Load(ipld.LinkContext{Ctx: ctx}, wantLink, basicnode.Prototype.Any)
+			require.NoError(t, err)
+
+			// Assert synced node link matches the computed link, i.e. is spec-compliant.
+			gotLink, err := clientLsys.ComputeLink(wantLink.Prototype(), node)
+			require.NoError(t, err)
+			require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
 		})
 	}
 }
