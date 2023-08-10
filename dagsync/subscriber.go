@@ -476,12 +476,17 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 		return cid.Undef, fmt.Errorf("sync canceled: %w", ctx.Err())
 	}
 
+	segdl := s.segDepthLimit
+	if opts.segDepthLimit != 0 {
+		segdl = opts.segDepthLimit
+	}
+
 	// Check for an existing handler for the specified peer (publisher). If
 	// none, create one if allowed.
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	hnd.syncMutex.Lock()
-	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, s.segDepthLimit)
+	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, segdl)
 	hnd.syncMutex.Unlock()
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)

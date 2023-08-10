@@ -204,11 +204,12 @@ func WithLastKnownSync(f LastKnownSyncFunc) Option {
 }
 
 type syncCfg struct {
-	headAdCid  cid.Cid
-	stopAdCid  cid.Cid
-	blockHook  BlockHookFunc
-	depthLimit int64
-	resync     bool
+	headAdCid     cid.Cid
+	stopAdCid     cid.Cid
+	blockHook     BlockHookFunc
+	depthLimit    int64
+	segDepthLimit int64
+	resync        bool
 }
 
 type SyncOption func(*syncCfg)
@@ -252,6 +253,18 @@ func WithAdsResync(resync bool) SyncOption {
 func ScopedDepthLimit(limit int64) SyncOption {
 	return func(sc *syncCfg) {
 		sc.depthLimit = limit
+	}
+}
+
+// ScopedSegmentDepthLimit is the equivalent of SegmentDepthLimit option but
+// only applied to a single sync. If not specified, the Subscriber
+// SegmentDepthLimit option is used instead.
+//
+// For segmented sync to function at least one of BlockHook or ScopedBlockHook
+// must be set. See: SegmentDepthLimit.
+func ScopedSegmentDepthLimit(depth int64) SyncOption {
+	return func(sc *syncCfg) {
+		sc.segDepthLimit = depth
 	}
 }
 
