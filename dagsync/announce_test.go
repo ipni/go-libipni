@@ -12,7 +12,7 @@ import (
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
@@ -132,7 +132,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	pubh := test.MkTestHost(t)
 	pubds := dssync.MutexWrap(datastore.NewMapDatastore())
 	publs := test.MkLinkSystem(pubds)
-	pub, err := httpsync.NewPublisher("0.0.0.0:0", publs, pubh.Peerstore().PrivKey(pubh.ID()))
+	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubh.Peerstore().PrivKey(pubh.ID()))
 	require.NoError(t, err)
 	defer pub.Close()
 
