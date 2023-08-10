@@ -1,4 +1,4 @@
-package httpsync_test
+package ipnisync_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/message"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
@@ -50,7 +51,7 @@ func TestNewPublisherForListener(t *testing.T) {
 			privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 			req.NoError(err)
 			sender := &fakeSender{}
-			subject, err := httpsync.NewPublisherForListener(l, handlerPath, lsys, privKey)
+			subject, err := ipnisync.NewPublisher(l.Addr().String(), lsys, privKey, ipnisync.WithServer(false), ipnisync.WithHandlerPath(handlerPath))
 			req.NoError(err)
 
 			rootCid := rootLnk.(cidlink.Link).Cid
@@ -70,11 +71,10 @@ func TestNewPublisherForListener(t *testing.T) {
 
 			resp := &mockResponseWriter{}
 			u := &url.URL{
-				Path: handlerPath + "/head",
+				Path: path.Join("/", handlerPath, ipnisync.IpniPath, "/head"),
 			}
-			if !strings.HasPrefix(handlerPath, "/") {
-				u.Path = "/" + u.Path
-			}
+			//u = u.JoinPath(handlerPath, ipnisync.IpniPath, "/head")
+			//
 			subject.ServeHTTP(resp, &http.Request{URL: u})
 			req.Equal(0, resp.status) // not explicitly set
 			req.Nil(resp.header)

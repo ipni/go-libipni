@@ -21,7 +21,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -82,7 +82,7 @@ type Subscriber struct {
 	asyncWG   sync.WaitGroup
 
 	dtSync   *dtsync.Sync
-	httpSync *httpsync.Sync
+	ipniSync *ipnisync.Sync
 
 	// A separate peerstore is used to store HTTP addresses. This is necessary
 	// when peers have both libp2p and HTTP addresses, and a sync is requested
@@ -211,7 +211,7 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		rmEventChan:  make(chan chan<- SyncFinished),
 
 		dtSync:   dtSync,
-		httpSync: httpsync.NewSync(lsys, opts.httpClient, blockHook),
+		ipniSync: ipnisync.NewSync(lsys, opts.httpClient, blockHook),
 
 		httpPeerstore: httpPeerstore,
 
@@ -731,7 +731,7 @@ func (s *Subscriber) Announce(ctx context.Context, nextCid cid.Cid, peerID peer.
 
 func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, func(), error) {
 	// Check for an HTTP address in peerAddrs, or if not given, in the http
-	// peerstore. This gives a preference to use httpsync over dtsync.
+	// peerstore. This gives a preference to use ipnisync over dtsync.
 	var httpAddrs []multiaddr.Multiaddr
 	if len(peerInfo.Addrs) == 0 {
 		httpAddrs = s.httpPeerstore.Addrs(peerInfo.ID)
@@ -744,10 +744,9 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 		// Store this http address so that future calls to sync will work without a
 		// peerAddr (given that it happens within the TTL)
 		s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, tempAddrTTL)
-
-		syncer, err := s.httpSync.NewSyncer(peerInfo.ID, httpAddrs)
+		syncer, err := s.ipniSync.NewSyncer(peerInfo.ID, httpAddrs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot create http sync handler: %w", err)
+			return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
 		}
 		if doUpdate {
 			update = func() {

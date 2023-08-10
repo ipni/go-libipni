@@ -1,4 +1,4 @@
-package httpsync
+package ipnisync
 
 import (
 	"errors"
@@ -16,6 +16,7 @@ import (
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -32,13 +33,18 @@ type Publisher struct {
 	privKey     ic.PrivKey
 	lock        sync.Mutex
 	root        cid.Cid
+	topic       string
 }
 
 var _ http.Handler = (*Publisher)(nil)
 
-// NewPublisher creates a new http publisher, listening on the specified
-// address.
-func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
+// NewPublisher creates a new http publisher. It is optional with start a server, listening on the specified
+// address, using the WithStartServer option.
+func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
+	opts, err := getOpts(options)
+	if err != nil {
+		return nil, err
+	}
 	if privKey == nil {
 		return nil, errors.New("private key required to sign head requests")
 	}
@@ -46,33 +52,55 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Pu
 	if err != nil {
 		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
 	}
-
-	l, err := net.Listen("tcp", address)
-	if err != nil {
-		return nil, err
-	}
-
-	maddr, err := manet.FromNetAddr(l.Addr())
-	if err != nil {
-		l.Close()
-		return nil, err
-	}
 	proto, _ := multiaddr.NewMultiaddr("/http")
+	handlerPath := strings.TrimPrefix(opts.handlerPath, "/")
+	if handlerPath != "" {
+		httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(handlerPath))
+		if err != nil {
+			return nil, err
+		}
+		proto = multiaddr.Join(proto, httpath)
+		handlerPath = "/" + handlerPath
+	}
 
 	pub := &Publisher{
-		addr:    multiaddr.Join(maddr, proto),
-		closer:  l,
-		lsys:    lsys,
-		peerID:  peerID,
-		privKey: privKey,
+		lsys:        lsys,
+		handlerPath: path.Join(handlerPath, IpniPath),
+		peerID:      peerID,
+		privKey:     privKey,
+		topic:       opts.topic,
 	}
 
-	// Run service on configured port.
-	server := &http.Server{
-		Handler: pub,
-		Addr:    l.Addr().String(),
+	var addr net.Addr
+	if opts.startServer {
+		l, err := net.Listen("tcp", address)
+		if err != nil {
+			return nil, err
+		}
+		pub.closer = l
+		addr = l.Addr()
+
+		// Run service on configured port.
+		server := &http.Server{
+			Handler: pub,
+			Addr:    l.Addr().String(),
+		}
+		go server.Serve(l)
+	} else {
+		addr, err = net.ResolveTCPAddr("tcp", address)
+		if err != nil {
+			return nil, err
+		}
 	}
-	go server.Serve(l)
+
+	maddr, err := manet.FromNetAddr(addr)
+	if err != nil {
+		if pub.closer != nil {
+			pub.closer.Close()
+		}
+		return nil, err
+	}
+	pub.addr = multiaddr.Join(maddr, proto)
 
 	return pub, nil
 }
@@ -91,44 +119,11 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 // NewPublisherWithoutServer creates a new http publisher for an existing
 // network address. When providing an existing network address, running
 // the HTTP server is the caller's responsibility. ServeHTTP on the
-// returned Publisher can be used to handle requests. handlerPath is the
-// path to handle requests on, e.g. "ipni" for `/ipni/...` requests.
-func NewPublisherWithoutServer(address string, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
-	if privKey == nil {
-		return nil, errors.New("private key required to sign head requests")
-	}
-	peerID, err := peer.IDFromPrivateKey(privKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
-	}
-
-	addr, err := net.ResolveTCPAddr("tcp", address)
-	if err != nil {
-		return nil, err
-	}
-	maddr, err := manet.FromNetAddr(addr)
-	if err != nil {
-		return nil, err
-	}
-	proto, _ := multiaddr.NewMultiaddr("/http")
-	handlerPath = strings.TrimPrefix(handlerPath, "/")
-	if handlerPath != "" {
-		httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(handlerPath))
-		if err != nil {
-			return nil, err
-		}
-		proto = multiaddr.Join(proto, httpath)
-		handlerPath = "/" + handlerPath
-	}
-
-	return &Publisher{
-		addr:        multiaddr.Join(maddr, proto),
-		closer:      io.NopCloser(nil),
-		lsys:        lsys,
-		handlerPath: handlerPath,
-		peerID:      peerID,
-		privKey:     privKey,
-	}, nil
+// returned Publisher can be used to handle requests.
+//
+// DEPRECATED: use NewPublisher(address, lsys, privKey, WithHandlerPath(handlerPath))
+func NewPublisherWithoutServer(address, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
+	return NewPublisher(address, lsys, privKey, WithHandlerPath(handlerPath), WithServer(false))
 }
 
 // Addrs returns the addresses, as []multiaddress, that the Publisher is
@@ -162,16 +157,12 @@ func (p *Publisher) Close() error {
 
 // ServeHTTP implements the http.Handler interface.
 func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var ask string
-	if p.handlerPath != "" {
-		if !strings.HasPrefix(r.URL.Path, p.handlerPath) {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		ask = path.Base(strings.TrimPrefix(r.URL.Path, p.handlerPath))
-	} else {
-		ask = path.Base(r.URL.Path)
+	if p.handlerPath != "" && !strings.HasPrefix(r.URL.Path, p.handlerPath) {
+		http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
+		return
 	}
+
+	ask := path.Base(r.URL.Path)
 	if ask == "head" {
 		// serve the head
 		p.lock.Lock()
@@ -182,13 +173,15 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "", http.StatusNoContent)
 			return
 		}
-		marshalledMsg, err := newEncodedSignedHead(rootCid, p.privKey)
+
+		marshalledMsg, err := newEncodedSignedHead(rootCid, p.topic, p.privKey)
 		if err != nil {
-			http.Error(w, "Failed to encode", http.StatusInternalServerError)
 			log.Errorw("Failed to serve root", "err", err)
-		} else {
-			_, _ = w.Write(marshalledMsg)
+			http.Error(w, "", http.StatusInternalServerError)
+			return
 		}
+
+		_, _ = w.Write(marshalledMsg)
 		return
 	}
 	// interpret `ask` as a CID to serve.
@@ -211,4 +204,12 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = dagjson.Encode(item, w)
 
 	// TODO: Sign message using publisher's private key.
+}
+
+func newEncodedSignedHead(rootCid cid.Cid, topic string, privKey ic.PrivKey) ([]byte, error) {
+	signedHead, err := headschema.NewSignedHead(rootCid, topic, privKey)
+	if err != nil {
+		return nil, err
+	}
+	return signedHead.Encode()
 }

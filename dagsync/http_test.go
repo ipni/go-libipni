@@ -3,6 +3,8 @@ package dagsync_test
 import (
 	"context"
 	"crypto/rand"
+	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -13,7 +15,8 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	oldhttpsync "github.com/ipni/go-libipni/dagsync/httpsync"
+	httpsync "github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
@@ -32,6 +35,87 @@ type httpTestEnv struct {
 	dstStore   *dssync.MutexDatastore
 }
 
+func setupOldPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) httpTestEnv {
+	srcPrivKey, _, err := ic.GenerateECDSAKeyPair(rand.Reader)
+	require.NoError(t, err, "Err generating private key")
+
+	srcHost = test.MkTestHost(t, libp2p.Identity(srcPrivKey))
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcLinkSys := test.MkLinkSystem(srcStore)
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	pub, err := oldhttpsync.NewPublisherWithoutServer(l.Addr().String(), "/test/path", srcLinkSys, srcPrivKey)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		pub.Close()
+	})
+
+	// Run service on configured port.
+	server := &http.Server{
+		Handler: pub,
+		Addr:    l.Addr().String(),
+	}
+	go server.Serve(l)
+
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstLinkSys := test.MkLinkSystem(dstStore)
+	dstHost := test.MkTestHost(t)
+
+	subscriberOptions = append(subscriberOptions, dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, subscriberOptions...)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sub.Close()
+	})
+
+	return httpTestEnv{
+		srcHost:    srcHost,
+		dstHost:    dstHost,
+		pub:        pub,
+		sub:        sub,
+		srcStore:   srcStore,
+		srcLinkSys: srcLinkSys,
+		dstStore:   dstStore,
+	}
+}
+
+func TestOldPublisherManualSync(t *testing.T) {
+	blocksSeenByHook := make(map[cid.Cid]struct{})
+	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+		blocksSeenByHook[c] = struct{}{}
+		t.Log("http block hook got", c, "from", p)
+	}
+
+	te := setupOldPublisherSubscriber(t, []dagsync.Option{dagsync.BlockHook(blockHook)})
+
+	rootLnk, err := test.Store(te.srcStore, basicnode.NewString("hello world"))
+	require.NoError(t, err)
+	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// The HTTP path prefix "/test/path" is contained in the publisher addr.
+	// This would normally be communicated to the indexer via the announce
+	// message. The IPNI Subscriber will ad the ipni path "/ipni/v1/" to the
+	// URL paths when fetching. Legacy publishers will ingore the URL paths up
+	// to the last element, which happens to be the same for legacy publishers
+	// and ipni publishers.
+	peerInfo := peer.AddrInfo{
+		ID:    te.srcHost.ID(),
+		Addrs: te.pub.Addrs(),
+	}
+	syncCid, err := te.sub.SyncAdChain(ctx, peerInfo)
+	require.NoError(t, err)
+
+	require.Equal(t, rootLnk.(cidlink.Link).Cid, syncCid)
+
+	_, ok := blocksSeenByHook[syncCid]
+	require.True(t, ok, "hook did not get", syncCid)
+}
+
 func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) httpTestEnv {
 	srcPrivKey, _, err := ic.GenerateECDSAKeyPair(rand.Reader)
 	require.NoError(t, err, "Err generating private key")
@@ -40,7 +124,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLinkSys := test.MkLinkSystem(srcStore)
 
-	pub, err := httpsync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey)
+	pub, err := httpsync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey, httpsync.WithServer(true))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		pub.Close()
