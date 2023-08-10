@@ -218,12 +218,14 @@ func TestPublisherWithLibp2pHTTP(t *testing.T) {
 			clientLsys.SetWriteStorage(clientStore)
 			clientSync := httpsync.NewLibp2pSync(clientLsys, tc.newClientHost(t), protoID, nil)
 
+			// In a dagsync Subscriber, the clientSync is created once and
+			// lives for the lifetime of the Subscriber (lifetime of indexer),
+			// The clientSyncer is created for each sync operation and only
+			// lives for the duration of the sync. The publisher's address may
+			// change from one sync to the next, and we do not know the
+			// addresses ahead of time.
 			clientSyncer, err := clientSync.NewSyncer(tc.publisher.ID, tc.publisher.Addrs)
 			req.NoError(err)
-			wk := clientSyncer.PeerProtoMap()
-			if wk != nil {
-				req.Contains(wk, protoID)
-			}
 
 			headCid, err := clientSyncer.GetHead(ctx)
 			req.NoError(err)

@@ -62,7 +62,6 @@ var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected
 type Syncer struct {
 	client  *http.Client
 	peerID  peer.ID
-	protos  libp2phttp.WellKnownProtoMap
 	rootURL url.URL
 	urls    []*url.URL
 	sync    *Sync
@@ -78,13 +77,14 @@ func NewLibp2pSync(lsys ipld.LinkSystem, clientHost *libp2phttp.HTTPHost, protoI
 	}
 }
 
-// NewSyncer creates a new Syncer to use for a single sync operation against a peer.
+// NewSyncer creates a new Syncer to use for a single sync operation against a
+// peer. A value for peerID is optional for the HTTP transport.
 //
 // TODO: Replace arguments with peer.AddrInfo
-func (s *Sync) NewSyncer(peerID peer.ID, addrs []multiaddr.Multiaddr) (*Syncer, error) {
+func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
 	peerInfo := peer.AddrInfo{
 		ID:    peerID,
-		Addrs: addrs,
+		Addrs: peerAddrs,
 	}
 	if s.clientHost != nil {
 		return s.newLibp2pSyncer(peerInfo)
@@ -98,22 +98,25 @@ func (s *Sync) newLibp2pSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		return nil, err
 	}
 
-	sr := &Syncer{
+	// Cache protocol mapping for this well-known path.
+	if peerInfo.ID != "" {
+		protos, err := s.clientHost.GetAndStorePeerProtoMap(httpClient.Transport, peerInfo.ID)
+		if err == nil {
+			meta := libp2phttp.WellKnownProtocolMeta{
+				Path: "/head",
+			}
+			protos[s.protoID] = meta
+			s.clientHost.AddPeerMetadata(peerInfo.ID, protos)
+		}
+	}
+
+	return &Syncer{
 		client:  &httpClient,
 		peerID:  peerInfo.ID,
 		rootURL: url.URL{Path: "/"},
 		urls:    nil,
 		sync:    s,
-	}
-
-	if peerInfo.ID != "" {
-		sr.protos, err = s.clientHost.GetAndStorePeerProtoMap(httpClient.Transport, peerInfo.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return sr, nil
+	}, nil
 }
 
 func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
@@ -137,10 +140,6 @@ func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
-}
-
-func (s *Syncer) PeerProtoMap() libp2phttp.WellKnownProtoMap {
-	return s.protos
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
