@@ -31,7 +31,6 @@ var (
 func NewSignedHead(headCid cid.Cid, topic string, privKey ic.PrivKey) (*SignedHead, error) {
 	sh := &SignedHead{
 		Head: ipld.Link(cidlink.Link{Cid: headCid}),
-		//Topic: topic,
 	}
 	if topic != "" {
 		sh.Topic = &topic

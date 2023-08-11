@@ -249,7 +249,8 @@ func WithAdsResync(resync bool) SyncOption {
 }
 
 // ScopedDepthLimit provides a sync depth limit for the current sync. This
-// applies to both advertisement and entries chains.
+// applies to both advertisement and entries chains. If zero or not specified,
+// the Subscriber ads or entries depth limit is used. Set to -1 for no limits.
 func ScopedDepthLimit(limit int64) SyncOption {
 	return func(sc *syncCfg) {
 		sc.depthLimit = limit
@@ -257,8 +258,8 @@ func ScopedDepthLimit(limit int64) SyncOption {
 }
 
 // ScopedSegmentDepthLimit is the equivalent of SegmentDepthLimit option but
-// only applied to a single sync. If not specified, the Subscriber
-// SegmentDepthLimit option is used instead.
+// only applied to a single sync. If zero or not specified, the Subscriber
+// SegmentDepthLimit option is used instead. Set to -1 for no limits.
 //
 // For segmented sync to function at least one of BlockHook or ScopedBlockHook
 // must be set. See: SegmentDepthLimit.
