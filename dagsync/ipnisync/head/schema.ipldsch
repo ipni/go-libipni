@@ -1,0 +1,11 @@
+# SignedHead provides information about the head advertisement CID.
+type SignedHead struct {
+    # head is an IPLD link to the latest advertisement published by a provider. If there are no advertisements available, then the CID within the link is undefined.
+    head Link
+    # topic is the topic name on which the advertisement is published. If not specified, the default value of /indexer/ingest/mainnet is assumed.
+    topic optional String
+    # pubkey is the serialized public key of the provider in protobuf format using the libp2p standard.
+    pubkey Bytes
+    # sig is the signature associated with the head CID, obtained by concatenating the bytes of the head CID and the UTF-8 bytes of the topic (if present).
+    sig Bytes
+}

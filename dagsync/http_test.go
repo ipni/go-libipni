@@ -13,7 +13,7 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
@@ -40,7 +40,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLinkSys := test.MkLinkSystem(srcStore)
 
-	pub, err := httpsync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey)
+	pub, err := ipnisync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey, ipnisync.WithServer(true))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		pub.Close()
