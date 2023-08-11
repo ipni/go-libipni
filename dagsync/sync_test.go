@@ -42,7 +42,9 @@ func TestLatestSyncSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -90,8 +92,10 @@ func TestSyncFn(t *testing.T) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.BlockHook(blockHook),
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.BlockHook(blockHook),
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -114,7 +118,7 @@ func TestSyncFn(t *testing.T) {
 	peerInfo := peer.AddrInfo{
 		ID: srcHost.ID(),
 	}
-	_, err = sub.Sync(ctx, peerInfo, cids[0], nil)
+	_, err = sub.SyncAdChain(ctx, peerInfo, dagsync.WithHeadAdCid(cids[0]))
 	require.Error(t, err, "expected error when no content to sync")
 	syncncl()
 
@@ -129,7 +133,7 @@ func TestSyncFn(t *testing.T) {
 	// Sync with publisher without publisher publishing to gossipsub channel.
 	ctx, syncncl = context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
-	syncCid, err := sub.Sync(ctx, peerInfo, lnk.(cidlink.Link).Cid, nil)
+	syncCid, err := sub.SyncAdChain(ctx, peerInfo, dagsync.WithHeadAdCid(lnk.(cidlink.Link).Cid))
 	require.NoError(t, err)
 
 	if !syncCid.Equals(lnk.(cidlink.Link).Cid) {
@@ -163,7 +167,7 @@ func TestSyncFn(t *testing.T) {
 
 	ctx, syncncl = context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
-	syncCid, err = sub.Sync(ctx, peerInfo, cid.Undef, nil)
+	syncCid, err = sub.SyncAdChain(ctx, peerInfo)
 	require.NoError(t, err)
 
 	if !syncCid.Equals(newHead) {
@@ -202,7 +206,9 @@ func TestPartialSync(t *testing.T) {
 	defer pub.Close()
 	test.MkChain(srcLnkS, true)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -259,7 +265,9 @@ func TestStepByStepSync(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -302,7 +310,8 @@ func TestLatestSyncFailure(t *testing.T) {
 	t.Log("source host:", srcHost.ID())
 	t.Log("targer host:", dstHost.ID())
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce())
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -323,7 +332,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	sub.Close()
 
 	dstStore = dssync.MutexWrap(datastore.NewMapDatastore())
-	sub2, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic)
+	sub2, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub2.Close()
 
@@ -352,7 +361,8 @@ func TestAnnounce(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce())
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -387,7 +397,7 @@ func TestCancelDeadlock(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -405,14 +415,14 @@ func TestCancelDeadlock(t *testing.T) {
 		ID:    srcHost.ID(),
 		Addrs: srcHost.Addrs(),
 	}
-	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err = sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 	// Now there should be an event on the watcher channel.
 
 	c = chainLnks[1].(cidlink.Link).Cid
 	pub.SetRoot(c)
 
-	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err = sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 	// Now the event dispatcher is blocked writing to the watcher channel.
 

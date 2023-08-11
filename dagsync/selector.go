@@ -75,6 +75,14 @@ func getStopNode(selNode datamodel.Node) (datamodel.Link, bool) {
 	return stopNodeLink, err == nil
 }
 
+// recursionLimit returns the recursion limit for the given depth.
+func recursionLimit(depth int64) selector.RecursionLimit {
+	if depth < 1 {
+		return selector.RecursionLimitNone()
+	}
+	return selector.RecursionLimitDepth(depth)
+}
+
 // getRecursionLimit gets the top-most recursion limit from the given selector node.
 // If no such selector is found, the returned bool will be false.
 func getRecursionLimit(selNode datamodel.Node) (selector.RecursionLimit, bool) {

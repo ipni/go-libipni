@@ -22,7 +22,7 @@ import (
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	httpsync "github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -67,9 +67,12 @@ func TestScopedBlockHook(t *testing.T) {
 			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
 			var calledGeneralBlockHookTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
-				atomic.AddInt64(&calledGeneralBlockHookTimes, 1)
-			}))
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic,
+				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+					atomic.AddInt64(&calledGeneralBlockHookTimes, 1)
+				}),
+				dagsync.StrictAdsSelector(false),
+			)
 			require.NoError(t, err)
 
 			var calledScopedBlockHookTimes int64
@@ -77,7 +80,7 @@ func TestScopedBlockHook(t *testing.T) {
 				ID:    pubHost.ID(),
 				Addrs: pubHost.Addrs(),
 			}
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil, dagsync.ScopedBlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+			_, err = sub.SyncAdChain(context.Background(), peerInfo, dagsync.ScopedBlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 				atomic.AddInt64(&calledScopedBlockHookTimes, 1)
 			}))
 			require.NoError(t, err)
@@ -95,7 +98,7 @@ func TestScopedBlockHook(t *testing.T) {
 
 			pub.SetRoot(anotherLL.(cidlink.Link).Cid)
 
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+			_, err = sub.SyncAdChain(context.Background(), peerInfo)
 			require.NoError(t, err)
 
 			require.Equal(t, int64(ll.Length), atomic.LoadInt64(&calledGeneralBlockHookTimes),
@@ -130,7 +133,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 
 			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic)
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.StrictAdsSelector(false))
 			require.NoError(t, err)
 
 			onFinished, cancel := sub.OnSyncFinished()
@@ -139,7 +142,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 				ID:    pubHost.ID(),
 				Addrs: pubHost.Addrs(),
 			}
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+			_, err = sub.SyncAdChain(context.Background(), peerInfo)
 			require.NoError(t, err)
 
 			finishedVal := <-onFinished
@@ -194,9 +197,12 @@ func TestConcurrentSync(t *testing.T) {
 			subLsys := test.MkLinkSystem(subDS)
 
 			var calledTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
-				atomic.AddInt64(&calledTimes, 1)
-			}))
+			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic,
+				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+					atomic.AddInt64(&calledTimes, 1)
+				}),
+				dagsync.StrictAdsSelector(false),
+			)
 			require.NoError(t, err)
 
 			wg := sync.WaitGroup{}
@@ -210,7 +216,7 @@ func TestConcurrentSync(t *testing.T) {
 						ID:    pub.h.ID(),
 						Addrs: pub.h.Addrs(),
 					}
-					_, err := sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+					_, err := sub.SyncAdChain(context.Background(), peerInfo)
 					if err != nil {
 						panic("sync failed")
 					}
@@ -266,13 +272,13 @@ func TestSync(t *testing.T) {
 				ID:    pub.ID(),
 				Addrs: pub.Addrs(),
 			}
-			_, err := sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+			_, err := sub.SyncAdChain(context.Background(), peerInfo)
 			require.NoError(t, err)
 			calledTimesFirstSync := calledTimes
 			latestSync := sub.GetLatestSync(pubSys.host.ID())
 			require.Equal(t, head, latestSync, "Subscriber did not persist latest sync")
 			// Now sync again. We shouldn't call the hook.
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+			_, err = sub.SyncAdChain(context.Background(), peerInfo)
 			require.NoError(t, err)
 			require.Equalf(t, calledTimes, calledTimesFirstSync,
 				"Subscriber called the block hook multiple times for the same sync. Expected %d, got %d", calledTimesFirstSync, calledTimes)
@@ -330,7 +336,7 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 				ID:    pub.ID(),
 				Addrs: pub.Addrs(),
 			}
-			_, err = sub.Sync(context.Background(), peerInfo, head.(cidlink.Link).Cid, nil)
+			_, err = sub.SyncAdChain(context.Background(), peerInfo, dagsync.WithHeadAdCid(head.(cidlink.Link).Cid))
 			require.NoError(t, err)
 			require.Equal(t, int(ll.Length), calledTimes, "Subscriber did not call the block hook exactly once for each block")
 			require.Equal(t, head.(cidlink.Link).Cid, calledWith[0], "Subscriber did not call the block hook in the correct order")
@@ -338,7 +344,7 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 			calledTimesFirstSync := calledTimes
 
 			// Now sync again. We might call the hook because we don't have the latestSync persisted.
-			_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+			_, err = sub.SyncAdChain(context.Background(), peerInfo)
 			require.NoError(t, err)
 			require.GreaterOrEqual(t, calledTimes, calledTimesFirstSync, "Expected to have called block hook twice. Once for each sync.")
 		})
@@ -418,7 +424,11 @@ func TestRoundTrip(t *testing.T) {
 		t.Log("block hook got", c, "from", p)
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[2])), dagsync.BlockHook(blockHook))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[2])),
+		dagsync.BlockHook(blockHook),
+		dagsync.StrictAdsSelector(false),
+	)
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -489,7 +499,7 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 		ID:    pub.ID(),
 		Addrs: pub.Addrs(),
 	}
-	_, err := sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err := sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(head.(cidlink.Link).Cid)
@@ -497,7 +507,7 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 	// Now call sync again with no address. The subscriber should re-use the
 	// previous address and succeeed.
 	peerInfo.Addrs = nil
-	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err = sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 }
 
@@ -534,17 +544,17 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 		ID:    pub.ID(),
 		Addrs: pub.Addrs(),
 	}
-	_, err := sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err := sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(nextLL.(cidlink.Link).Cid)
 
-	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err = sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(headLL.(cidlink.Link).Cid)
 
-	_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+	_, err = sub.SyncAdChain(context.Background(), peerInfo)
 	require.NoError(t, err)
 
 	head := llBuilder{
@@ -557,7 +567,7 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	// This is blocked until we read from onSyncFinishedChan
 	syncDoneCh := make(chan error)
 	go func() {
-		_, err = sub.Sync(context.Background(), peerInfo, cid.Undef, nil)
+		_, err = sub.SyncAdChain(context.Background(), peerInfo)
 		syncDoneCh <- err
 	}()
 
@@ -611,7 +621,7 @@ func TestCloseSubscriber(t *testing.T) {
 
 	lsys := test.MkLinkSystem(st)
 
-	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic)
+	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic, dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -677,7 +687,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 	var pub dagsync.Publisher
 	var err error
 	if b.IsHttp {
-		pub, err = httpsync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey)
+		pub, err = httpsync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, httpsync.WithHeadTopic(topicName))
 		require.NoError(t, err)
 		require.NoError(t, test.WaitForHttpPublisher(pub))
 	} else {
@@ -686,6 +696,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 		require.NoError(t, test.WaitForP2PPublisher(pub, subSys.host, topicName))
 	}
 
+	subOpts = append(subOpts, dagsync.StrictAdsSelector(false))
 	sub, err := dagsync.NewSubscriber(subSys.host, subSys.ds, subSys.lsys, topicName, subOpts...)
 	require.NoError(t, err)
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ipld/go-ipld-prime/fluent"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/p2p/protocol/head"
 	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
@@ -285,7 +286,7 @@ func WaitForHttpPublisher(publisher TestPublisher) error {
 	if err != nil {
 		return err
 	}
-	headURL.Path = path.Join(headURL.Path, "head")
+	headURL.Path = path.Join(headURL.Path, ipnisync.IpniPath, "head")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

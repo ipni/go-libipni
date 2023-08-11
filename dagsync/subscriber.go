@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/channelqueue"
@@ -15,10 +16,12 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
+	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -48,9 +51,7 @@ type BlockHookFunc func(peer.ID, cid.Cid, SegmentSyncActions)
 // of messages. Handlers do not have persistent goroutines, but start a new
 // goroutine to handle a single message.
 type Subscriber struct {
-	// dss captures the default selector sequence passed to
 	// ExploreRecursiveWithStopNode.
-	dss  ipld.Node
 	host host.Host
 
 	addrTTL time.Duration
@@ -80,9 +81,8 @@ type Subscriber struct {
 	watchDone chan struct{}
 	asyncWG   sync.WaitGroup
 
-	dtSync       *dtsync.Sync
-	httpSync     *httpsync.Sync
-	syncRecLimit selector.RecursionLimit
+	dtSync   *dtsync.Sync
+	ipniSync *ipnisync.Sync
 
 	// A separate peerstore is used to store HTTP addresses. This is necessary
 	// when peers have both libp2p and HTTP addresses, and a sync is requested
@@ -96,6 +96,7 @@ type Subscriber struct {
 	latestSyncHandler latestSyncHandler
 	lastKnownSync     LastKnownSyncFunc
 
+	adsDepthLimit selector.RecursionLimit
 	segDepthLimit int64
 
 	receiver  *announce.Receiver
@@ -106,6 +107,16 @@ type Subscriber struct {
 	expSyncClosed bool
 	expSyncMutex  sync.Mutex
 	expSyncWG     sync.WaitGroup
+
+	// selector sequence for advertisements
+	adsSelectorSeq ipld.Node
+
+	// selectorOne selects one multihash entries or HAMT block.
+	selectorOne ipld.Node
+	// selectorAll selects all multihash HAMT blocks.
+	selectorAll ipld.Node
+	// selectEnts selects multihash entries blocks up to depth limit.
+	selectorEnts ipld.Node
 }
 
 // SyncFinished notifies an OnSyncFinished reader that a specified peer
@@ -120,8 +131,8 @@ type SyncFinished struct {
 	PeerID peer.ID
 	// Count is the number of CID synced.
 	Count int
-	// AsyncErr is used to return a failure to asynchrounusly sync in response
-	// to an announcement.
+	// AsyncErr is used to return a failure to asynchronous sync in response to
+	// an announcement.
 	AsyncErr error
 }
 
@@ -134,12 +145,8 @@ type handler struct {
 	// peerID is the ID of the peer this handler is responsible for. This is
 	// the publisher of an advertisement chain.
 	peerID peer.ID
-	// pendingCid is a CID queued for async handling.
-	pendingCid cid.Cid
-	// pendingSyncer is a syncer queued for handling pendingCid.
-	pendingSyncer Syncer
-	// qlock protects the pendingCid and pendingSyncer.
-	qlock sync.Mutex
+	// pendingMsg is an announce message queued for async handling.
+	pendingMsg atomic.Pointer[announce.Announce]
 	// expires is the time the handler is removed if it remains idle.
 	expires time.Time
 }
@@ -188,8 +195,10 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		return nil, err
 	}
 
+	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+	all := ssb.ExploreAll(ssb.ExploreRecursiveEdge())
+
 	s := &Subscriber{
-		dss:  opts.dss,
 		host: host,
 
 		addrTTL: opts.addrTTL,
@@ -201,9 +210,8 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		addEventChan: make(chan chan<- SyncFinished),
 		rmEventChan:  make(chan chan<- SyncFinished),
 
-		dtSync:       dtSync,
-		httpSync:     httpsync.NewSync(lsys, opts.httpClient, blockHook),
-		syncRecLimit: opts.syncRecLimit,
+		dtSync:   dtSync,
+		ipniSync: ipnisync.NewSync(lsys, opts.httpClient, blockHook),
 
 		httpPeerstore: httpPeerstore,
 
@@ -215,8 +223,24 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		latestSyncHandler: latestSyncHandler{},
 		lastKnownSync:     opts.lastKnownSync,
 
+		adsDepthLimit: recursionLimit(opts.adsDepthLimit),
 		segDepthLimit: opts.segDepthLimit,
 		topicName:     topic,
+
+		selectorOne: ssb.ExploreRecursive(selector.RecursionLimitDepth(0), all).Node(),
+		selectorAll: ssb.ExploreRecursive(selector.RecursionLimitNone(), all).Node(),
+		selectorEnts: ssb.ExploreRecursive(recursionLimit(opts.entriesDepthLimit),
+			ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) {
+				efsb.Insert("Next", ssb.ExploreRecursiveEdge()) // Next field in EntryChunk
+			})).Node(),
+	}
+
+	if opts.strictAdsSelSeq {
+		s.adsSelectorSeq = ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) {
+			efsb.Insert("PreviousID", ssb.ExploreRecursiveEdge())
+		}).Node()
+	} else {
+		s.adsSelectorSeq = ssb.ExploreAll(ssb.ExploreRecursiveEdge()).Node()
 	}
 
 	if opts.hasRcvr {
@@ -353,21 +377,15 @@ func (s *Subscriber) RemoveHandler(peerID peer.ID) bool {
 	return true
 }
 
-// Sync performs a one-off explicit sync with the given peer (publisher) for a
-// specific CID and updates the latest synced link to it. Completing sync may
-// take a significant amount of time, so Sync should generally be run in its
-// own goroutine.
+// SyncAdChain performs a one-off explicit sync with the given peer (publisher)
+// for an advertisement chain, and updates the latest synced link to it.
 //
-// If given cid.Undef, the latest root CID is queried from the peer directly
-// and used instead. Note that in an event where there is no latest root, i.e.
-// querying the latest CID returns cid.Undef, this function returns cid.Undef
-// with nil error.
+// The latest root CID is queried from the peer directly. In the event where
+// there is no latest root, i.e. querying the latest CID returns cid.Undef,
+// this function returns cid.Undef with nil error.
 //
 // The latest synced CID is returned when this sync is complete. Any
-// OnSyncFinished readers will also get a SyncFinished when the sync succeeds,
-// but only if syncing to the latest, using `cid.Undef`, and using the default
-// selector. This is because when specifying a CID, it is usually for an
-// entries sync, not an advertisements sync.
+// OnSyncFinished readers will also get a SyncFinished when the sync succeeds.
 //
 // It is the responsibility of the caller to make sure the given CID appears
 // after the latest sync in order to avid re-syncing of content that may have
@@ -382,7 +400,7 @@ func (s *Subscriber) RemoveHandler(peerID peer.ID) bool {
 // only specify the selection sequence itself.
 //
 // See: ExploreRecursiveWithStopNode.
-func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid cid.Cid, sel ipld.Node, options ...SyncOption) (cid.Cid, error) {
+func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, options ...SyncOption) (cid.Cid, error) {
 	s.expSyncMutex.Lock()
 	if s.expSyncClosed {
 		s.expSyncMutex.Unlock()
@@ -392,36 +410,47 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 	s.expSyncMutex.Unlock()
 	defer s.expSyncWG.Done()
 
-	defaultOptions := []SyncOption{
-		ScopedBlockHook(s.generalBlockHook),
-		ScopedSegmentDepthLimit(s.segDepthLimit)}
-	opts := getSyncOpts(append(defaultOptions, options...))
-
-	if len(peerInfo.Addrs) != 0 {
-		// Chop off the p2p ID from any of the addresses.
-		for i, peerAddr := range peerInfo.Addrs {
-			peerAddr, pid := peer.SplitAddr(peerAddr)
-			if pid != "" {
-				peerInfo.Addrs[i] = peerAddr
-				if peerInfo.ID == "" {
-					peerInfo.ID = pid
-				}
-			}
-		}
+	opts := getSyncOpts(options)
+	if opts.blockHook == nil {
+		opts.blockHook = s.generalBlockHook
 	}
 
-	if peerInfo.ID == "" {
-		return cid.Undef, errors.New("empty peer id")
-	}
-
-	log := log.With("peer", peerInfo.ID)
-
-	syncer, isHttp, err := s.makeSyncer(peerInfo, tempAddrTTL)
+	var err error
+	peerInfo, err = removeIDFromAddrs(peerInfo)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	updateLatest := opts.forceUpdateLatest
+	log := log.With("peer", peerInfo.ID)
+
+	syncer, updatePeerstore, err := s.makeSyncer(peerInfo, true)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	// Set depth limit to ads depth limit unless scoped depth is non-zero.
+	depthLimit := s.adsDepthLimit
+	if opts.depthLimit != 0 {
+		depthLimit = recursionLimit(opts.depthLimit)
+	}
+	// If traversal should not stop at the latest synced, then construct
+	// advertisement chain selector to behave accordingly.
+	var stopLnk ipld.Link
+	if opts.resync {
+		if opts.stopAdCid != cid.Undef {
+			stopLnk = cidlink.Link{Cid: opts.stopAdCid}
+		}
+	} else {
+		if opts.stopAdCid != cid.Undef {
+			stopLnk = cidlink.Link{Cid: opts.stopAdCid}
+		} else {
+			stopLnk = s.GetLatestSync(peerInfo.ID)
+		}
+	}
+	sel := ExploreRecursiveWithStopNode(depthLimit, s.adsSelectorSeq, stopLnk)
+
+	var updateLatest bool
+	nextCid := opts.headAdCid
 	if nextCid == cid.Undef {
 		// Query the peer for the latest CID
 		nextCid, err = syncer.GetHead(ctx)
@@ -436,28 +465,20 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 			return cid.Undef, nil
 		}
 
-		log.Infow("Sync queried head CID", "cid", nextCid)
-		if sel == nil {
-			// Update the latestSync only if no CID (syncing ads) and no
-			// selector given.
-			updateLatest = true
-		}
+		// Update the latest unless a specific CID to sync was given.
+		updateLatest = true
 	}
-	log = log.With("cid", nextCid)
 
-	log.Info("Start sync")
+	log = log.With("cid", nextCid)
+	log.Info("Sync starting advertisement chain at head CID")
 
 	if ctx.Err() != nil {
 		return cid.Undef, fmt.Errorf("sync canceled: %w", ctx.Err())
 	}
 
-	var wrapSel bool
-	if sel == nil {
-		// Fall back onto the default selector sequence if one is not given.
-		// Note that if selector is specified it is used as is without any
-		// wrapping.
-		sel = s.dss
-		wrapSel = true
+	segdl := s.segDepthLimit
+	if opts.segDepthLimit != 0 {
+		segdl = opts.segDepthLimit
 	}
 
 	// Check for an existing handler for the specified peer (publisher). If
@@ -465,35 +486,117 @@ func (s *Subscriber) Sync(ctx context.Context, peerInfo peer.AddrInfo, nextCid c
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	hnd.syncMutex.Lock()
-	syncCount, err := hnd.handle(ctx, nextCid, sel, wrapSel, syncer, opts.scopedBlockHook, opts.segDepthLimit)
+	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, segdl)
 	hnd.syncMutex.Unlock()
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)
 	}
 
 	// The sync succeeded, so remember this address in the appropriate
-	// peerstore. If the address was already in the peerstore, this will extend
-	// its ttl. Add to peerstore before sending the SyncFinished event so that
-	// the address is present before anything triggered by the event is run.
-	if len(peerInfo.Addrs) != 0 {
-		if isHttp {
-			// Store this http address so that future calls to sync will work
-			// without a peerAddr (given that it happens within the TTL)
-			s.httpPeerstore.AddAddrs(peerInfo.ID, peerInfo.Addrs, s.addrTTL)
-		} else {
-			// Not an http address, so add to the host's libp2p peerstore.
-			peerStore := s.host.Peerstore()
-			if peerStore != nil {
-				peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, s.addrTTL)
-			}
-		}
-	}
+	// peerstore. Add to peerstore before sending the SyncFinished event so
+	// that the address is present before anything triggered by the event is
+	// run.
+	updatePeerstore()
 
 	if updateLatest {
 		hnd.sendSyncFinishedEvent(nextCid, syncCount)
 	}
 
 	return nextCid, nil
+}
+
+func (s *Subscriber) SyncOneEntry(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid) error {
+	return s.syncEntries(ctx, peerInfo, entCid, s.selectorOne, s.generalBlockHook, -1)
+}
+
+// SyncEntries syncs the entries chain starting with block identified by entCid.
+func (s *Subscriber) SyncEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, options ...SyncOption) error {
+	opts := getSyncOpts(options)
+	if opts.blockHook == nil {
+		opts.blockHook = s.generalBlockHook
+	}
+
+	// If a scoped depth limit is specified, then create a new entries selector
+	// for that depth limit. Otherwise, use the existing entries selector that
+	// has the entries depth limit built in.
+	selectorEnts := s.selectorEnts
+	if opts.depthLimit != 0 {
+		ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+		selectorEnts = ssb.ExploreRecursive(recursionLimit(opts.depthLimit),
+			ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) {
+				efsb.Insert("Next", ssb.ExploreRecursiveEdge())
+			})).Node()
+	}
+
+	return s.syncEntries(ctx, peerInfo, entCid, selectorEnts, opts.blockHook, s.segDepthLimit)
+}
+
+func (s *Subscriber) SyncHAMTEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, options ...SyncOption) error {
+	opts := getSyncOpts(options)
+	if opts.blockHook == nil {
+		opts.blockHook = s.generalBlockHook
+	}
+
+	return s.syncEntries(ctx, peerInfo, entCid, s.selectorAll, opts.blockHook, -1)
+}
+
+func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, sel ipld.Node, bh BlockHookFunc, segdl int64) error {
+	if entCid == cid.Undef {
+		log.Info("No entries to sync")
+		return nil
+	}
+
+	s.expSyncMutex.Lock()
+	if s.expSyncClosed {
+		s.expSyncMutex.Unlock()
+		return errors.New("shutdown")
+	}
+	s.expSyncWG.Add(1)
+	s.expSyncMutex.Unlock()
+	defer s.expSyncWG.Done()
+
+	peerInfo, err := removeIDFromAddrs(peerInfo)
+	if err != nil {
+		return err
+	}
+
+	syncer, _, err := s.makeSyncer(peerInfo, false)
+	if err != nil {
+		return err
+	}
+
+	log := log.With("peer", peerInfo.ID, "cid", entCid)
+	log.Info("Start entries sync sync")
+
+	// Check for an existing handler for the specified peer (publisher). If
+	// none, create one if allowed.
+	hnd := s.getOrCreateHandler(peerInfo.ID)
+
+	hnd.syncMutex.Lock()
+	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl)
+	hnd.syncMutex.Unlock()
+	if err != nil {
+		return fmt.Errorf("sync handler failed: %w", err)
+	}
+
+	return nil
+}
+
+func removeIDFromAddrs(peerInfo peer.AddrInfo) (peer.AddrInfo, error) {
+	// Chop off the p2p ID from any of the addresses.
+	for i, peerAddr := range peerInfo.Addrs {
+		peerAddr, pid := peer.SplitAddr(peerAddr)
+		if pid != "" {
+			peerInfo.Addrs[i] = peerAddr
+			if peerInfo.ID == "" {
+				peerInfo.ID = pid
+			}
+		}
+	}
+	if peerInfo.ID == "" {
+		return peerInfo, errors.New("empty peer id")
+	}
+	return peerInfo, nil
 }
 
 // distributeEvents reads a SyncFinished, sent by a peer handler, and copies
@@ -598,19 +701,24 @@ func (s *Subscriber) watch() {
 
 		hnd := s.getOrCreateHandler(amsg.PeerID)
 
-		peerInfo := peer.AddrInfo{
-			ID:    amsg.PeerID,
-			Addrs: amsg.Addrs,
-		}
-		syncer, _, err := s.makeSyncer(peerInfo, s.addrTTL)
-		if err != nil {
-			log.Errorw("Cannot make syncer for announce", "err", err)
+		// Set the message to be handled by the waiting goroutine.
+		oldMsg := hnd.pendingMsg.Swap(&amsg)
+		// If rhw previous pending message was not nil, then there is an
+		// existing request to sync the ad chain.
+		if oldMsg != nil {
+			log.Infow("Pending announce replaced by new", "previous_cid", oldMsg.Cid, "new_cid", amsg.Cid, "publisher", hnd.peerID)
 			continue
 		}
 
-		// Start a new goroutine to handle this message instead of having a
-		// persistent goroutine for each peer.
-		hnd.handleAsync(ctx, amsg.Cid, syncer)
+		// If old message is nil, then any previous message is already handled.
+		// Start a new goroutine to handle this message.
+		s.asyncWG.Add(1)
+		go func() {
+			//s.syncSem <- struct{}{}
+			hnd.asyncSyncAdChain(ctx)
+			s.asyncWG.Done()
+			//<-s.syncSem
+		}()
 	}
 }
 
@@ -626,9 +734,9 @@ func (s *Subscriber) Announce(ctx context.Context, nextCid cid.Cid, peerID peer.
 	return s.receiver.Direct(ctx, nextCid, peerID, peerAddrs)
 }
 
-func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration) (Syncer, bool, error) {
+func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, func(), error) {
 	// Check for an HTTP address in peerAddrs, or if not given, in the http
-	// peerstore. This gives a preference to use httpsync over dtsync.
+	// peerstore. This gives a preference to use ipnisync over dtsync.
 	var httpAddrs []multiaddr.Multiaddr
 	if len(peerInfo.Addrs) == 0 {
 		httpAddrs = s.httpPeerstore.Addrs(peerInfo.ID)
@@ -636,94 +744,94 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, addrTTL time.Duration) (
 		httpAddrs = mautil.FindHTTPAddrs(peerInfo.Addrs)
 	}
 
+	var update func()
 	if len(httpAddrs) != 0 {
 		// Store this http address so that future calls to sync will work without a
 		// peerAddr (given that it happens within the TTL)
-		s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, addrTTL)
-
-		syncer, err := s.httpSync.NewSyncer(peerInfo.ID, httpAddrs)
+		s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, tempAddrTTL)
+		syncer, err := s.ipniSync.NewSyncer(peerInfo.ID, httpAddrs)
 		if err != nil {
-			return nil, false, fmt.Errorf("cannot create http sync handler: %w", err)
+			return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
 		}
-		return syncer, true, nil
+		if doUpdate {
+			update = func() {
+				// Store http address so that future calls to sync will work
+				// without a peerAddr (given that it happens within the TTL)
+				s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, s.addrTTL)
+			}
+		}
+		return syncer, update, nil
 	}
-
-	// Not an httpPeerAddr, so use the dtSync. Add it to peerstore with a small
-	// TTL first, and extend it if/when sync with it completes. In case the
-	// peerstore already has this address and the existing TTL is greater than
-	// this temp one, this is a no-op. In other words, the TTL is never
-	// decreased here.
-	peerStore := s.host.Peerstore()
-	if peerStore != nil && len(peerInfo.Addrs) != 0 {
-		peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, addrTTL)
+	if doUpdate {
+		peerStore := s.host.Peerstore()
+		if peerStore != nil && len(peerInfo.Addrs) != 0 {
+			// Add it to peerstore with a small TTL first, and extend it if/when
+			// sync with it completes. In case the peerstore already has this
+			// address and the existing TTL is greater than this temp one, this is
+			// a no-op. In other words, the TTL is never decreased here.
+			peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, tempAddrTTL)
+			update = func() {
+				peerStore.AddAddrs(peerInfo.ID, peerInfo.Addrs, s.addrTTL)
+			}
+		} else {
+			update = func() {}
+		}
 	}
-
-	return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), false, nil
+	// Not an httpPeerAddr, so use the dtSync.
+	return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
 }
 
-// handleAsync starts a goroutine to process the latest announce message
-// received over pubsub or HTTP. If there is already a goroutine handling a
-// sync, then there will be at most one more goroutine waiting to handle the
-// pending sync.
-func (h *handler) handleAsync(ctx context.Context, nextCid cid.Cid, syncer Syncer) {
-	h.qlock.Lock()
-	// If pendingSync is undef, then previous goroutine has already handled any
-	// pendingSync, so start a new go routine to handle the pending sync. If
-	// pending sync is not undef, then there is an existing goroutine that has
-	// not yet handled the pending sync.
-	if h.pendingCid == cid.Undef {
-		h.subscriber.asyncWG.Add(1)
-		go func() {
-			defer h.subscriber.asyncWG.Done()
+// asyncSyncAdChain processes the latest announce message received over pubsub
+// or HTTP. This functions runs in an independent goroutine, with no more than
+// one goroutine per advertisement publisher.
+func (h *handler) asyncSyncAdChain(ctx context.Context) {
+	// Wait for any previous syncAdChain to finish updating the latest sync.
+	h.syncMutex.Lock()
+	defer h.syncMutex.Unlock()
 
-			// Wait for any other goroutine, for this handler, to finish
-			// updating the latest sync.
-			h.syncMutex.Lock()
-
-			if ctx.Err() != nil {
-				h.syncMutex.Unlock()
-				log.Warnw("Abandoned pending sync", "err", ctx.Err(), "publisher", h.peerID)
-				return
-			}
-
-			// Wait for the parent goroutine to assign pending CID and unlock.
-			h.qlock.Lock()
-			c := h.pendingCid
-			h.pendingCid = cid.Undef
-			syncer := h.pendingSyncer
-			h.pendingSyncer = nil
-			h.qlock.Unlock()
-
-			syncCount, err := h.handle(ctx, c, h.subscriber.dss, true, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit)
-			h.syncMutex.Unlock()
-			if err != nil {
-				// Failed to handle the sync, so allow another announce for the same CID.
-				if h.subscriber.receiver != nil {
-					h.subscriber.receiver.UncacheCid(c)
-				}
-				log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
-				if strings.Contains(err.Error(), "response rejected") {
-					// A "response rejected" error happens when the indexer
-					// does no allow a provider. This is not an error with
-					// provider, so do not send an error event.
-					return
-				}
-				h.subscriber.inEvents <- SyncFinished{
-					Cid:      c,
-					PeerID:   h.peerID,
-					AsyncErr: err,
-				}
-				return
-			}
-			h.sendSyncFinishedEvent(c, syncCount)
-		}()
-	} else {
-		log.Infow("Pending announce replaced by new", "previous_cid", h.pendingCid, "new_cid", nextCid, "publisher", h.peerID)
+	if ctx.Err() != nil {
+		log.Warnw("Abandoned pending sync", "err", ctx.Err(), "publisher", h.peerID)
+		return
 	}
-	// Set the CID to be handled by the waiting goroutine.
-	h.pendingCid = nextCid
-	h.pendingSyncer = syncer
-	h.qlock.Unlock()
+
+	// Get the latest pending message.
+	amsg := h.pendingMsg.Swap(nil)
+	peerInfo := peer.AddrInfo{
+		ID:    amsg.PeerID,
+		Addrs: amsg.Addrs,
+	}
+	syncer, updatePeerstore, err := h.subscriber.makeSyncer(peerInfo, true)
+	if err != nil {
+		log.Errorw("Cannot make syncer for announce", "err", err)
+		return
+	}
+	nextCid := amsg.Cid
+
+	latestSyncLink := h.subscriber.GetLatestSync(h.peerID)
+	sel := ExploreRecursiveWithStopNode(h.subscriber.adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
+
+	syncCount, err := h.handle(ctx, nextCid, sel, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit)
+	if err != nil {
+		// Failed to handle the sync, so allow another announce for the same CID.
+		if h.subscriber.receiver != nil {
+			h.subscriber.receiver.UncacheCid(nextCid)
+		}
+		log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
+		if strings.Contains(err.Error(), "response rejected") {
+			// A "response rejected" error happens when the indexer does not
+			// allow a provider. This is not an error with provider, so do not
+			// send an error event.
+			return
+		}
+		h.subscriber.inEvents <- SyncFinished{
+			Cid:      nextCid,
+			PeerID:   h.peerID,
+			AsyncErr: err,
+		}
+		return
+	}
+	updatePeerstore()
+	h.sendSyncFinishedEvent(nextCid, syncCount)
 }
 
 var _ SegmentSyncActions = (*segmentedSync)(nil)
@@ -795,13 +903,8 @@ func (h *handler) sendSyncFinishedEvent(c cid.Cid, count int) {
 }
 
 // handle processes a message from the peer that the handler is responsible for.
-func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, wrapSel bool, syncer Syncer, bh BlockHookFunc, segdl int64) (int, error) {
+func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, syncer Syncer, bh BlockHookFunc, segdl int64) (int, error) {
 	log := log.With("cid", nextCid, "peer", h.peerID)
-
-	if wrapSel {
-		latestSyncLink := h.subscriber.GetLatestSync(h.peerID)
-		sel = ExploreRecursiveWithStopNode(h.subscriber.syncRecLimit, sel, latestSyncLink)
-	}
 
 	stopNode, stopNodeOK := getStopNode(sel)
 	if stopNodeOK && stopNode.(cidlink.Link).Cid == nextCid {

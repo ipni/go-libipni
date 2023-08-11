@@ -8,8 +8,6 @@ import (
 	dt "github.com/filecoin-project/go-data-transfer/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-graphsync"
-	"github.com/ipld/go-ipld-prime"
-	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipni/go-libipni/announce"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -44,19 +42,20 @@ type config struct {
 	blockHook  BlockHookFunc
 	httpClient *http.Client
 
-	dss          ipld.Node
-	syncRecLimit selector.RecursionLimit
-
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
 
 	hasRcvr  bool
 	rcvrOpts []announce.Option
 
-	segDepthLimit int64
+	adsDepthLimit     int64
+	entriesDepthLimit int64
+	segDepthLimit     int64
 
 	gsMaxInRequests  uint64
 	gsMaxOutRequests uint64
+
+	strictAdsSelSeq bool
 }
 
 // Option is a function that sets a value in a config.
@@ -70,6 +69,7 @@ func getOpts(opts []Option) (config, error) {
 		segDepthLimit:    defaultSegDepthLimit,
 		gsMaxInRequests:  defaultGsMaxInRequests,
 		gsMaxOutRequests: defaultGsMaxOutRequests,
+		strictAdsSelSeq:  true,
 	}
 
 	for i, opt := range opts {
@@ -93,15 +93,6 @@ func AddrTTL(addrTTL time.Duration) Option {
 func Topic(topic *pubsub.Topic) Option {
 	return func(c *config) error {
 		c.topic = topic
-		return nil
-	}
-}
-
-// DefaultSelectorSeq sets the default selector sequence passed to
-// ExploreRecursiveWithStopNode.
-func DefaultSelectorSeq(dss ipld.Node) Option {
-	return func(c *config) error {
-		c.dss = dss
 		return nil
 	}
 }
@@ -142,23 +133,42 @@ func IdleHandlerTTL(ttl time.Duration) Option {
 	}
 }
 
-// SegmentDepthLimit sets the maximum recursion depth limit for a segmented sync.
-// Setting the depth to a value less than zero disables segmented sync completely.
-// Disabled by default.
-// Note that for segmented sync to function at least one of BlockHook or ScopedBlockHook must be
-// set.
-func SegmentDepthLimit(depth int64) Option {
+// Checks that advertisement blocks contain a "PreviousID" field. This can be
+// set to false to not do the check if there is no reason to do so.
+func StrictAdsSelector(strict bool) Option {
 	return func(c *config) error {
-		c.segDepthLimit = depth
+		c.strictAdsSelSeq = strict
 		return nil
 	}
 }
 
-// SyncRecursionLimit sets the recursion limit of the background syncing process.
-// Defaults to selector.RecursionLimitNone if not specified.
-func SyncRecursionLimit(limit selector.RecursionLimit) Option {
+// AdsDepthLimit sets the maximum number of advertisements in a chain to sync.
+// Defaults to unlimited if not specified or set < 1.
+func AdsDepthLimit(limit int64) Option {
 	return func(c *config) error {
-		c.syncRecLimit = limit
+		c.adsDepthLimit = limit
+		return nil
+	}
+}
+
+// EntriesDepthLimit sets the maximum number of multihash entries blocks to
+// sync per advertisement. Defaults to unlimited if not set or set to < 1.
+func EntriesDepthLimit(depth int64) Option {
+	return func(c *config) error {
+		c.entriesDepthLimit = depth
+		return nil
+	}
+}
+
+// SegmentDepthLimit sets the maximum recursion depth limit for a segmented sync.
+// Setting the depth to a value less than zero disables segmented sync completely.
+// Disabled by default.
+//
+// For segmented sync to function at least one of BlockHook or ScopedBlockHook
+// must be set.
+func SegmentDepthLimit(depth int64) Option {
+	return func(c *config) error {
+		c.segDepthLimit = depth
 		return nil
 	}
 }
@@ -194,9 +204,12 @@ func WithLastKnownSync(f LastKnownSyncFunc) Option {
 }
 
 type syncCfg struct {
-	forceUpdateLatest bool
-	scopedBlockHook   BlockHookFunc
-	segDepthLimit     int64
+	headAdCid     cid.Cid
+	stopAdCid     cid.Cid
+	blockHook     BlockHookFunc
+	depthLimit    int64
+	segDepthLimit int64
+	resync        bool
 }
 
 type SyncOption func(*syncCfg)
@@ -210,9 +223,49 @@ func getSyncOpts(opts []SyncOption) syncCfg {
 	return cfg
 }
 
-func WithForceUpdateLatest() SyncOption {
+// WithHeadAdCid explicitly specifies an advertisement CID to sync to, instead
+// of getting this by querying the publisher.
+func WithHeadAdCid(headAd cid.Cid) SyncOption {
 	return func(sc *syncCfg) {
-		sc.forceUpdateLatest = true
+		sc.headAdCid = headAd
+	}
+}
+
+// WithStopAdCid explicitly specifies an advertisement CID to stop at, instead
+// of using the latest synced advertisement CID..
+func WithStopAdCid(stopAd cid.Cid) SyncOption {
+	return func(sc *syncCfg) {
+		sc.stopAdCid = stopAd
+	}
+}
+
+// WithResyncAds causes the current sync to ignore anvertisements that have been
+// previously synced. When true, sync does not record the latest synced CID or
+// send sync finished notification.
+func WithAdsResync(resync bool) SyncOption {
+	return func(sc *syncCfg) {
+		sc.resync = resync
+	}
+}
+
+// ScopedDepthLimit provides a sync depth limit for the current sync. This
+// applies to both advertisement and entries chains. If zero or not specified,
+// the Subscriber ads or entries depth limit is used. Set to -1 for no limits.
+func ScopedDepthLimit(limit int64) SyncOption {
+	return func(sc *syncCfg) {
+		sc.depthLimit = limit
+	}
+}
+
+// ScopedSegmentDepthLimit is the equivalent of SegmentDepthLimit option but
+// only applied to a single sync. If zero or not specified, the Subscriber
+// SegmentDepthLimit option is used instead. Set to -1 for no limits.
+//
+// For segmented sync to function at least one of BlockHook or ScopedBlockHook
+// must be set. See: SegmentDepthLimit.
+func ScopedSegmentDepthLimit(depth int64) SyncOption {
+	return func(sc *syncCfg) {
+		sc.segDepthLimit = depth
 	}
 }
 
@@ -221,23 +274,11 @@ func WithForceUpdateLatest() SyncOption {
 // instead. Specifying the ScopedBlockHook will override the Subscriber level
 // BlockHook for the current sync.
 //
-// Note that calls to SegmentSyncActions from bloc hook will have no impact if
-// segmented sync is disabled. See: BlockHook, SegmentDepthLimit,
+// Calls to SegmentSyncActions from bloc hook will have no impact if segmented
+// sync is disabled. See: BlockHook, SegmentDepthLimit,
 // ScopedSegmentDepthLimit.
 func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 	return func(sc *syncCfg) {
-		sc.scopedBlockHook = hook
-	}
-}
-
-// ScopedSegmentDepthLimit is the equivalent of SegmentDepthLimit option but
-// only applied to a single sync. If not specified, the Subscriber
-// SegmentDepthLimit option is used instead.
-//
-// Note that for segmented sync to function at least one of BlockHook or
-// ScopedBlockHook must be set. See: SegmentDepthLimit.
-func ScopedSegmentDepthLimit(depth int64) SyncOption {
-	return func(sc *syncCfg) {
-		sc.segDepthLimit = depth
+		sc.blockHook = hook
 	}
 }

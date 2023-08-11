@@ -1,4 +1,4 @@
-package httpsync_test
+package ipnisync_test
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -39,7 +39,7 @@ const (
 	sampleNFTStorageAd   = `{"Addresses":["/dns4/elastic.dag.house/tcp/443/wss"],"ContextID":{"/":{"bytes":"YmFndXFlZXJhdW1qbGM3MjRhenFucmRiNXh3dDJ3bWdxMmZ4N2lrd2N6MmxtNHhlNWR0dWx4NHIzemQycQ=="}},"Entries":{"/":"baguqeeraumjlc724azqnrdb5xwt2wmgq2fx7ikwcz2lm4xe5dtulx4r3zd2q"},"IsRm":false,"Metadata":{"/":{"bytes":"gBI"}},"PreviousID":{"/":"baguqeeramj6uf7ie5brhk5ivzi7e4mccndzke6fizc4qaie6t73xrvspkxrq"},"Provider":"bafzbeibhqavlasjc7dvbiopygwncnrtvjd2xmryk5laib7zyjor6kf3avm","Signature":{"/":{"bytes":"CqsCCAASpgIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDYi9qW5J1UIE4CUaRxxoROyqHkKZ2nhGRGWDurhNhPiNQ+n0sCy8rREEF9lertFt2n81c1Ik4W/8HZKxvk8PYKStrlGWjur6UoFyt+WuS/1hkRVyqEXjzBF7cLvfYQ75UaATIbLhXWpXqys1DVdh2snD0jnDugF4J72ZboIz6gwZC+BEd5axeVaibB9gJcg+5P48ihq9SAbr4dQUS47OgISMNb3f6nHfK7FQFF/KYx80byJYMJ9Oxsw8CB6C8pmDTdqvzYBT9kCUdY+loN/IcBqEeNw/UF7l3ay/ZJ2Yq437k6kn5BoxaZfxlbZHItoBjiLSJ9FSD7gpnUO+lJAh9bAgMBAAESGy9pbmRleGVyL2luZ2VzdC9hZFNpZ25hdHVyZRoiEiAz1niaKM3G2J40Bz/3wQbElyuBh1+2Q1E9SBj9wNsE8iqAAgOO1BKwq1RRy7AkZksWRrDlClhXU5IHAiy9pHuYtI/ePbVANiMAisjIEkd7jtJx7uct+/q2BTTTVcmZS7iE4OMTUymVbPQJ21qrzB6l5hulKD5ieedkJngAPCpizXmI1Z32Ib1zkuEFMraRcFaQ0YWqBKoIBJjjO4POGIdB2SgrCO0aFSd94k+2lyudMeWK+OisGLI7r6+ovd8g1VmcspEgl6pfdlHvThM3TdYGa46LO3kSCZmTzbI/XPnbMKaITvbuS3p8gm6elxNagx7Jxw4oP7hVyINSJ9chRu/w0RiBO986WRwhkGz1jW5jUF6VG/cQODzwjhuACteHf9TWp18"}}}`
 )
 
-func TestHttpSync_NFTStorage_DigestCheck(t *testing.T) {
+func TestIPNISync_NFTStorage_DigestCheck(t *testing.T) {
 	pubid, err := peer.Decode("QmQzqxhK82kAmKvARFZSkUVS6fo9sySaiogAnx5EnZ6ZmC")
 	require.NoError(t, err)
 	tests := []struct {
@@ -86,7 +86,7 @@ func TestHttpSync_NFTStorage_DigestCheck(t *testing.T) {
 			pubmaddr, err := maurl.FromURL(puburl)
 			require.NoError(t, err)
 
-			sync := httpsync.NewSync(ls, http.DefaultClient, nil)
+			sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
 			syncer, err := sync.NewSyncer(pubid, []multiaddr.Multiaddr{pubmaddr})
 			require.NoError(t, err)
 
@@ -118,7 +118,8 @@ func TestHttpSync_NFTStorage_DigestCheck(t *testing.T) {
 	}
 }
 
-func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
+func TestIPNIsync_AcceptsSpecCompliantDagJson(t *testing.T) {
+	const testTopic = "/test/topic"
 	ctx := context.Background()
 
 	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
@@ -132,7 +133,7 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	publs.SetWriteStorage(pubstore)
 	publs.SetReadStorage(pubstore)
 
-	pub, err := httpsync.NewPublisher("0.0.0.0:0", publs, pubPrK)
+	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubPrK, ipnisync.WithHeadTopic(testTopic), ipnisync.WithServer(true))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
@@ -160,7 +161,7 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	ls.SetWriteStorage(store)
 	ls.SetReadStorage(store)
 
-	sync := httpsync.NewSync(ls, http.DefaultClient, nil)
+	sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
 	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
 	require.NoError(t, err)
 
@@ -181,7 +182,7 @@ func TestHttpsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
 }
 
-func TestHttpsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
+func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 	ctx := context.Background()
 
 	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
@@ -196,7 +197,7 @@ func TestHttpsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 		return nil, ipld.ErrNotExists{}
 	}
 
-	pub, err := httpsync.NewPublisher("0.0.0.0:0", publs, pubPrK)
+	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubPrK, ipnisync.WithServer(true))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
@@ -205,7 +206,7 @@ func TestHttpsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 	ls.SetWriteStorage(store)
 	ls.SetReadStorage(store)
 
-	sync := httpsync.NewSync(ls, http.DefaultClient, nil)
+	sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
 	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
 	require.NoError(t, err)
 

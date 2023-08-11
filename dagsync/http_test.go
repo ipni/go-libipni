@@ -13,7 +13,7 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/httpsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
@@ -40,7 +40,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLinkSys := test.MkLinkSystem(srcStore)
 
-	pub, err := httpsync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey)
+	pub, err := ipnisync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey, ipnisync.WithServer(true))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		pub.Close()
@@ -50,6 +50,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	dstLinkSys := test.MkLinkSystem(dstStore)
 	dstHost := test.MkTestHost(t)
 
+	subscriberOptions = append(subscriberOptions, dagsync.StrictAdsSelector(false))
 	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, subscriberOptions...)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -87,7 +88,7 @@ func TestManualSync(t *testing.T) {
 		ID:    te.srcHost.ID(),
 		Addrs: te.pub.Addrs(),
 	}
-	syncCid, err := te.sub.Sync(ctx, peerInfo, cid.Undef, nil)
+	syncCid, err := te.sub.SyncAdChain(ctx, peerInfo)
 	require.NoError(t, err)
 
 	require.Equal(t, rootLnk.(cidlink.Link).Cid, syncCid)
@@ -116,7 +117,7 @@ func TestSyncHttpFailsUnexpectedPeer(t *testing.T) {
 		ID:    otherPeerID,
 		Addrs: te.pub.Addrs(),
 	}
-	_, err = te.sub.Sync(ctx, peerInfo, cid.Undef, nil)
+	_, err = te.sub.SyncAdChain(ctx, peerInfo)
 	require.ErrorContains(t, err, "unexpected peer")
 }
 
@@ -145,7 +146,7 @@ func TestSyncFnHttp(t *testing.T) {
 		ID:    te.srcHost.ID(),
 		Addrs: te.pub.Addrs(),
 	}
-	_, err := te.sub.Sync(ctx, peerInfo, cids[0], nil)
+	_, err := te.sub.SyncAdChain(ctx, peerInfo, dagsync.WithHeadAdCid(cids[0]))
 	require.ErrorContains(t, err, "failed to traverse requested dag")
 	syncncl()
 
@@ -161,13 +162,13 @@ func TestSyncFnHttp(t *testing.T) {
 
 	lnk := chainLnks[1]
 
-	curLatestSync := te.sub.GetLatestSync(te.srcHost.ID())
+	require.Nil(t, te.sub.GetLatestSync(te.srcHost.ID()))
 
 	// Sync with publisher via HTTP.
 	ctx, syncncl = context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
 
-	syncCid, err := te.sub.Sync(ctx, peerInfo, lnk.(cidlink.Link).Cid, nil)
+	syncCid, err := te.sub.SyncAdChain(ctx, peerInfo, dagsync.WithHeadAdCid(lnk.(cidlink.Link).Cid))
 	require.NoError(t, err)
 
 	require.Equal(t, lnk.(cidlink.Link).Cid, syncCid, "sync'd cid unexpected")
@@ -180,14 +181,11 @@ func TestSyncFnHttp(t *testing.T) {
 	require.Equal(t, 11, blockHookCalls)
 
 	// Assert the latestSync is not updated by explicit sync when cid is set
-	if te.sub.GetLatestSync(te.srcHost.ID()) != nil {
-		err = assertLatestSyncEquals(te.sub, te.srcHost.ID(), curLatestSync.(cidlink.Link).Cid)
-		require.NoError(t, err, "Sync should not update latestSync")
-	}
+	require.Nil(t, te.sub.GetLatestSync(te.srcHost.ID()))
 
 	ctx, syncncl = context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
-	syncCid, err = te.sub.Sync(ctx, peerInfo, cid.Undef, nil)
+	syncCid, err = te.sub.SyncAdChain(ctx, peerInfo)
 	require.NoError(t, err)
 	require.Equal(t, newHead, syncCid, "sync'd cid unexpected")
 	_, err = te.dstStore.Get(context.Background(), datastore.NewKey(syncCid.String()))

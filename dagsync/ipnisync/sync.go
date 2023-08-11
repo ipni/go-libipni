@@ -1,4 +1,4 @@
-package httpsync
+package ipnisync
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ import (
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/traversal"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
+	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	"github.com/ipni/go-libipni/maurl"
-	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
@@ -54,11 +54,11 @@ func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, 
 func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
 	urls := make([]*url.URL, len(peerAddrs))
 	for i := range peerAddrs {
-		var err error
-		urls[i], err = maurl.ToURL(peerAddrs[i])
+		u, err := maurl.ToURL(peerAddrs[i])
 		if err != nil {
 			return nil, err
 		}
+		urls[i] = u.JoinPath(IpniPath)
 	}
 
 	return &Syncer{
@@ -85,28 +85,30 @@ type Syncer struct {
 
 // GetHead fetches the head of the peer's advertisement chain.
 func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
-	var head cid.Cid
-	var pubKey ic.PubKey
-
+	var signedHead *headschema.SignedHead
 	err := s.fetch(ctx, "head", func(msg io.Reader) error {
 		var err error
-		pubKey, head, err = openSignedHeadWithIncludedPubKey(msg)
+		signedHead, err = headschema.Decode(msg)
 		return err
 	})
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	peerIDFromSig, err := peer.IDFromPublicKey(pubKey)
+	signerID, err := signedHead.Validate()
 	if err != nil {
 		return cid.Undef, err
 	}
-
-	if peerIDFromSig != s.peerID {
+	if signerID != s.peerID {
 		return cid.Undef, errHeadFromUnexpectedPeer
 	}
 
-	return head, nil
+	// TODO: Do something with signedHead.Topic.
+	//
+	// Should it be returned (and for what purpose)?
+	// Is it needed to construct the advertisement fetch URL?
+
+	return signedHead.Head.(cidlink.Link).Cid, nil
 }
 
 // Sync syncs the peer's advertisement chain or entries chain.
