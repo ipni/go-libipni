@@ -22,10 +22,9 @@ const (
 )
 
 var (
-	testCid    cid.Cid
-	testCid2   cid.Cid
-	testPeerID peer.ID
-	testAddrs  []multiaddr.Multiaddr
+	testCid      cid.Cid
+	testCid2     cid.Cid
+	testPeerInfo peer.AddrInfo
 )
 
 func init() {
@@ -39,15 +38,19 @@ func init() {
 		panic(err)
 	}
 
-	testPeerID, err = peer.Decode(testPeerIDString)
+	testPeerID, err := peer.Decode(testPeerIDString)
 	if err != nil {
 		panic(err)
 	}
 
-	testAddrs = make([]multiaddr.Multiaddr, 1)
-	testAddrs[0], err = multiaddr.NewMultiaddr(testAddrString)
+	testAddr, err := multiaddr.NewMultiaddr(testAddrString)
 	if err != nil {
 		panic(err)
+	}
+
+	testPeerInfo = peer.AddrInfo{
+		ID:    testPeerID,
+		Addrs: []multiaddr.Multiaddr{testAddr},
 	}
 }
 
@@ -57,12 +60,12 @@ func TestReceiverBasic(t *testing.T) {
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 
-	err = rcvr.Direct(context.Background(), testCid, testPeerID, testAddrs)
+	err = rcvr.Direct(context.Background(), testCid, testPeerInfo)
 	require.NoError(t, err)
 
 	amsg, err := rcvr.Next(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, testPeerID, amsg.PeerID)
+	require.Equal(t, testPeerInfo.ID, amsg.PeerID)
 
 	require.NoError(t, rcvr.Close())
 }
@@ -100,12 +103,12 @@ func TestReceiverCloseWaitingDirect(t *testing.T) {
 	// Test close while Direct is waiting.
 	errChan := make(chan error)
 	go func() {
-		directErr := rcvr.Direct(context.Background(), testCid, testPeerID, testAddrs)
+		directErr := rcvr.Direct(context.Background(), testCid, testPeerInfo)
 		if directErr != nil {
 			errChan <- directErr
 			return
 		}
-		errChan <- rcvr.Direct(context.Background(), testCid2, testPeerID, testAddrs)
+		errChan <- rcvr.Direct(context.Background(), testCid2, testPeerInfo)
 	}()
 
 	require.NoError(t, rcvr.Close())
@@ -124,7 +127,7 @@ func TestReceiverCidCache(t *testing.T) {
 	rcvr, err := announce.NewReceiver(srcHost, testTopic)
 	require.NoError(t, err)
 
-	err = rcvr.Direct(context.Background(), testCid, testPeerID, testAddrs)
+	err = rcvr.Direct(context.Background(), testCid, testPeerInfo)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -132,10 +135,10 @@ func TestReceiverCidCache(t *testing.T) {
 
 	amsg, err := rcvr.Next(ctx)
 	require.NoError(t, err)
-	require.Equal(t, testPeerID, amsg.PeerID)
+	require.Equal(t, testPeerInfo.ID, amsg.PeerID)
 
 	// Request another announce with the same CID.
-	err = rcvr.Direct(context.Background(), testCid, testPeerID, testAddrs)
+	err = rcvr.Direct(context.Background(), testCid, testPeerInfo)
 	require.NoError(t, err)
 
 	// Next should not receive another announce.

@@ -188,6 +188,39 @@ func MkLinkSystem(ds datastore.Batching) ipld.LinkSystem {
 	return lsys
 }
 
+func MkBlockedLinkSystem(ds datastore.Batching) (ipld.LinkSystem, <-chan chan<- struct{}) {
+	var mutex sync.Mutex
+	blocked := make(chan chan<- struct{})
+	releaseMap := make(map[cid.Cid]chan struct{})
+	lsys := cidlink.DefaultLinkSystem()
+	lsys.StorageReadOpener = func(_ ipld.LinkContext, lnk ipld.Link) (io.Reader, error) {
+		c := lnk.(cidlink.Link).Cid
+		mutex.Lock()
+		release, ok := releaseMap[c]
+		if !ok {
+			release = make(chan struct{})
+			releaseMap[c] = release
+			mutex.Unlock()
+			blocked <- release
+		} else {
+			mutex.Unlock()
+		}
+		<-release
+		val, err := ds.Get(context.Background(), datastore.NewKey(lnk.String()))
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewBuffer(val), nil
+	}
+	lsys.StorageWriteOpener = func(lctx ipld.LinkContext) (io.Writer, ipld.BlockWriteCommitter, error) {
+		buf := bytes.NewBuffer(nil)
+		return buf, func(lnk ipld.Link) error {
+			return ds.Put(lctx.Ctx, datastore.NewKey(lnk.String()), buf.Bytes())
+		}, nil
+	}
+	return lsys, blocked
+}
+
 func Store(srcStore datastore.Batching, n ipld.Node) (ipld.Link, error) {
 	lsys := MkLinkSystem(srcStore)
 	return lsys.Store(ipld.LinkContext{}, schema.Linkproto, n)

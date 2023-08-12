@@ -28,6 +28,10 @@ func TestAnnounceReplace(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcHost := test.MkTestHost(t)
+	srcHostInfo := peer.AddrInfo{
+		ID:    srcHost.ID(),
+		Addrs: srcHost.Addrs(),
+	}
 	srcLnkS := test.MkLinkSystem(srcStore)
 	dstHost := test.MkTestHost(t)
 
@@ -61,7 +65,7 @@ func TestAnnounceReplace(t *testing.T) {
 
 	// Have the subscriber receive an announce.  This is the same as if it was
 	// published by the publisher without having to wait for it to arrive.
-	err = sub.Announce(context.Background(), firstCid, srcHost.ID(), srcHost.Addrs())
+	err = sub.Announce(context.Background(), firstCid, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 
@@ -74,13 +78,13 @@ func TestAnnounceReplace(t *testing.T) {
 	// Announce two more times.
 	c := chainLnks[1].(cidlink.Link).Cid
 	pub.SetRoot(c)
-	err = sub.Announce(context.Background(), c, srcHost.ID(), srcHost.Addrs())
+	err = sub.Announce(context.Background(), c, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for second CID", c)
 
 	lastCid := chainLnks[0].(cidlink.Link).Cid
 	pub.SetRoot(lastCid)
-	err = sub.Announce(context.Background(), lastCid, srcHost.ID(), srcHost.Addrs())
+	err = sub.Announce(context.Background(), lastCid, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for last CID", lastCid)
 
@@ -162,7 +166,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	// Announce one CID to the subscriber. Note that announce does a sync in the background.
 	// That's why we use one cid here and another for sync so that we can concretely assert that
 	// data was synced via the sync call and not via the earlier background sync via announce.
-	err = sub.Announce(ctx, oneC, pubh.ID(), pub.Addrs())
+	err = sub.Announce(ctx, oneC, peer.AddrInfo{pubh.ID(), pub.Addrs()})
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -192,6 +196,10 @@ func TestAnnounceRepublish(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcHost := test.MkTestHost(t)
+	srcHostInfo := peer.AddrInfo{
+		ID:    srcHost.ID(),
+		Addrs: srcHost.Addrs(),
+	}
 	srcLnkS := test.MkLinkSystem(srcStore)
 	dstHost := test.MkTestHost(t)
 
@@ -231,7 +239,7 @@ func TestAnnounceRepublish(t *testing.T) {
 	pub.SetRoot(firstCid)
 
 	// Announce one CID to subscriber1.
-	err = sub1.Announce(context.Background(), firstCid, srcHost.ID(), srcHost.Addrs())
+	err = sub1.Announce(context.Background(), firstCid, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 

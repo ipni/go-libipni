@@ -5,9 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	dt "github.com/filecoin-project/go-data-transfer/v2"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-graphsync"
 	"github.com/ipni/go-libipni/announce"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -36,14 +34,12 @@ type config struct {
 
 	topic *pubsub.Topic
 
-	dtManager     dt.Manager
-	graphExchange graphsync.GraphExchange
-
 	blockHook  BlockHookFunc
 	httpClient *http.Client
 
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
+	maxAsyncSyncs  int
 
 	hasRcvr  bool
 	rcvrOpts []announce.Option
@@ -93,15 +89,6 @@ func AddrTTL(addrTTL time.Duration) Option {
 func Topic(topic *pubsub.Topic) Option {
 	return func(c *config) error {
 		c.topic = topic
-		return nil
-	}
-}
-
-// DtManager provides an existing datatransfer manager.
-func DtManager(dtManager dt.Manager, gs graphsync.GraphExchange) Option {
-	return func(c *config) error {
-		c.dtManager = dtManager
-		c.graphExchange = gs
 		return nil
 	}
 }
@@ -178,6 +165,21 @@ func RecvAnnounce(opts ...announce.Option) Option {
 	return func(c *config) error {
 		c.hasRcvr = true
 		c.rcvrOpts = opts
+		return nil
+	}
+}
+
+// MaxAsyncConcurrency sets the maximum number of concurrent asynchrouous syncs
+// (started by announce messages). This only takes effect if there is an
+// announcement reveiver configured by the RecvAnnounce option.
+func MaxAsyncConcurrency(n int) Option {
+	return func(c *config) error {
+		if n != 0 {
+			if n < 0 {
+				n = 0
+			}
+			c.maxAsyncSyncs = n
+		}
 		return nil
 	}
 }
