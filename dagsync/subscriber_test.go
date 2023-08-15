@@ -653,11 +653,11 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	rootCid2 := lnk2.(cidlink.Link).Cid
 	pub2.SetRoot(rootCid2)
 
-	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{pub1.ID(), pub1.Addrs()})
+	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
 
-	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{pub2.ID(), pub2.Addrs()})
+	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
 
@@ -729,11 +729,11 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Close()
 
-	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{pub1.ID(), pub1.Addrs()})
+	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
 
-	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{pub2.ID(), pub2.Addrs()})
+	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
 
