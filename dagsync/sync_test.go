@@ -18,7 +18,6 @@ import (
 	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
 
@@ -374,11 +373,15 @@ func TestAnnounce(t *testing.T) {
 	// Store the whole chain in source node
 	chainLnks := test.MkChain(srcLnkS, true)
 
-	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHost.ID(), srcHost.Addrs(), chainLnks[2], chainLnks[2].(cidlink.Link).Cid)
+	srcHostInfo := peer.AddrInfo{
+		ID:    srcHost.ID(),
+		Addrs: srcHost.Addrs(),
+	}
+	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHostInfo, chainLnks[2], chainLnks[2].(cidlink.Link).Cid)
 	require.NoError(t, err)
-	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHost.ID(), srcHost.Addrs(), chainLnks[1], chainLnks[1].(cidlink.Link).Cid)
+	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHostInfo, chainLnks[1], chainLnks[1].(cidlink.Link).Cid)
 	require.NoError(t, err)
-	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHost.ID(), srcHost.Addrs(), chainLnks[0], chainLnks[0].(cidlink.Link).Cid)
+	err = newAnnounceTest(pub, sub, dstStore, watcher, srcHostInfo, chainLnks[0], chainLnks[0].(cidlink.Link).Cid)
 	require.NoError(t, err)
 }
 
@@ -447,7 +450,7 @@ func TestCancelDeadlock(t *testing.T) {
 	}
 }
 
-func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerID peer.ID, peerAddrs []multiaddr.Multiaddr, lnk ipld.Link, expectedSync cid.Cid) error {
+func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerInfo peer.AddrInfo, lnk ipld.Link, expectedSync cid.Cid) error {
 	var err error
 	c := lnk.(cidlink.Link).Cid
 	if c != cid.Undef {
@@ -456,7 +459,7 @@ func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore da
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = sub.Announce(ctx, c, peerID, peerAddrs)
+	err = sub.Announce(ctx, c, peerInfo)
 	if err != nil {
 		return err
 	}
@@ -476,7 +479,7 @@ func newAnnounceTest(pub dagsync.Publisher, sub *dagsync.Subscriber, dstStore da
 		}
 	}
 
-	return assertLatestSyncEquals(sub, peerID, expectedSync)
+	return assertLatestSyncEquals(sub, peerInfo.ID, expectedSync)
 }
 
 func newUpdateTest(pub dagsync.Publisher, sender announce.Sender, sub *dagsync.Subscriber, dstStore datastore.Batching, watcher <-chan dagsync.SyncFinished, peerID peer.ID, lnk ipld.Link, withFailure bool, expectedSync cid.Cid) error {

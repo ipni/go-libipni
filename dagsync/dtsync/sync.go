@@ -44,29 +44,6 @@ type Sync struct {
 	syncDoneMutex sync.Mutex
 }
 
-// NewSyncWithDT creates a new Sync with a datatransfer.Manager provided by the
-// caller.
-func NewSyncWithDT(host host.Host, dtManager dt.Manager, gs graphsync.GraphExchange, ls *ipld.LinkSystem, blockHook func(peer.ID, cid.Cid)) (*Sync, error) {
-	err := registerVoucher(dtManager, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	s := &Sync{
-		host:      host,
-		dtManager: dtManager,
-		ls:        ls,
-		blockHook: blockHook,
-	}
-
-	if blockHook != nil {
-		s.unregHook = gs.RegisterIncomingBlockHook(addIncomingBlockHook(nil, blockHook))
-	}
-
-	s.unsubEvents = dtManager.SubscribeToEvents(s.onEvent)
-	return s, nil
-}
-
 // NewSync creates a new Sync with its own datatransfer.Manager.
 func NewSync(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), gsMaxInReq, gsMaxOutReq uint64) (*Sync, error) {
 	dtManager, gs, dtClose, err := makeDataTransfer(host, ds, lsys, nil, gsMaxInReq, gsMaxOutReq)
@@ -107,10 +84,7 @@ func (s *Sync) Close() error {
 		s.unregHook()
 	}
 
-	var err error
-	if s.dtClose != nil {
-		err = s.dtClose()
-	}
+	err := s.dtClose()
 
 	// Dismiss any handlers waiting completion of sync.
 	s.syncDoneMutex.Lock()

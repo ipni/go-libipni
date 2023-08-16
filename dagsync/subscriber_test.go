@@ -602,6 +602,165 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	require.Equal(t, 3, count)
 }
 
+func TestMaxAsyncSyncs(t *testing.T) {
+	// Create two publishers
+	srcStore1 := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost1 := test.MkTestHost(t)
+	srcLnkS1 := test.MkLinkSystem(srcStore1)
+	pub1, err := dtsync.NewPublisher(srcHost1, srcStore1, srcLnkS1, "")
+	require.NoError(t, err)
+	defer pub1.Close()
+
+	srcStore2 := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost2 := test.MkTestHost(t)
+	srcLnkS2 := test.MkLinkSystem(srcStore2)
+	pub2, err := dtsync.NewPublisher(srcHost2, srcStore2, srcLnkS2, "")
+	require.NoError(t, err)
+	defer pub2.Close()
+
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstHost := test.MkTestHost(t)
+	dstLnkS, blocked := test.MkBlockedLinkSystem(dstStore)
+	blocksSeenByHook := make(map[cid.Cid]struct{})
+	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+		blocksSeenByHook[c] = struct{}{}
+	}
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(),
+		dagsync.BlockHook(blockHook),
+		dagsync.StrictAdsSelector(false),
+		// If this value is > 1, then test must fail.
+		dagsync.MaxAsyncConcurrency(1),
+	)
+	require.NoError(t, err)
+	defer sub.Close()
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	// Update root on publisher1 with item
+	itm1 := basicnode.NewString("hello world")
+	lnk1, err := test.Store(srcStore1, itm1)
+	require.NoError(t, err)
+	rootCid1 := lnk1.(cidlink.Link).Cid
+	pub1.SetRoot(rootCid1)
+
+	// Update root on publisher2 with item
+	itm2 := basicnode.NewString("hello world 2")
+	lnk2, err := test.Store(srcStore2, itm2)
+	require.NoError(t, err)
+	rootCid2 := lnk2.(cidlink.Link).Cid
+	pub2.SetRoot(rootCid2)
+
+	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
+	require.NoError(t, err)
+	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
+
+	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
+	require.NoError(t, err)
+	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
+
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+
+	var release chan<- struct{}
+	select {
+	case release = <-blocked:
+	case <-timer.C:
+		t.Fatal("timed out waiting for sync 1")
+	}
+	select {
+	case <-timer.C:
+	case release2 := <-blocked:
+		close(release)
+		close(release2)
+		var done bool
+		for !done {
+			select {
+			case release2 = <-blocked:
+				close(release2)
+			case <-timer.C:
+				done = true
+			}
+		}
+		t.Fatal("unexpected sync when sync blocked and concurrency set to 1")
+	}
+
+	close(release)
+
+	timer.Reset(updateTimeout)
+	select {
+	case <-timer.C:
+		t.Fatal("timed out waiting for sync 2")
+	case release2 := <-blocked:
+		close(release2)
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-timer.C:
+			t.Fatal("timed out waiting for sync")
+		case downstream := <-watcher:
+			t.Log("got sync:", downstream.Cid)
+		}
+	}
+	timer.Stop()
+
+	_, ok := blocksSeenByHook[lnk1.(cidlink.Link).Cid]
+	require.True(t, ok, "hook did not see link1")
+
+	_, ok = blocksSeenByHook[lnk2.(cidlink.Link).Cid]
+	require.True(t, ok, "hook did not see link2")
+
+	// ----- Check concurrenty > 1 -----
+
+	dstStore = dssync.MutexWrap(datastore.NewMapDatastore())
+	dstHost = test.MkTestHost(t)
+	dstLnkS, blocked = test.MkBlockedLinkSystem(dstStore)
+	blocksSeenByHook = make(map[cid.Cid]struct{})
+
+	sub, err = dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(),
+		dagsync.BlockHook(blockHook),
+		dagsync.StrictAdsSelector(false),
+		dagsync.MaxAsyncConcurrency(2),
+	)
+	require.NoError(t, err)
+	defer sub.Close()
+
+	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
+	require.NoError(t, err)
+	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
+
+	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
+	require.NoError(t, err)
+	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
+
+	timer = time.NewTimer(time.Second)
+	select {
+	case release = <-blocked:
+	case <-timer.C:
+		t.Fatal("timed out waiting for sync 1")
+	}
+	select {
+	case <-timer.C:
+		t.Fatal("expected another sync")
+	case release2 := <-blocked:
+		close(release)
+		close(release2)
+		var done bool
+		for !done {
+			select {
+			case release2 = <-blocked:
+				close(release2)
+			case <-timer.C:
+				done = true
+			}
+		}
+	}
+}
+
 func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, expectedCid cidlink.Link, watcher <-chan dagsync.SyncFinished) {
 	select {
 	case <-time.After(updateTimeout):

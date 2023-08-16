@@ -304,12 +304,12 @@ func (r *Receiver) watch(ctx context.Context) {
 // message extra data. The peerID and addrs are those of the advertisement
 // publisher, since an announce message announces the availability of an
 // advertisement and where to retrieve it from.
-func (r *Receiver) Direct(ctx context.Context, nextCid cid.Cid, peerID peer.ID, addrs []multiaddr.Multiaddr) error {
-	log.Infow("Handling direct announce", "peer", peerID, "addrs", addrs)
+func (r *Receiver) Direct(ctx context.Context, nextCid cid.Cid, peerInfo peer.AddrInfo) error {
+	log.Infow("Handling direct announce", "peer", peerInfo.ID, "addrs", peerInfo.Addrs)
 	amsg := Announce{
 		Cid:    nextCid,
-		PeerID: peerID,
-		Addrs:  addrs,
+		PeerID: peerInfo.ID,
+		Addrs:  peerInfo.Addrs,
 	}
 	return r.handleAnnounce(ctx, amsg, r.resend)
 }
