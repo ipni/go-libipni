@@ -181,14 +181,15 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
 	// Announce one CID to the subscriber. Note that announce does a sync in the background.
 	// That's why we use one cid here and another for sync so that we can concretely assert that
 	// data was synced via the sync call and not via the earlier background sync via announce.
 	err = sub.Announce(ctx, oneC, peer.AddrInfo{ID: pubh.ID(), Addrs: pub.Addrs()})
 	require.NoError(t, err)
 
-	watcher, cncl := sub.OnSyncFinished()
-	defer cncl()
 	select {
 	case <-time.After(updateTimeout):
 		t.Fatal("timed out waiting for sync to finish")
