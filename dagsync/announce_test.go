@@ -1,26 +1,28 @@
-package dagsync
+package dagsync_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipld/go-ipld-prime"
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipni/go-libipni/announce"
+	"github.com/ipni/go-libipni/announce/p2psender"
+	"github.com/ipni/go-libipni/dagsync"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	testTopic     = "/dagsync/testtopic"
-	updateTimeout = time.Second
 )
 
 func TestAnnounceReplace(t *testing.T) {
@@ -37,13 +39,20 @@ func TestAnnounceReplace(t *testing.T) {
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
-	dstLnkS := test.MkLinkSystem(dstStore)
+	//dstLnkS := test.MkLinkSystem(dstStore)
+
+	dstLnkS, blocked := test.MkBlockedLinkSystem(dstStore)
+	blocksSeenByHook := make(map[cid.Cid]struct{})
+	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+		blocksSeenByHook[c] = struct{}{}
+	}
 
 	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, RecvAnnounce())
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(),
+		dagsync.BlockHook(blockHook))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -55,11 +64,6 @@ func TestAnnounceReplace(t *testing.T) {
 	// Store the whole chain in source node
 	chainLnks := test.MkChain(srcLnkS, true)
 
-	hnd := sub.getOrCreateHandler(srcHost.ID())
-
-	// Lock mutex inside sync handler to simulate publisher blocked in graphsync.
-	hnd.subscriber.scopedBlockHookMutex.Lock()
-
 	firstCid := chainLnks[2].(cidlink.Link).Cid
 	pub.SetRoot(firstCid)
 
@@ -69,11 +73,16 @@ func TestAnnounceReplace(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 
-	// This first announce should start the handler goroutine and clear the
-	// pending cid.
-	require.Eventually(t, func() bool {
-		return hnd.pendingMsg.Load() == nil
-	}, 2*time.Second, 100*time.Millisecond)
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+
+	// This first announce should start the handler and hit the blocked read.
+	var release chan<- struct{}
+	select {
+	case release = <-blocked:
+	case <-timer.C:
+		t.Fatal("timed out waiting for sync 1")
+	}
 
 	// Announce two more times.
 	c := chainLnks[1].(cidlink.Link).Cid
@@ -88,14 +97,14 @@ func TestAnnounceReplace(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Sent announce for last CID", lastCid)
 
-	// Check that the pending CID gets set to the last one announced.
-	require.Eventually(t, func() bool {
-		amsg := hnd.pendingMsg.Load()
-		return amsg != nil && amsg.Cid == lastCid
-	}, 2*time.Second, 100*time.Millisecond)
+	close(release)
 
-	// Unblock the first handler goroutine
-	hnd.subscriber.scopedBlockHookMutex.Unlock()
+	select {
+	case release = <-blocked:
+	case <-timer.C:
+		t.Fatal("timed out waiting for sync 2")
+	}
+	close(release)
 
 	// Validate that sink for first CID happened.
 	select {
@@ -129,6 +138,15 @@ func TestAnnounceReplace(t *testing.T) {
 			"no exchange should have been performed, but got change from peer %s for cid %s",
 			changeEvent.PeerID, changeEvent.Cid)
 	}
+
+	_, ok := blocksSeenByHook[chainLnks[2].(cidlink.Link).Cid]
+	require.True(t, ok, "hook did not see link2")
+
+	_, ok = blocksSeenByHook[chainLnks[1].(cidlink.Link).Cid]
+	require.False(t, ok, "hook should not have seen replaced link1")
+
+	_, ok = blocksSeenByHook[chainLnks[0].(cidlink.Link).Cid]
+	require.True(t, ok, "hook did not see link0")
 }
 
 func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
@@ -156,7 +174,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	subh := test.MkTestHost(t)
 	subds := dssync.MutexWrap(datastore.NewMapDatastore())
 	subls := test.MkLinkSystem(subds)
-	sub, err := NewSubscriber(subh, subds, subls, testTopic, RecvAnnounce(), StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(subh, subds, subls, testTopic, dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -182,7 +200,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	peerInfo := peer.AddrInfo{
 		ID: pubh.ID(),
 	}
-	gotc, err := sub.SyncAdChain(ctx, peerInfo, WithHeadAdCid(anotherC))
+	gotc, err := sub.SyncAdChain(ctx, peerInfo, dagsync.WithHeadAdCid(anotherC))
 	require.NoError(t, err)
 	require.Equal(t, anotherC, gotc)
 	gotNode, err := subls.Load(ipld.LinkContext{Ctx: ctx}, anotherLink, basicnode.Prototype.String)
@@ -213,14 +231,14 @@ func TestAnnounceRepublish(t *testing.T) {
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, dstHost, dstHost2)
 
-	sub2, err := NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic,
-		RecvAnnounce(announce.WithTopic(topics[1])), StrictAdsSelector(false))
+	sub2, err := dagsync.NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub2.Close()
 
-	sub1, err := NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)),
-		StrictAdsSelector(false))
+	sub1, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)),
+		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub1.Close()
 
@@ -254,4 +272,201 @@ func TestAnnounceRepublish(t *testing.T) {
 		require.NoError(t, err, "data not in second receiver store: %s", err)
 		t.Log("Received sync notification for first CID:", firstCid)
 	}
+}
+
+func TestAllowPeerReject(t *testing.T) {
+	t.Parallel()
+
+	// Set function to reject anything except dstHost, which is not the one
+	// generating the update.
+	var destID peer.ID
+	allow := func(peerID peer.ID) bool {
+		return peerID == destID
+	}
+
+	// Init dagsync publisher and subscriber
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore, allow)
+	defer srcHost.Close()
+	defer dstHost.Close()
+	defer pub.Close()
+	defer sub.Close()
+
+	destID = dstHost.ID()
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	c := mkLnk(t, srcStore)
+
+	// Update root with item
+	pub.SetRoot(c)
+	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
+	require.NoError(t, err)
+
+	select {
+	case <-time.After(3 * time.Second):
+	case _, open := <-watcher:
+		require.False(t, open, "something was exchanged, and that is wrong")
+	}
+}
+
+func TestAllowPeerAllows(t *testing.T) {
+	t.Parallel()
+
+	// Set function to allow any peer.
+	allow := func(_ peer.ID) bool {
+		return true
+	}
+
+	// Init dagsync publisher and subscriber
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost, dstHost, pub, sub, sender := initPubSub(t, srcStore, dstStore, allow)
+	defer srcHost.Close()
+	defer dstHost.Close()
+	defer pub.Close()
+	defer sub.Close()
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	c := mkLnk(t, srcStore)
+
+	// Update root with item
+	pub.SetRoot(c)
+	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
+	require.NoError(t, err)
+
+	select {
+	case <-time.After(updateTimeout):
+		t.Fatal("timed out waiting for SyncFinished")
+	case <-watcher:
+	}
+}
+
+func TestPublisherRejectsPeer(t *testing.T) {
+	t.Parallel()
+	// Init dagsync publisher and subscriber
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+
+	srcHost := test.MkTestHost(t)
+	dstHost := test.MkTestHost(t)
+
+	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
+
+	srcLnkS := test.MkLinkSystem(srcStore)
+
+	blockID := dstHost.ID()
+	var blockMutex sync.Mutex
+
+	allowPeer := func(peerID peer.ID) bool {
+		blockMutex.Lock()
+		defer blockMutex.Unlock()
+		return peerID != blockID
+	}
+
+	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
+	require.NoError(t, err)
+
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAllowPeer(allowPeer))
+	require.NoError(t, err)
+	defer pub.Close()
+
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+	dstLnkS := test.MkLinkSystem(dstStore)
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	require.NoError(t, err)
+	defer sub.Close()
+
+	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	require.NoError(t, err)
+
+	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	c := mkLnk(t, srcStore)
+
+	// Update root with item
+	pub.SetRoot(c)
+	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
+	require.NoError(t, err)
+
+	select {
+	case <-time.After(updateTimeout):
+		t.Log("publisher blocked")
+	case <-watcher:
+		t.Fatal("sync should not have happened with blocked ID")
+	}
+
+	blockMutex.Lock()
+	blockID = peer.ID("")
+	blockMutex.Unlock()
+
+	c = mkLnk(t, srcStore)
+
+	// Update root with item
+	pub.SetRoot(c)
+	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
+	require.NoError(t, err)
+
+	select {
+	case <-time.After(updateTimeout):
+		t.Fatal("timed out waiting for SyncFinished")
+	case <-watcher:
+		t.Log("synced with allowed ID")
+	}
+}
+
+func mkLnk(t *testing.T, srcStore datastore.Batching) cid.Cid {
+	// Update root with item
+	np := basicnode.Prototype__Any{}
+	nb := np.NewBuilder()
+	ma, _ := nb.BeginMap(2)
+	require.NoError(t, ma.AssembleKey().AssignString("hey"))
+	require.NoError(t, ma.AssembleValue().AssignString("it works!"))
+	require.NoError(t, ma.AssembleKey().AssignString("yes"))
+	require.NoError(t, ma.AssembleValue().AssignBool(true))
+	require.NoError(t, ma.Finish())
+
+	n := nb.Build()
+	lnk, err := test.Store(srcStore, n)
+	require.NoError(t, err)
+
+	return lnk.(cidlink.Link).Cid
+}
+
+func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer func(peer.ID) bool) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
+	srcHost := test.MkTestHost(t)
+	dstHost := test.MkTestHost(t)
+	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
+
+	srcLnkS := test.MkLinkSystem(srcStore)
+
+	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]), p2psender.WithExtraData([]byte("t01000")))
+	require.NoError(t, err)
+
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	require.NoError(t, err)
+
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+	dstLnkS := test.MkLinkSystem(dstStore)
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
+	require.NoError(t, err)
+
+	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	require.NoError(t, err)
+
+	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
+
+	return srcHost, dstHost, pub, sub, p2pSender
 }
