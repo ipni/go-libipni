@@ -22,7 +22,7 @@ import (
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
 	"github.com/ipni/go-libipni/dagsync/dtsync"
-	httpsync "github.com/ipni/go-libipni/dagsync/ipnisync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -884,7 +884,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 	var pub dagsync.Publisher
 	var err error
 	if b.IsHttp {
-		pub, err = httpsync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, httpsync.WithHeadTopic(topicName))
+		pub, err = ipnisync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName))
 		require.NoError(t, err)
 		require.NoError(t, test.WaitForHttpPublisher(pub))
 	} else {
