@@ -27,7 +27,7 @@ import (
 
 const defaultHttpTimeout = 10 * time.Second
 
-var log = logging.Logger("dagsync/httpsync")
+var log = logging.Logger("dagsync/ipnisync")
 
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
