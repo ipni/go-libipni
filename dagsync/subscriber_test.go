@@ -811,6 +811,44 @@ func TestCloseSubscriber(t *testing.T) {
 	}
 }
 
+func TestIdleHandlerCleaner(t *testing.T) {
+	t.Parallel()
+	blocksSeenByHook := make(map[cid.Cid]struct{})
+	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+		blocksSeenByHook[c] = struct{}{}
+	}
+
+	ttl := time.Second
+	te := setupPublisherSubscriber(t, []dagsync.Option{dagsync.BlockHook(blockHook), dagsync.IdleHandlerTTL(ttl)})
+
+	rootLnk, err := test.Store(te.srcStore, basicnode.NewString("hello world"))
+	require.NoError(t, err)
+	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Do a sync to create the handler.
+	peerInfo := peer.AddrInfo{
+		ID:    te.srcHost.ID(),
+		Addrs: te.pub.Addrs(),
+	}
+	_, err = te.sub.SyncAdChain(ctx, peerInfo)
+	require.NoError(t, err)
+
+	// Check that the handler is preeent by seeing if it can be removed.
+	require.True(t, te.sub.RemoveHandler(te.srcHost.ID()), "Expected handler to be present")
+
+	// Do another sync to re-create the handler.
+	_, err = te.sub.SyncAdChain(ctx, peerInfo)
+	require.NoError(t, err)
+
+	// For long enough for the idle cleaner to remove the handler, and check
+	// that it was removed.
+	time.Sleep(3 * ttl)
+	require.False(t, te.sub.RemoveHandler(te.srcHost.ID()), "Expected handler to already be removed")
+}
+
 type dagsyncPubSubBuilder struct {
 	IsHttp      bool
 	P2PAnnounce bool
