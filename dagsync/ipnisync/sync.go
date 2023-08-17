@@ -21,19 +21,37 @@ import (
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
 
+const ProtocolID = protocol.ID("/ipnisync/v1")
+
 const defaultHttpTimeout = 10 * time.Second
 
 var log = logging.Logger("dagsync/ipnisync")
+
+var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected peer")
 
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
 	blockHook func(peer.ID, cid.Cid)
 	client    *http.Client
 	lsys      ipld.LinkSystem
+
+	// libp2phttp
+	clientHost *libp2phttp.HTTPHost
+}
+
+// Syncer provides sync functionality for a single sync with a peer.
+type Syncer struct {
+	client  *http.Client
+	peerID  peer.ID
+	rootURL url.URL
+	urls    []*url.URL
+	sync    *Sync
 }
 
 // NewSync creates a new Sync.
@@ -50,11 +68,47 @@ func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, 
 	}
 }
 
-// NewSyncer creates a new Syncer to use for a single sync operation against a peer.
+func NewLibp2pSync(lsys ipld.LinkSystem, clientHost *libp2phttp.HTTPHost, blockHook func(peer.ID, cid.Cid)) *Sync {
+	return &Sync{
+		blockHook: blockHook,
+		lsys:      lsys,
+
+		clientHost: clientHost,
+	}
+}
+
+// NewSyncer creates a new Syncer to use for a single sync operation against a
+// peer. A value for peerID is optional for the HTTP transport.
 func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
-	urls := make([]*url.URL, len(peerAddrs))
-	for i := range peerAddrs {
-		u, err := maurl.ToURL(peerAddrs[i])
+	peerInfo := peer.AddrInfo{
+		ID:    peerID,
+		Addrs: peerAddrs,
+	}
+	if s.clientHost != nil {
+		return s.newLibp2pSyncer(peerInfo)
+	}
+	return s.newSyncer(peerInfo)
+}
+
+func (s *Sync) newLibp2pSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
+	httpClient, err := s.clientHost.NamespacedClient(ProtocolID, peerInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Syncer{
+		client:  &httpClient,
+		peerID:  peerInfo.ID,
+		rootURL: url.URL{Path: IpniPath},
+		urls:    nil,
+		sync:    s,
+	}, nil
+}
+
+func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
+	urls := make([]*url.URL, len(peerInfo.Addrs))
+	for i, addr := range peerInfo.Addrs {
+		u, err := maurl.ToURL(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +116,8 @@ func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Sync
 	}
 
 	return &Syncer{
-		peerID:  peerID,
+		client:  s.client,
+		peerID:  peerInfo.ID,
 		rootURL: *urls[0],
 		urls:    urls[1:],
 		sync:    s,
@@ -71,16 +126,6 @@ func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Sync
 
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
-}
-
-var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected peer")
-
-// Syncer provides sync functionality for a single sync with a peer.
-type Syncer struct {
-	peerID  peer.ID
-	rootURL url.URL
-	urls    []*url.URL
-	sync    *Sync
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
@@ -99,7 +144,9 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	if err != nil {
 		return cid.Undef, err
 	}
-	if signerID != s.peerID {
+	if s.peerID == "" {
+		log.Warn("cannot verify publisher signature without peer ID")
+	} else if signerID != s.peerID {
 		return cid.Undef, errHeadFromUnexpectedPeer
 	}
 
@@ -138,7 +185,7 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		}
 	}
 
-	s.sync.client.CloseIdleConnections()
+	s.client.CloseIdleConnections()
 	return nil
 }
 
@@ -207,7 +254,7 @@ nextURL:
 		return err
 	}
 
-	resp, err := s.sync.client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		if len(s.urls) != 0 {
 			log.Errorw("Fetch request failed, will retry with next address", "err", err)

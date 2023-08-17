@@ -60,12 +60,12 @@ func NewPublisher(address string, lsys ipld.LinkSystem, privKey ic.PrivKey, opti
 			return nil, err
 		}
 		proto = multiaddr.Join(proto, httpath)
-		handlerPath = "/" + handlerPath
+		handlerPath = handlerPath
 	}
 
 	pub := &Publisher{
 		lsys:        lsys,
-		handlerPath: path.Join(handlerPath, IpniPath),
+		handlerPath: strings.TrimPrefix(path.Join(handlerPath, IpniPath), "/"),
 		peerID:      peerID,
 		privKey:     privKey,
 		topic:       opts.topic,
@@ -126,6 +126,27 @@ func NewPublisherWithoutServer(address, handlerPath string, lsys ipld.LinkSystem
 	return NewPublisher(address, lsys, privKey, WithHandlerPath(handlerPath), WithServer(false))
 }
 
+// NewPublisherHandler returns a Publisher for use as an http.Handler. Does not
+// listen or know about a url prefix.
+func NewPublisherHandler(lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
+	if privKey == nil {
+		return nil, errors.New("private key required to sign head requests")
+	}
+	peerID, err := peer.IDFromPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
+	}
+
+	return &Publisher{
+		addr:        nil,
+		closer:      io.NopCloser(nil),
+		lsys:        lsys,
+		handlerPath: strings.TrimPrefix(IpniPath, "/"),
+		peerID:      peerID,
+		privKey:     privKey,
+	}, nil
+}
+
 // Addrs returns the addresses, as []multiaddress, that the Publisher is
 // listening on.
 func (p *Publisher) Addrs() []multiaddr.Multiaddr {
@@ -157,12 +178,14 @@ func (p *Publisher) Close() error {
 
 // ServeHTTP implements the http.Handler interface.
 func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if p.handlerPath != "" && !strings.HasPrefix(r.URL.Path, p.handlerPath) {
-		http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
+	// A URL path from http will have a leading "/". A URL from libp2phttp will not.
+	urlPath := strings.TrimPrefix(r.URL.Path, "/")
+	if p.handlerPath != "" && !strings.HasPrefix(urlPath, p.handlerPath) {
+		http.Error(w, "invalid request path: "+urlPath, http.StatusBadRequest)
 		return
 	}
 
-	ask := path.Base(r.URL.Path)
+	ask := path.Base(urlPath)
 	if ask == "head" {
 		// serve the head
 		p.lock.Lock()
