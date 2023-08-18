@@ -198,7 +198,8 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 
 	ipniSync := ipnisync.NewSync(lsys, blockHook,
 		ipnisync.ClientStreamHost(host),
-		ipnisync.ClientHTTPTimeout(opts.httpTimeout))
+		ipnisync.ClientHTTPTimeout(opts.httpTimeout),
+		ipnisync.ClientHTTPRetry(opts.httpRetryMax, opts.httpRetryWaitMin, opts.httpRetryWaitMax))
 
 	s := &Subscriber{
 		host: host,

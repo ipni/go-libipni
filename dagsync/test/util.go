@@ -319,7 +319,7 @@ func WaitForHttpPublisher(publisher TestPublisher) error {
 	if err != nil {
 		return err
 	}
-	headURL.Path = path.Join(headURL.Path, ipnisync.IpniPath, "head")
+	headURL.Path = path.Join(headURL.Path, ipnisync.IPNIPath, "head")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

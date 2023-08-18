@@ -286,7 +286,7 @@ func TestNewPublisherForListener(t *testing.T) {
 
 			resp := &mockResponseWriter{}
 			u := &url.URL{
-				Path: path.Join("/", handlerPath, ipnisync.IpniPath, "/head"),
+				Path: path.Join("/", handlerPath, ipnisync.IPNIPath, "/head"),
 			}
 
 			subject.ServeHTTP(resp, &http.Request{URL: u})
@@ -364,12 +364,12 @@ func TestHandlerPath(t *testing.T) {
 		{
 			"badPath1",
 			"",
-			false,
+			true,
 		},
 		{
 			"badPath2",
 			"/",
-			false,
+			true,
 		},
 		{
 			"badPath3",

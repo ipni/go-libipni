@@ -60,14 +60,22 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 	}
 
 	pub := &Publisher{
-		lsys:        lsys,
-		handlerPath: strings.TrimPrefix(IpniPath, "/"),
-		peerID:      peerID,
-		privKey:     privKey,
-		topic:       opts.topic,
+		lsys:    lsys,
+		peerID:  peerID,
+		privKey: privKey,
+		topic:   opts.topic,
 	}
 
+	// Construct expected request path prefix. If server is started this will
+	// get stripped off. If using an external server, look for this path when
+	// handling requests.
+	var handlerPath string
 	opts.handlerPath = strings.TrimPrefix(opts.handlerPath, "/")
+	if opts.handlerPath != "" {
+		handlerPath = path.Join(opts.handlerPath, IPNIPath)
+	} else {
+		handlerPath = strings.TrimPrefix(IPNIPath, "/")
+	}
 
 	if !opts.startServer {
 		httpListenAddrs, err := httpAddrsToMultiaddrs(opts.httpAddrs, opts.requireTLS, opts.handlerPath)
@@ -80,9 +88,7 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 		// If the server is not started, the handlerPath does not get stripped
 		// from the HTTP request, so leave it as part of the prefix to match in
 		// the SetveHTTP handler.
-		if opts.handlerPath != "" {
-			pub.handlerPath = path.Join(opts.handlerPath, pub.handlerPath)
-		}
+		pub.handlerPath = handlerPath
 		pub.httpAddrs = httpListenAddrs
 		return pub, nil
 	}
@@ -104,23 +110,17 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 	}
 	pub.pubHost = publisherHost
 
-	if opts.handlerPath == "" {
-		opts.handlerPath = "/"
-	} else {
-		if !strings.HasPrefix(opts.handlerPath, "/") {
-			opts.handlerPath = "/" + opts.handlerPath
-		}
-	}
-
 	// Here is where this Publisher is attached as a request handler. This
-	// mounts the "/ipnisync/v1" protocol at "/ipni/v1/ad/". If
-	// opts.handlerPath is "/foo/", this mounts it at "/foo/ipni/v1/ad/".
-	// libp2phttp manages this mapping and clients can learn about the mapping
-	// at .well-known/libp2p.
+	// mounts the "/ipnisync/v1" protocol at "/opt_handler_path/ipni/v1/ad/",
+	// where opt_handler_path is the optional user specified handler path. If
+	// opts.handlerPath is "/foo/", this mounts it at "/foo/ipni/v1/ad/". This
+	// Publisher will only receive requests whose path begins with the
+	// handlerPath. libp2phttp manages this mapping and clients can learn about
+	// the mapping at .well-known/libp2p.
 	//
 	// In this case we also want the HTTP handler to not even know about the
 	// prefix, so we use the stdlib http.StripPrefix.
-	publisherHost.SetHTTPHandlerAtPath(ProtocolID, opts.handlerPath, pub)
+	publisherHost.SetHTTPHandlerAtPath(ProtocolID, "/"+handlerPath, pub)
 
 	go publisherHost.Serve()
 
@@ -149,26 +149,6 @@ func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipl
 // DEPRECATED: use NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
 func NewPublisherWithoutServer(address, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	return NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
-}
-
-// NewPublisherHandler returns a Publisher for use as an http.Handler. Does not
-// listen or know about a url prefix.
-func NewPublisherHandler(lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
-	if privKey == nil {
-		return nil, errors.New("private key required to sign head requests")
-	}
-	peerID, err := peer.IDFromPrivateKey(privKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not get peer id from private key: %w", err)
-	}
-
-	return &Publisher{
-		addr:        nil,
-		lsys:        lsys,
-		handlerPath: strings.TrimPrefix(IpniPath, "/"),
-		peerID:      peerID,
-		privKey:     privKey,
-	}, nil
 }
 
 // Addrs returns the addresses, as []multiaddress, that the Publisher is
@@ -212,14 +192,22 @@ func (p *Publisher) Close() error {
 
 // ServeHTTP implements the http.Handler interface.
 func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// A URL path from http will have a leading "/". A URL from libp2phttp will not.
-	urlPath := strings.TrimPrefix(r.URL.Path, "/")
-	if p.handlerPath != "" && !strings.HasPrefix(urlPath, p.handlerPath) {
-		http.Error(w, "invalid request path: "+urlPath, http.StatusBadRequest)
+	// If we expect publisher requests to have a prefix in the request path,
+	// then check for the expected prefix.. This happens when using an external
+	// server with this Publisher as the request handler.
+	if p.handlerPath != "" {
+		// A URL path from http will have a leading "/". A URL from libp2phttp will not.
+		urlPath := strings.TrimPrefix(r.URL.Path, "/")
+		if !strings.HasPrefix(urlPath, p.handlerPath) {
+			http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
+			return
+		}
+	} else if path.Dir(r.URL.Path) != "." {
+		http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
 		return
 	}
 
-	ask := path.Base(urlPath)
+	ask := path.Base(r.URL.Path)
 	if ask == "head" {
 		// serve the head
 		p.lock.Lock()

@@ -35,8 +35,7 @@ type config struct {
 
 	topic *pubsub.Topic
 
-	blockHook   BlockHookFunc
-	httpTimeout time.Duration
+	blockHook BlockHookFunc
 
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
@@ -53,6 +52,11 @@ type config struct {
 	gsMaxOutRequests uint64
 
 	strictAdsSelSeq bool
+
+	httpTimeout      time.Duration
+	httpRetryMax     int
+	httpRetryWaitMin time.Duration
+	httpRetryWaitMax time.Duration
 }
 
 // Option is a function that sets a value in a config.
@@ -100,6 +104,17 @@ func Topic(topic *pubsub.Topic) Option {
 func HttpTimeout(to time.Duration) Option {
 	return func(c *config) error {
 		c.httpTimeout = to
+		return nil
+	}
+}
+
+// RetryableHTTPClient configures a retriable HTTP client. Setting retryMax to
+// zero, the default, disables the retriable client.
+func ClientHTTPRetry(retryMax int, waitMin, waitMax time.Duration) Option {
+	return func(c *config) error {
+		c.httpRetryMax = retryMax
+		c.httpRetryWaitMin = waitMin
+		c.httpRetryWaitMax = waitMax
 		return nil
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
@@ -40,6 +41,7 @@ type Sync struct {
 	// libp2phttp
 	clientHost *libp2phttp.HTTPHost
 	authPeerID bool
+	rclient    *retryablehttp.Client
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -55,7 +57,7 @@ type Syncer struct {
 func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...ClientOption) *Sync {
 	opts := getClientOpts(options)
 
-	return &Sync{
+	s := &Sync{
 		blockHook: blockHook,
 		client: http.Client{
 			Timeout: opts.httpTimeout,
@@ -67,6 +69,19 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 		authPeerID:  opts.authPeerID,
 		httpTimeout: opts.httpTimeout,
 	}
+
+	if opts.httpRetryMax != 0 {
+		// Instantiate retryable HTTP client used by dagsync/ipnisync.
+		s.rclient = &retryablehttp.Client{
+			RetryWaitMin: opts.httpRetryWaitMin,
+			RetryWaitMax: opts.httpRetryWaitMax,
+			RetryMax:     opts.httpRetryMax,
+			CheckRetry:   retryablehttp.DefaultRetryPolicy,
+			Backoff:      retryablehttp.DefaultBackoff,
+		}
+	}
+
+	return s
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a
@@ -88,13 +103,26 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	}
 	httpClient.Timeout = s.httpTimeout
 
+	if s.rclient != nil {
+		// Instantiate retryable HTTP client used by dagsync/ipnisync.
+		rclient := &retryablehttp.Client{
+			HTTPClient:   httpClient,
+			RetryWaitMin: s.rclient.RetryWaitMin,
+			RetryWaitMax: s.rclient.RetryWaitMax,
+			RetryMax:     s.rclient.RetryMax,
+			CheckRetry:   retryablehttp.DefaultRetryPolicy,
+			Backoff:      retryablehttp.DefaultBackoff,
+		}
+		httpClient = rclient.StandardClient()
+	}
+
 	urls := make([]*url.URL, len(peerInfo.Addrs))
 	for i, addr := range peerInfo.Addrs {
 		u, err := maurl.ToURL(addr)
 		if err != nil {
 			return nil, err
 		}
-		urls[i] = u.JoinPath(IpniPath)
+		urls[i] = u.JoinPath(IPNIPath)
 	}
 
 	return &Syncer{
