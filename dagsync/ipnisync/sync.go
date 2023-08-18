@@ -28,18 +28,14 @@ import (
 
 const ProtocolID = protocol.ID("/ipnisync/v1")
 
-const defaultHttpTimeout = 10 * time.Second
-
 var log = logging.Logger("dagsync/ipnisync")
-
-var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected peer")
 
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
-	blockHook func(peer.ID, cid.Cid)
-	client    http.Client
-	lsys      ipld.LinkSystem
-	timeout   time.Duration
+	blockHook   func(peer.ID, cid.Cid)
+	client      http.Client
+	lsys        ipld.LinkSystem
+	httpTimeout time.Duration
 
 	// libp2phttp
 	clientHost *libp2phttp.HTTPHost
@@ -62,14 +58,14 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 	return &Sync{
 		blockHook: blockHook,
 		client: http.Client{
-			Timeout: opts.timeout,
+			Timeout: opts.httpTimeout,
 		},
 		clientHost: &libp2phttp.HTTPHost{
 			StreamHost: opts.streamHost,
 		},
-		lsys:       lsys,
-		authPeerID: opts.authPeerID,
-		timeout:    opts.timeout,
+		lsys:        lsys,
+		authPeerID:  opts.authPeerID,
+		httpTimeout: opts.httpTimeout,
 	}
 }
 
@@ -90,7 +86,7 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	} else {
 		httpClient = &cli
 	}
-	httpClient.Timeout = s.timeout
+	httpClient.Timeout = s.httpTimeout
 
 	urls := make([]*url.URL, len(peerInfo.Addrs))
 	for i, addr := range peerInfo.Addrs {
@@ -136,7 +132,7 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	if s.peerID == "" {
 		log.Warn("cannot verify publisher signature without peer ID")
 	} else if signerID != s.peerID {
-		return cid.Undef, errHeadFromUnexpectedPeer
+		return cid.Undef, errors.New("found head signed by an unexpected peer")
 	}
 
 	// TODO: Check that the returned topic, if any, matches the expected topic.

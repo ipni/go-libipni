@@ -420,7 +420,7 @@ func TestHandlerPath(t *testing.T) {
 				maddr = serverHTTPMa
 			}
 			pubInfo := peer.AddrInfo{
-				ID:    publisher.ID(),
+				//ID:    publisher.ID(), // optional
 				Addrs: []multiaddr.Multiaddr{maddr},
 			}
 			t.Log("Syncing to publisher at:", pubInfo.Addrs)

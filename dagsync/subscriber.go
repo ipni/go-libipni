@@ -196,11 +196,9 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	all := ssb.ExploreAll(ssb.ExploreRecursiveEdge())
 
-	var httpTimeout time.Duration
-	if opts.httpClient != nil {
-		httpTimeout = opts.httpClient.Timeout
-	}
-	ipniSync := ipnisync.NewSync(lsys, blockHook, ipnisync.ClientStreamHost(host), ipnisync.ClientTimeout(httpTimeout))
+	ipniSync := ipnisync.NewSync(lsys, blockHook,
+		ipnisync.ClientStreamHost(host),
+		ipnisync.ClientHTTPTimeout(opts.httpTimeout))
 
 	s := &Subscriber{
 		host: host,
@@ -772,12 +770,6 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 		// Store this http address so that future calls to sync will work without a
 		// peerAddr (given that it happens within the TTL)
 		s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, tempAddrTTL)
-
-		//p2pSyncer, err := s.p2pIpniSync.NewSyncer(peerInfo.ID, peerInfo.Addrs)
-		//if err != nil {
-		//	return nil, nil, fmt.Errorf("cannot create p2p ipni-sync handler: %w", err)
-		//}
-
 		httpPeerInfo := peer.AddrInfo{
 			ID:    peerInfo.ID,
 			Addrs: httpAddrs,

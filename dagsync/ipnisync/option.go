@@ -34,6 +34,13 @@ func getOpts(opts []Option) (config, error) {
 	return cfg, nil
 }
 
+// WithHTTPListenAddrs sets the HTTP addresses to listen on. These are in
+// addresses:port format and may be prefixed with "https://" or "http://" or to
+// specify whether or not TLS is required. If there is no prefix, then one is
+// assumed based on the value specified by WithRequireTLS.
+//
+// Setting HTTP listen addresses is optional when a stream host is provided by
+// the WithStreamHost option.
 func WithHTTPListenAddrs(addrs ...string) Option {
 	return func(c *config) error {
 		c.httpAddrs = append(c.httpAddrs, addrs...)
@@ -79,6 +86,8 @@ func WithRequireTLS(require bool) Option {
 	}
 }
 
+// WithStreamHost specifies an optional stream based libp2p host used to do
+// HTTP over libp2p streams.
 func WithStreamHost(h host.Host) Option {
 	return func(c *config) error {
 		c.streamHost = h
@@ -87,9 +96,9 @@ func WithStreamHost(h host.Host) Option {
 }
 
 type clientConfig struct {
-	authPeerID bool
-	timeout    time.Duration
-	streamHost host.Host
+	authPeerID  bool
+	httpTimeout time.Duration
+	streamHost  host.Host
 }
 
 // Option is a function that sets a value in a config.
@@ -104,18 +113,24 @@ func getClientOpts(opts []ClientOption) clientConfig {
 	return cfg
 }
 
-func ClientAuthPeerID(require bool) ClientOption {
+// ClientAuthServerPeerID tells the sync client that we MUST
+// authenticate the Server's PeerID.
+func ClientAuthServerPeerID(require bool) ClientOption {
 	return func(c *clientConfig) {
 		c.authPeerID = require
 	}
 }
 
-func ClientTimeout(to time.Duration) ClientOption {
+// ClientHTTPTimeout specifies a time limit for HTTP requests made by the sync
+// client. A value of zero means no timeout.
+func ClientHTTPTimeout(to time.Duration) ClientOption {
 	return func(c *clientConfig) {
-		c.timeout = to
+		c.httpTimeout = to
 	}
 }
 
+// ClientStreamHost specifies an optional stream based libp2p host used by the
+// sync client to do HTTP over libp2p streams.
 func ClientStreamHost(h host.Host) ClientOption {
 	return func(c *clientConfig) {
 		c.streamHost = h

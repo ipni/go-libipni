@@ -2,7 +2,6 @@ package dagsync
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -24,6 +23,8 @@ const (
 	// Maximum number of in-prgress graphsync requests.
 	defaultGsMaxInRequests  = 1024
 	defaultGsMaxOutRequests = 1024
+	// defaultHttpTimeout is time limit for requests made by the HTTP client.
+	defaultHttpTimeout = 10 * time.Second
 )
 
 type LastKnownSyncFunc func(peer.ID) (cid.Cid, bool)
@@ -34,8 +35,8 @@ type config struct {
 
 	topic *pubsub.Topic
 
-	blockHook  BlockHookFunc
-	httpClient *http.Client
+	blockHook   BlockHookFunc
+	httpTimeout time.Duration
 
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
@@ -61,6 +62,7 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		addrTTL:          defaultAddrTTL,
+		httpTimeout:      defaultHttpTimeout,
 		idleHandlerTTL:   defaultIdleHandlerTTL,
 		segDepthLimit:    defaultSegDepthLimit,
 		gsMaxInRequests:  defaultGsMaxInRequests,
@@ -93,18 +95,20 @@ func Topic(topic *pubsub.Topic) Option {
 	}
 }
 
-// HttpClient provides Subscriber with an existing http client.
-func HttpClient(client *http.Client) Option {
+// HttpTimeout specifies a time limit for HTTP requests made by the sync
+// HTTP client. A value of zero means no timeout.
+func HttpTimeout(to time.Duration) Option {
 	return func(c *config) error {
-		c.httpClient = client
+		c.httpTimeout = to
 		return nil
 	}
 }
 
-// BlockHook adds a hook that is run when a block is received via Subscriber.Sync along with a
-// SegmentSyncActions to control the sync flow if segmented sync is enabled.
-// Note that if segmented sync is disabled, calls on SegmentSyncActions will have no effect.
-// See: SegmentSyncActions, SegmentDepthLimit, ScopedBlockHook.
+// BlockHook adds a hook that is run when a block is received via
+// Subscriber.Sync along with a SegmentSyncActions to control the sync flow if
+// segmented sync is enabled. Note that if segmented sync is disabled, calls on
+// SegmentSyncActions will have no effect. See: SegmentSyncActions,
+// SegmentDepthLimit, ScopedBlockHook.
 func BlockHook(blockHook BlockHookFunc) Option {
 	return func(c *config) error {
 		c.blockHook = blockHook
