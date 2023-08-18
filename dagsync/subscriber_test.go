@@ -884,7 +884,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 	var pub dagsync.Publisher
 	var err error
 	if b.IsHttp {
-		pub, err = ipnisync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName))
+		pub, err = ipnisync.NewPublisher(pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName), ipnisync.WithHTTPListenAddrs("127.0.0.1:0"))
 		require.NoError(t, err)
 		require.NoError(t, test.WaitForHttpPublisher(pub))
 	} else {

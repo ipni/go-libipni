@@ -23,7 +23,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
 
@@ -38,11 +37,13 @@ var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
 	blockHook func(peer.ID, cid.Cid)
-	client    *http.Client
+	client    http.Client
 	lsys      ipld.LinkSystem
+	timeout   time.Duration
 
 	// libp2phttp
 	clientHost *libp2phttp.HTTPHost
+	authPeerID bool
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -55,57 +56,42 @@ type Syncer struct {
 }
 
 // NewSync creates a new Sync.
-func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, cid.Cid)) *Sync {
-	if client == nil {
-		client = &http.Client{
-			Timeout: defaultHttpTimeout,
-		}
-	}
+func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...ClientOption) *Sync {
+	opts := getClientOpts(options)
+
 	return &Sync{
 		blockHook: blockHook,
-		client:    client,
-		lsys:      lsys,
-	}
-}
-
-func NewLibp2pSync(lsys ipld.LinkSystem, clientHost *libp2phttp.HTTPHost, blockHook func(peer.ID, cid.Cid)) *Sync {
-	return &Sync{
-		blockHook: blockHook,
-		lsys:      lsys,
-
-		clientHost: clientHost,
+		client: http.Client{
+			Timeout: opts.timeout,
+		},
+		clientHost: &libp2phttp.HTTPHost{
+			StreamHost: opts.streamHost,
+		},
+		lsys:       lsys,
+		authPeerID: opts.authPeerID,
+		timeout:    opts.timeout,
 	}
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a
-// peer. A value for peerID is optional for the HTTP transport.
-func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
-	peerInfo := peer.AddrInfo{
-		ID:    peerID,
-		Addrs: peerAddrs,
+// peer. A value for peerInfo.ID is optional for the HTTP transport.
+func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
+	var cli http.Client
+	var httpClient *http.Client
+	var err error
+	if s.authPeerID {
+		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, libp2phttp.ServerMustAuthenticatePeerID)
+	} else {
+		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
-	if s.clientHost != nil {
-		return s.newLibp2pSyncer(peerInfo)
-	}
-	return s.newSyncer(peerInfo)
-}
-
-func (s *Sync) newLibp2pSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
-	httpClient, err := s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	if err != nil {
-		return nil, err
+		log.Warnw("Cannot create libp2phttp client. Server is not a libp2phttp server. Using plain http", "err", err)
+		httpClient = &s.client
+	} else {
+		httpClient = &cli
 	}
+	httpClient.Timeout = s.timeout
 
-	return &Syncer{
-		client:  &httpClient,
-		peerID:  peerInfo.ID,
-		rootURL: url.URL{Path: IpniPath},
-		urls:    nil,
-		sync:    s,
-	}, nil
-}
-
-func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	urls := make([]*url.URL, len(peerInfo.Addrs))
 	for i, addr := range peerInfo.Addrs {
 		u, err := maurl.ToURL(addr)
@@ -116,7 +102,7 @@ func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	}
 
 	return &Syncer{
-		client:  s.client,
+		client:  httpClient,
 		peerID:  peerInfo.ID,
 		rootURL: *urls[0],
 		urls:    urls[1:],
@@ -126,6 +112,9 @@ func (s *Sync) newSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
+	if s.clientHost != nil {
+		s.clientHost.Close()
+	}
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
@@ -150,10 +139,12 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 		return cid.Undef, errHeadFromUnexpectedPeer
 	}
 
-	// TODO: Do something with signedHead.Topic.
-	//
-	// Should it be returned (and for what purpose)?
-	// Is it needed to construct the advertisement fetch URL?
+	// TODO: Check that the returned topic, if any, matches the expected topic.
+	//if signedHead.Topic != nil && *signedHead.Topic != "" && expectedTopic != "" {
+	//	if *signedHead.Topic != expectedTopic {
+	//		return nil, ErrTopicMismatch
+	//	}
+	//}
 
 	return signedHead.Head.(cidlink.Link).Cid, nil
 }

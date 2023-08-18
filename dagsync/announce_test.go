@@ -154,7 +154,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	pubh := test.MkTestHost(t)
 	pubds := dssync.MutexWrap(datastore.NewMapDatastore())
 	publs := test.MkLinkSystem(pubds)
-	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubh.Peerstore().PrivKey(pubh.ID()))
+	pub, err := ipnisync.NewPublisher(publs, pubh.Peerstore().PrivKey(pubh.ID()), ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
 	require.NoError(t, err)
 	defer pub.Close()
 

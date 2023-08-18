@@ -86,8 +86,12 @@ func TestIPNISync_NFTStorage_DigestCheck(t *testing.T) {
 			pubmaddr, err := maurl.FromURL(puburl)
 			require.NoError(t, err)
 
-			sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
-			syncer, err := sync.NewSyncer(pubid, []multiaddr.Multiaddr{pubmaddr})
+			sync := ipnisync.NewSync(ls, nil)
+			pubInfo := peer.AddrInfo{
+				ID:    pubid,
+				Addrs: []multiaddr.Multiaddr{pubmaddr},
+			}
+			syncer, err := sync.NewSyncer(pubInfo)
 			require.NoError(t, err)
 
 			head, err := syncer.GetHead(ctx)
@@ -133,7 +137,7 @@ func TestIPNIsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	publs.SetWriteStorage(pubstore)
 	publs.SetReadStorage(pubstore)
 
-	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubPrK, ipnisync.WithHeadTopic(testTopic), ipnisync.WithServer(true))
+	pub, err := ipnisync.NewPublisher(publs, pubPrK, ipnisync.WithHeadTopic(testTopic), ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
@@ -161,8 +165,12 @@ func TestIPNIsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	ls.SetWriteStorage(store)
 	ls.SetReadStorage(store)
 
-	sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
-	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
+	sync := ipnisync.NewSync(ls, nil)
+	pubInfo := peer.AddrInfo{
+		ID:    pubID,
+		Addrs: pub.Addrs(),
+	}
+	syncer, err := sync.NewSyncer(pubInfo)
 	require.NoError(t, err)
 
 	head, err := syncer.GetHead(ctx)
@@ -197,7 +205,7 @@ func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 		return nil, ipld.ErrNotExists{}
 	}
 
-	pub, err := ipnisync.NewPublisher("0.0.0.0:0", publs, pubPrK, ipnisync.WithServer(true))
+	pub, err := ipnisync.NewPublisher(publs, pubPrK, ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, pub.Close()) })
 
@@ -206,8 +214,12 @@ func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 	ls.SetWriteStorage(store)
 	ls.SetReadStorage(store)
 
-	sync := ipnisync.NewSync(ls, http.DefaultClient, nil)
-	syncer, err := sync.NewSyncer(pubID, pub.Addrs())
+	sync := ipnisync.NewSync(ls, nil)
+	pubInfo := peer.AddrInfo{
+		ID:    pubID,
+		Addrs: pub.Addrs(),
+	}
+	syncer, err := sync.NewSyncer(pubInfo)
 	require.NoError(t, err)
 
 	mh, err := multihash.Sum([]byte("fish"), multihash.SHA2_256, -1)
