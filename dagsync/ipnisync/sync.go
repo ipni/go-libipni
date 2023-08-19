@@ -114,6 +114,20 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		httpClient = rclient.StandardClient()
 	}
 
+	if len(peerInfo.Addrs) == 0 {
+		if s.clientHost.StreamHost == nil {
+			return nil, errors.New("no peer addrs and no stream host")
+		}
+		peerStore := s.clientHost.StreamHost.Peerstore()
+		if peerStore == nil {
+			return nil, errors.New("no peer addrs and no stream host peerstore")
+		}
+		peerInfo.Addrs = peerStore.Addrs(peerInfo.ID)
+		if len(peerInfo.Addrs) == 0 {
+			return nil, errors.New("no peer addrs and none found in peertore")
+		}
+	}
+
 	urls := make([]*url.URL, len(peerInfo.Addrs))
 	for i, addr := range peerInfo.Addrs {
 		u, err := maurl.ToURL(addr)
