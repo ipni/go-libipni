@@ -1,6 +1,7 @@
 package dagsync
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -110,8 +111,14 @@ func HttpTimeout(to time.Duration) Option {
 
 // RetryableHTTPClient configures a retriable HTTP client. Setting retryMax to
 // zero, the default, disables the retriable client.
-func ClientHTTPRetry(retryMax int, waitMin, waitMax time.Duration) Option {
+func RetryableHTTPClient(retryMax int, waitMin, waitMax time.Duration) Option {
 	return func(c *config) error {
+		if waitMin > waitMax {
+			return errors.New("minimum retry wait time cannot be greater than maximum")
+		}
+		if retryMax < 0 {
+			retryMax = 0
+		}
 		c.httpRetryMax = retryMax
 		c.httpRetryWaitMin = waitMin
 		c.httpRetryWaitMax = waitMax
