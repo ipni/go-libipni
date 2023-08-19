@@ -21,7 +21,7 @@ const (
 	defaultIdleHandlerTTL = time.Hour
 	// defaultSegDepthLimit disables (-1) segmented sync by default.
 	defaultSegDepthLimit = -1
-	// Maximum number of in-prgress graphsync requests.
+	// Maximum number of in-progress graphsync requests.
 	defaultGsMaxInRequests  = 1024
 	defaultGsMaxOutRequests = 1024
 	// defaultHttpTimeout is time limit for requests made by the HTTP client.
@@ -197,7 +197,7 @@ func RecvAnnounce(opts ...announce.Option) Option {
 
 // MaxAsyncConcurrency sets the maximum number of concurrent asynchrouous syncs
 // (started by announce messages). This only takes effect if there is an
-// announcement reveiver configured by the RecvAnnounce option.
+// announcement receiver configured by the RecvAnnounce option.
 func MaxAsyncConcurrency(n int) Option {
 	return func(c *config) error {
 		if n != 0 {
@@ -267,7 +267,7 @@ func WithStopAdCid(stopAd cid.Cid) SyncOption {
 	}
 }
 
-// WithResyncAds causes the current sync to ignore anvertisements that have been
+// WithResyncAds causes the current sync to ignore advertisements that have been
 // previously synced. When true, sync does not record the latest synced CID or
 // send sync finished notification.
 func WithAdsResync(resync bool) SyncOption {

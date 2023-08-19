@@ -7,7 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
-// pubConfig contains all options for configuring Publisher.
+// config contains all options for configuring Publisher.
 type config struct {
 	handlerPath string
 	startServer bool
@@ -49,7 +49,9 @@ func WithHTTPListenAddrs(addrs ...string) Option {
 }
 
 // WithHandlerPath sets the path used to handle requests to this publisher.
-// This should only include the path before the /ipni/v1/ad/ part of the path.
+// This specifies the portion of the path before the implicit /ipni/v1/ad/ part
+// of the path. Calling WithHandlerPath("/foo/bar") configures the publisher to
+// handle HTTP requests on the path "/foo/bar/ipni/v1/ad/".
 func WithHandlerPath(urlPath string) Option {
 	return func(c *config) error {
 		c.handlerPath = urlPath

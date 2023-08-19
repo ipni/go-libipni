@@ -3,7 +3,6 @@ package ipnisync
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -35,7 +34,7 @@ type Publisher struct {
 	topic       string
 
 	pubHost *libp2phttp.HTTPHost
-	// haatAddrs is returned by Addrs when not starting the server.
+	// httpAddrs is returned by Addrs when not starting the server.
 	httpAddrs []multiaddr.Multiaddr
 }
 
@@ -87,7 +86,7 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 		}
 		// If the server is not started, the handlerPath does not get stripped
 		// from the HTTP request, so leave it as part of the prefix to match in
-		// the SetveHTTP handler.
+		// the ServeHTTP handler.
 		pub.handlerPath = handlerPath
 		pub.httpAddrs = httpListenAddrs
 		return pub, nil
@@ -130,28 +129,19 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 	return pub, nil
 }
 
-// NewPublisherForListener creates a new http publisher for an existing
-// listener. When providing an existing listener, running the HTTP server
-// is the caller's responsibility. ServeHTTP on the returned Publisher
-// can be used to handle requests. handlerPath is the path to handle
-// requests on, e.g. "ipni" for `/ipni/...` requests.
-//
-// DEPRECATED: use NewPublisher(lsys, privKey, WithHTTPListenAddrs(listener.Addr().String()), WithHandlerPath(handlerPath), WithStartServer(false))
-func NewPublisherForListener(listener net.Listener, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey) (*Publisher, error) {
-	return NewPublisher(lsys, privKey, WithHTTPListenAddrs(listener.Addr().String()), WithHandlerPath(handlerPath), WithStartServer(false))
-}
-
 // NewPublisherWithoutServer creates a new http publisher for an existing
-// network address. When providing an existing network address, running
-// the HTTP server is the caller's responsibility. ServeHTTP on the
-// returned Publisher can be used to handle requests.
+// network address. When providing an existing network address, running the
+// HTTP server is the caller's responsibility. ServeHTTP on the returned
+// Publisher can be used to handle requests. handlerPath is the path to handle
+// requests on before the /ipni/v1/ad/ portion of the path. See
+// WithHandlerPath.
 //
 // DEPRECATED: use NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
 func NewPublisherWithoutServer(address, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	return NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
 }
 
-// Addrs returns the addresses, as []multiaddress, that the Publisher is
+// Addrs returns the slice of multiaddr addresses that the Publisher is
 // listening on.
 //
 // If the server is not started, WithStartServer(false), then this returns the
@@ -169,7 +159,7 @@ func (p *Publisher) ID() peer.ID {
 	return p.peerID
 }
 
-// Protocol returns the multihash protocol ID of the transport used by the
+// Protocol returns the multiaddr protocol ID of the transport used by the
 // publisher.
 func (p *Publisher) Protocol() int {
 	return multiaddr.P_HTTP
@@ -195,21 +185,21 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If we expect publisher requests to have a prefix in the request path,
 	// then check for the expected prefix.. This happens when using an external
 	// server with this Publisher as the request handler.
+	urlPath := strings.TrimPrefix(r.URL.Path, "/")
 	if p.handlerPath != "" {
 		// A URL path from http will have a leading "/". A URL from libp2phttp will not.
-		urlPath := strings.TrimPrefix(r.URL.Path, "/")
 		if !strings.HasPrefix(urlPath, p.handlerPath) {
 			http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
 			return
 		}
-	} else if path.Dir(r.URL.Path) != "." {
+	} else if path.Dir(urlPath) != "." {
 		http.Error(w, "invalid request path: "+r.URL.Path, http.StatusBadRequest)
 		return
 	}
 
 	ask := path.Base(r.URL.Path)
 	if ask == "head" {
-		// serve the head
+		// Serve the head message.
 		p.lock.Lock()
 		rootCid := p.root
 		p.lock.Unlock()
@@ -229,7 +219,7 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(marshalledMsg)
 		return
 	}
-	// interpret `ask` as a CID to serve.
+	// Interpret `ask` as a CID to serve.
 	c, err := cid.Parse(ask)
 	if err != nil {
 		http.Error(w, "invalid request: not a cid", http.StatusBadRequest)

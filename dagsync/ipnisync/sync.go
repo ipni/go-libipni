@@ -71,13 +71,11 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 	}
 
 	if opts.httpRetryMax != 0 {
-		// Instantiate retryable HTTP client used by dagsync/ipnisync.
+		// Configure retryable HTTP client created by calls to NewSyncer.
 		s.rclient = &retryablehttp.Client{
 			RetryWaitMin: opts.httpRetryWaitMin,
 			RetryWaitMax: opts.httpRetryWaitMax,
 			RetryMax:     opts.httpRetryMax,
-			CheckRetry:   retryablehttp.DefaultRetryPolicy,
-			Backoff:      retryablehttp.DefaultBackoff,
 		}
 	}
 
@@ -104,7 +102,7 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	httpClient.Timeout = s.httpTimeout
 
 	if s.rclient != nil {
-		// Instantiate retryable HTTP client used by dagsync/ipnisync.
+		// Instantiate retryable HTTP client.
 		rclient := &retryablehttp.Client{
 			HTTPClient:   httpClient,
 			RetryWaitMin: s.rclient.RetryWaitMin,
@@ -185,15 +183,14 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return fmt.Errorf("failed to traverse requested dag: %w", err)
 	}
 
-	// We run the block hook to emulate the behavior of graphsync's
-	// `OnIncomingBlockHook` callback (gets called even if block is already stored
-	// locally).
+	// The blockHook callback gets called for every synced block, even if block
+	// is already stored locally.
 	//
 	// We are purposefully not doing this in the StorageReadOpener because the
-	// hook can do anything, including deleting the block from the block store. If
-	// it did that then we would not be able to continue our traversal. So instead
-	// we remember the blocks seen during traversal and then call the hook at the
-	// end when we no longer care what it does with the blocks.
+	// hook can do anything, including deleting the block from the block store.
+	// If it did that then we would not be able to continue our traversal. So
+	// instead we remember the blocks seen during traversal and then call the
+	// hook at the end when we no longer care what it does with the blocks.
 	if s.sync.blockHook != nil {
 		for _, c := range cids {
 			s.sync.blockHook(s.peerID, c)
@@ -204,19 +201,16 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 	return nil
 }
 
-// walkFetch is run by a traversal of the selector.  For each block that the
+// walkFetch is run by a traversal of the selector. For each block that the
 // selector walks over, walkFetch will look to see if it can find it in the
-// local data store. If it cannot, it will then go and get it over HTTP.  This
-// emulates way libp2p/graphsync fetches data, but the actual fetch of data is
-// done over HTTP.
+// local data store. If it cannot, it will then go and get it over HTTP.
 func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector) ([]cid.Cid, error) {
-	// Track the order of cids we've seen during our traversal so we can call the
-	// block hook function in the same order. We emulate the behavior of
-	// graphsync's `OnIncomingBlockHook`, this means we call the blockhook even if
-	// we have the block locally.
+	// Track the order of cids seen during traversal so that the block hook
+	// function gets called in the same order.
 	var traversalOrder []cid.Cid
 	getMissingLs := cidlink.DefaultLinkSystem()
-	// trusted because it'll be hashed/verified on the way into the link system when fetched.
+	// Trusted because it will be hashed/verified on the way into the link
+	// system when fetched.
 	getMissingLs.TrustedStorage = true
 	getMissingLs.StorageReadOpener = func(lc ipld.LinkContext, l ipld.Link) (io.Reader, error) {
 		c := l.(cidlink.Link).Cid
