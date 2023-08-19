@@ -804,8 +804,16 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 		}
 	}
 
-	// Not an httpPeerAddr, so use the dtSync.
-	return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
+	syncer, err := s.ipniSync.NewSyncer(peerInfo)
+	if err != nil {
+		if errors.Is(err, ipnisync.ErrNoHTTPServer) {
+			log.Warn(err.Error())
+			// Publisher is libp2p without HTTP, so use the dtSync.
+			return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
+		}
+		return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
+	}
+	return syncer, update, nil
 }
 
 // asyncSyncAdChain processes the latest announce message received over pubsub

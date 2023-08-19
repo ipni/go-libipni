@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -30,6 +31,8 @@ import (
 const ProtocolID = protocol.ID("/ipnisync/v1")
 
 var log = logging.Logger("dagsync/ipnisync")
+
+var ErrNoHTTPServer = errors.New("publisher has libp2p server without HTTP")
 
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
@@ -94,6 +97,9 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
 	if err != nil {
+		if strings.Contains(err.Error(), "failed to negotiate protocol: protocols not supported") {
+			return nil, ErrNoHTTPServer
+		}
 		log.Warnw("Cannot create libp2phttp client. Server is not a libp2phttp server. Using plain http", "err", err)
 		httpClient = &s.client
 	} else {
