@@ -24,7 +24,6 @@ import (
 
 // Publisher serves an advertisement chain over HTTP.
 type Publisher struct {
-	addr        multiaddr.Multiaddr
 	lsys        ipld.LinkSystem
 	handlerPath string
 	peerID      peer.ID
