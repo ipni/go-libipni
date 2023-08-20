@@ -22,6 +22,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	"github.com/ipni/go-libipni/maurl"
+	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
@@ -97,7 +98,11 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
 	if err != nil {
-		if strings.Contains(err.Error(), "failed to negotiate protocol: protocols not supported") {
+		if !strings.Contains(err.Error(), "failed to negotiate protocol: protocols not supported") {
+			return nil, err
+		}
+		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
+		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer
 		}
 		log.Warnw("Cannot create libp2phttp client. Server is not a libp2phttp server. Using plain http", "err", err)
