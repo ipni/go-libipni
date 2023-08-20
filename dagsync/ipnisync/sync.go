@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -42,9 +43,10 @@ type Sync struct {
 	httpTimeout time.Duration
 
 	// libp2phttp
-	clientHost *libp2phttp.HTTPHost
-	authPeerID bool
-	rclient    *retryablehttp.Client
+	clientHost      *libp2phttp.HTTPHost
+	clientHostMutex sync.Mutex
+	authPeerID      bool
+	rclient         *retryablehttp.Client
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -91,11 +93,13 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	var cli http.Client
 	var httpClient *http.Client
 	var err error
+	s.clientHostMutex.Lock()
 	if s.authPeerID {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, libp2phttp.ServerMustAuthenticatePeerID)
 	} else {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
+	s.clientHostMutex.Unlock()
 	if err != nil {
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
@@ -155,9 +159,9 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
-	if s.clientHost != nil {
-		s.clientHost.Close()
-	}
+	s.clientHostMutex.Lock()
+	s.clientHost.Close()
+	s.clientHostMutex.Unlock()
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
