@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -98,9 +97,6 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
 	if err != nil {
-		if !strings.Contains(err.Error(), "failed to negotiate protocol: protocols not supported") {
-			return nil, err
-		}
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer
