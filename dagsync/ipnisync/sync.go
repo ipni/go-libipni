@@ -44,7 +44,7 @@ type Sync struct {
 	httpTimeout time.Duration
 
 	// libp2phttp
-	clientHost      *libp2phttp.HTTPHost
+	clientHost      *libp2phttp.Host
 	clientHostMutex sync.Mutex
 	authPeerID      bool
 	rclient         *retryablehttp.Client
@@ -72,7 +72,7 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 		client: http.Client{
 			Timeout: opts.httpTimeout,
 		},
-		clientHost: &libp2phttp.HTTPHost{
+		clientHost: &libp2phttp.Host{
 			StreamHost: opts.streamHost,
 		},
 		lsys:        lsys,
@@ -98,12 +98,12 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	var cli http.Client
 	var httpClient *http.Client
 	var err error
-	s.clientHostMutex.Lock()
+	var rtOpts []libp2phttp.RoundTripperOption
 	if s.authPeerID {
-		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, libp2phttp.ServerMustAuthenticatePeerID)
-	} else {
-		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
+		rtOpts = append(rtOpts, libp2phttp.ServerMustAuthenticatePeerID)
 	}
+	s.clientHostMutex.Lock()
+	cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, rtOpts...)
 	s.clientHostMutex.Unlock()
 	var plainHTTP bool
 	if err != nil {

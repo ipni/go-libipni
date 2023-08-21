@@ -32,7 +32,7 @@ type Publisher struct {
 	root        cid.Cid
 	topic       string
 
-	pubHost *libp2phttp.HTTPHost
+	pubHost *libp2phttp.Host
 	// httpAddrs is returned by Addrs when not starting the server.
 	httpAddrs []multiaddr.Multiaddr
 }
@@ -101,7 +101,7 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 
 	// This is the "HTTP Host". It's like the libp2p "stream host" (aka core
 	// host.Host), but it uses HTTP semantics instead of stream semantics.
-	publisherHost := &libp2phttp.HTTPHost{
+	publisherHost := &libp2phttp.Host{
 		StreamHost:        opts.streamHost,
 		ListenAddrs:       httpListenAddrs,
 		ServeInsecureHTTP: !opts.requireTLS,
