@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,10 @@ type Syncer struct {
 	rootURL url.URL
 	urls    []*url.URL
 	sync    *Sync
+
+	// For legacy HTTP and external server support without IPNI path.
+	noPath    bool
+	plainHTTP bool
 }
 
 // NewSync creates a new Sync.
@@ -100,6 +105,7 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo)
 	}
 	s.clientHostMutex.Unlock()
+	var plainHTTP bool
 	if err != nil {
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
@@ -107,6 +113,7 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		}
 		log.Warnw("Cannot create libp2phttp client. Server is not a libp2phttp server. Using plain http", "err", err)
 		httpClient = &s.client
+		plainHTTP = true
 	} else {
 		httpClient = &cli
 	}
@@ -154,6 +161,8 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		rootURL: *urls[0],
 		urls:    urls[1:],
 		sync:    s,
+
+		plainHTTP: plainHTTP,
 	}, nil
 }
 
@@ -282,7 +291,6 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 nextURL:
 	fetchURL := s.rootURL.JoinPath(rsrc)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
@@ -294,6 +302,9 @@ nextURL:
 			log.Errorw("Fetch request failed, will retry with next address", "err", err)
 			s.rootURL = *s.urls[0]
 			s.urls = s.urls[1:]
+			if s.noPath {
+				s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			}
 			goto nextURL
 		}
 		return fmt.Errorf("fetch request failed: %w", err)
@@ -301,15 +312,31 @@ nextURL:
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
+	case http.StatusOK:
+		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
+		return cb(resp.Body)
 	case http.StatusNotFound:
+		if s.plainHTTP && !s.noPath {
+			// Try again with no path for legacy http.
+			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
+			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			s.noPath = true
+			goto nextURL
+		}
 		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
 		// Include the string "content not found" so that indexers that have not
 		// upgraded gracefully handle the error case. Because, this string is
 		// being checked already.
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
-	case http.StatusOK:
-		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
-		return cb(resp.Body)
+	case http.StatusForbidden:
+		if s.plainHTTP && !s.noPath {
+			// Try again with no path for legacy http.
+			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
+			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			s.noPath = true
+			goto nextURL
+		}
+		fallthrough
 	default:
 		return fmt.Errorf("non success http fetch response at %s: %d", fetchURL.String(), resp.StatusCode)
 	}
