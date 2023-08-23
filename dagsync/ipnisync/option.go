@@ -43,7 +43,11 @@ func getOpts(opts []Option) (config, error) {
 // the WithStreamHost option.
 func WithHTTPListenAddrs(addrs ...string) Option {
 	return func(c *config) error {
-		c.httpAddrs = append(c.httpAddrs, addrs...)
+		for _, addr := range addrs {
+			if addr != "" {
+				c.httpAddrs = append(c.httpAddrs, addr)
+			}
+		}
 		return nil
 	}
 }
