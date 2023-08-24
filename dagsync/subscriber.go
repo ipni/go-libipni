@@ -807,7 +807,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 	syncer, err := s.ipniSync.NewSyncer(peerInfo)
 	if err != nil {
 		if errors.Is(err, ipnisync.ErrNoHTTPServer) {
-			log.Warn(err.Error())
+			log.Warnf("Using data-transfer sync with %s: %s", peerInfo.ID, err.Error())
 			// Publisher is libp2p without HTTP, so use the dtSync.
 			return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
 		}

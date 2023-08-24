@@ -111,10 +111,11 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer
 		}
-		log.Warnw("Cannot create libp2phttp client. Server is not a libp2phttp server. Using plain http", "err", err)
+		log.Infow("Publisher is not a libp2phttp server. Using plain http", "err", err, "publisher", peerInfo.ID)
 		httpClient = &s.client
 		plainHTTP = true
 	} else {
+		log.Infow("Publisher supports libp2phttp", "publisher", peerInfo.ID)
 		httpClient = &cli
 	}
 	httpClient.Timeout = s.httpTimeout
