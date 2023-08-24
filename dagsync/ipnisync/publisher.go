@@ -104,7 +104,7 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 	publisherHost := &libp2phttp.Host{
 		StreamHost:        opts.streamHost,
 		ListenAddrs:       httpListenAddrs,
-		ServeInsecureHTTP: !opts.requireTLS,
+		InsecureAllowHTTP: !opts.requireTLS,
 	}
 	pub.pubHost = publisherHost
 
