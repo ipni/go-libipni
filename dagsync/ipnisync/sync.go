@@ -111,11 +111,11 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer
 		}
-		log.Infow("Publisher is not a libp2phttp server. Using plain http", "err", err, "publisher", peerInfo.ID)
+		log.Infow("Publisher is not a libp2phttp server. Using plain http", "err", err, "peer", peerInfo.ID)
 		httpClient = &s.client
 		plainHTTP = true
 	} else {
-		log.Infow("Publisher supports libp2phttp", "publisher", peerInfo.ID)
+		log.Infow("Publisher supports libp2phttp", "peer", peerInfo.ID)
 		httpClient = &cli
 	}
 	httpClient.Timeout = s.httpTimeout
@@ -191,7 +191,7 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 		return cid.Undef, err
 	}
 	if s.peerID == "" {
-		log.Warn("cannot verify publisher signature without peer ID")
+		log.Warn("Cannot verify publisher signature without peer ID")
 	} else if signerID != s.peerID {
 		return cid.Undef, errors.New("found head signed by an unexpected peer")
 	}
@@ -314,7 +314,6 @@ nextURL:
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
 		return cb(resp.Body)
 	case http.StatusNotFound:
 		if s.plainHTTP && !s.noPath {

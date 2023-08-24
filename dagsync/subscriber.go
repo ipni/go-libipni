@@ -377,7 +377,7 @@ func (s *Subscriber) RemoveHandler(peerID peer.ID) bool {
 		return false
 	}
 
-	log.Infow("Removing handler for publisher", "peer", peerID)
+	log.Infow("Removing sync handler", "peer", peerID)
 	delete(s.handlers, peerID)
 
 	return true
@@ -554,7 +554,7 @@ func (s *Subscriber) SyncHAMTEntries(ctx context.Context, peerInfo peer.AddrInfo
 
 func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, sel ipld.Node, bh BlockHookFunc, segdl int64) error {
 	if entCid == cid.Undef {
-		log.Info("No entries to sync")
+		log.Info("No entries to sync", "peer", peerInfo.ID)
 		return nil
 	}
 
@@ -577,8 +577,7 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 		return err
 	}
 
-	log := log.With("peer", peerInfo.ID, "cid", entCid)
-	log.Info("Start entries sync sync")
+	log.Info("Start entries sync", "peer", peerInfo.ID, "cid", entCid)
 
 	// Check for an existing handler for the specified peer (publisher). If
 	// none, create one if allowed.
@@ -681,7 +680,7 @@ func (s *Subscriber) idleHandlerCleaner() {
 			for pid, hnd := range s.handlers {
 				if now.After(hnd.expires) {
 					delete(s.handlers, pid)
-					log.Debugw("Removed idle handler", "publisherID", pid)
+					log.Debugw("Removed idle handler", "peer", pid)
 				}
 			}
 			s.handlersMutex.Unlock()
@@ -716,7 +715,7 @@ func (s *Subscriber) watch() {
 		// If rhw previous pending message was not nil, then there is an
 		// existing request to sync the ad chain.
 		if oldMsg != nil {
-			log.Infow("Pending announce replaced by new", "previous_cid", oldMsg.Cid, "new_cid", amsg.Cid, "publisher", hnd.peerID)
+			log.Infow("Pending announce replaced by new", "previous_cid", oldMsg.Cid, "new_cid", amsg.Cid, "peer", hnd.peerID)
 			continue
 		}
 
@@ -807,7 +806,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 	syncer, err := s.ipniSync.NewSyncer(peerInfo)
 	if err != nil {
 		if errors.Is(err, ipnisync.ErrNoHTTPServer) {
-			log.Warnf("Using data-transfer sync with %s: %s", peerInfo.ID, err.Error())
+			log.Warnw("Using data-transfer sync", "peer", peerInfo.ID, "reason", err.Error())
 			// Publisher is libp2p without HTTP, so use the dtSync.
 			return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
 		}
@@ -821,7 +820,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 // one goroutine per advertisement publisher.
 func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	if ctx.Err() != nil {
-		log.Warnw("Abandoned pending sync", "err", ctx.Err(), "publisher", h.peerID)
+		log.Warnw("Abandoned pending sync", "err", ctx.Err(), "peer", h.peerID)
 		return
 	}
 
@@ -833,7 +832,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	}
 	syncer, updatePeerstore, err := h.subscriber.makeSyncer(peerInfo, true)
 	if err != nil {
-		log.Errorw("Cannot make syncer for announce", "err", err)
+		log.Errorw("Cannot make syncer for announce", "err", err, "peer", h.peerID)
 		return
 	}
 
@@ -843,7 +842,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	if latestSyncLink != nil {
 		stopAtCid = latestSyncLink.(cidlink.Link).Cid
 		if stopAtCid == nextCid {
-			log.Infow("cid to sync to is the stop node. Nothing to do")
+			log.Infow("CID to sync to is the stop node. Nothing to do.", "peer", h.peerID)
 			return
 		}
 	}
@@ -855,7 +854,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 		if h.subscriber.receiver != nil {
 			h.subscriber.receiver.UncacheCid(nextCid)
 		}
-		log.Errorw("Cannot process message", "err", err, "publisher", h.peerID)
+		log.Errorw("Cannot process message", "err", err, "peer", h.peerID)
 		if strings.Contains(err.Error(), "response rejected") {
 			// A "response rejected" error happens when the indexer does not
 			// allow a provider. This is not an error with provider, so do not
