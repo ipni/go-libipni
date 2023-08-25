@@ -267,12 +267,6 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 		return r, err
 	}
 
-	// get the direct node.
-	rootNode, err := getMissingLs.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: rootCid}, basicnode.Prototype.Any)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load node for root cid %s: %w", rootCid, err)
-	}
-
 	progress := traversal.Progress{
 		Cfg: &traversal.Config{
 			Ctx:                            ctx,
@@ -281,6 +275,13 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 		},
 		Path: datamodel.NewPath([]datamodel.PathSegment{}),
 	}
+
+	// get the direct node.
+	rootNode, err := getMissingLs.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: rootCid}, basicnode.Prototype.Any)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node for root cid %s: %w", rootCid, err)
+	}
+
 	err = progress.WalkMatching(rootNode, sel, func(_ traversal.Progress, _ datamodel.Node) error { return nil })
 	if err != nil {
 		return nil, err

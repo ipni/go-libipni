@@ -27,10 +27,10 @@ type Sender struct {
 	userAgent    string
 }
 
-// New creates a new Sender that sends announce messages over HTTP. Announce
-// messages are sent to the specified URLs. The addresses in announce messages
-// are modified to include the specified peerID, which is necessary to
-// communicate the publisher ID over HTTP.
+// New creates a new Sender that sends advertisement announcement messages over
+// HTTP. Announcements are sent directly to the specified URLs. The specified
+// peerID is added to the multiaddrs contained in the announcements, which is
+// how the publisher ID is communicated over HTTP.
 func New(announceURLs []*url.URL, peerID peer.ID, options ...Option) (*Sender, error) {
 	if len(announceURLs) == 0 {
 		return nil, errors.New("no announce urls")
