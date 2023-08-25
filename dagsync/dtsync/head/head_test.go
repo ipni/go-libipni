@@ -12,7 +12,7 @@ import (
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
-	"github.com/ipni/go-libipni/dagsync/p2p/protocol/head"
+	"github.com/ipni/go-libipni/dagsync/dtsync/head"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"

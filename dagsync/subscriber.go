@@ -133,9 +133,9 @@ type SyncFinished struct {
 	PeerID peer.ID
 	// Count is the number of CID synced.
 	Count int
-	// AsyncErr is used to return a failure to asynchronous sync in response to
-	// an announcement.
-	AsyncErr error
+	// Err is used to return a failure to complete an asynchronous sync in
+	// response to an announcement.
+	Err error
 }
 
 // handler holds state that is specific to a peer
@@ -862,9 +862,9 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 			return
 		}
 		h.subscriber.inEvents <- SyncFinished{
-			Cid:      nextCid,
-			PeerID:   h.peerID,
-			AsyncErr: err,
+			Cid:    nextCid,
+			PeerID: h.peerID,
+			Err:    err,
 		}
 		return
 	}

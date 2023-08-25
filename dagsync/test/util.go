@@ -3,6 +3,7 @@ package test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -18,13 +19,14 @@ import (
 	"github.com/ipld/go-ipld-prime/fluent"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipni/go-libipni/dagsync/dtsync/head"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
-	"github.com/ipni/go-libipni/dagsync/p2p/protocol/head"
 	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/ipni/go-libipni/test"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -235,6 +237,12 @@ func MkTestHost(t *testing.T, options ...libp2p.Option) host.Host {
 	}
 	t.Cleanup(func() { h.Close() })
 	return h
+}
+
+func MkTestHostPK(t *testing.T) (host.Host, crypto.PrivKey) {
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	return MkTestHost(t, libp2p.Identity(privKey)), privKey
 }
 
 // Return the chain with all nodes or just half of it for testing

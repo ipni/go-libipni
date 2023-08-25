@@ -3,6 +3,7 @@ package dagsync_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"log"
@@ -15,8 +16,9 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/dtsync"
+	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multicodec"
 )
@@ -25,12 +27,13 @@ var srcHost host.Host
 
 func ExamplePublisher() {
 	// Init dagsync publisher and subscriber.
-	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost, _ = libp2p.New()
+	srcPrivKey, _, _ := crypto.GenerateEd25519Key(rand.Reader)
+	srcHost, _ = libp2p.New(libp2p.Identity(srcPrivKey))
 	defer srcHost.Close()
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLnkS := makeLinkSystem(srcStore)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost), ipnisync.WithHeadTopic("/indexer/ingest/testnet"))
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +68,7 @@ func ExampleSubscriber() {
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkSys, "/indexer/ingest/testnet", nil)
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkSys, "/indexer/ingest/testnet")
 	if err != nil {
 		panic(err)
 	}

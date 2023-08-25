@@ -27,36 +27,29 @@ import (
 
 func TestAnnounceReplace(t *testing.T) {
 	t.Parallel()
-	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost(t)
-	srcHostInfo := peer.AddrInfo{
-		ID:    srcHost.ID(),
-		Addrs: srcHost.Addrs(),
-	}
-	srcLnkS := test.MkLinkSystem(srcStore)
 	dstHost := test.MkTestHost(t)
-
-	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
-	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
-	//dstLnkS := test.MkLinkSystem(dstStore)
-
 	dstLnkS, blocked := test.MkBlockedLinkSystem(dstStore)
 	blocksSeenByHook := make(map[cid.Cid]struct{})
 	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
-	require.NoError(t, err)
-	defer pub.Close()
-
 	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(),
 		dagsync.BlockHook(blockHook))
 	require.NoError(t, err)
 	defer sub.Close()
 
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
+	srcHost, srcPrivKey := test.MkTestHostPK(t)
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcLnkS := test.MkLinkSystem(srcStore)
+
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost), ipnisync.WithHeadTopic(testTopic))
+	require.NoError(t, err)
+	defer pub.Close()
+
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 
 	watcher, cncl := sub.OnSyncFinished()
 	defer cncl()
@@ -66,6 +59,11 @@ func TestAnnounceReplace(t *testing.T) {
 
 	firstCid := chainLnks[2].(cidlink.Link).Cid
 	pub.SetRoot(firstCid)
+
+	srcHostInfo := peer.AddrInfo{
+		ID:    srcHost.ID(),
+		Addrs: srcHost.Addrs(),
+	}
 
 	// Have the subscriber receive an announce.  This is the same as if it was
 	// published by the publisher without having to wait for it to arrive.
@@ -214,11 +212,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 func TestAnnounceRepublish(t *testing.T) {
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost := test.MkTestHost(t)
-	srcHostInfo := peer.AddrInfo{
-		ID:    srcHost.ID(),
-		Addrs: srcHost.Addrs(),
-	}
+	srcHost, srcPrivKey := test.MkTestHostPK(t)
 	srcLnkS := test.MkLinkSystem(srcStore)
 	dstHost := test.MkTestHost(t)
 
@@ -243,10 +237,9 @@ func TestAnnounceRepublish(t *testing.T) {
 	require.NoError(t, err)
 	defer sub1.Close()
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost), ipnisync.WithHeadTopic(testTopic))
 	require.NoError(t, err)
 	defer pub.Close()
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
 
 	watcher2, cncl := sub2.OnSyncFinished()
 	defer cncl()
@@ -258,7 +251,11 @@ func TestAnnounceRepublish(t *testing.T) {
 	pub.SetRoot(firstCid)
 
 	// Announce one CID to subscriber1.
-	err = sub1.Announce(context.Background(), firstCid, srcHostInfo)
+	pubInfo := peer.AddrInfo{
+		ID:    pub.ID(),
+		Addrs: pub.Addrs(),
+	}
+	err = sub1.Announce(context.Background(), firstCid, pubInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 
@@ -444,7 +441,7 @@ func mkLnk(t *testing.T, srcStore datastore.Batching) cid.Cid {
 }
 
 func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer func(peer.ID) bool) (host.Host, host.Host, dagsync.Publisher, *dagsync.Subscriber, announce.Sender) {
-	srcHost := test.MkTestHost(t)
+	srcHost, srcPrivKey := test.MkTestHostPK(t)
 	dstHost := test.MkTestHost(t)
 	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
 
@@ -453,7 +450,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]), p2psender.WithExtraData([]byte("t01000")))
 	require.NoError(t, err)
 
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost), ipnisync.WithHeadTopic(testTopic))
 	require.NoError(t, err)
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
@@ -466,8 +463,6 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 
 	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
 	require.NoError(t, err)
-
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
 
 	return srcHost, dstHost, pub, sub, p2pSender
 }
