@@ -9,10 +9,10 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
-	github.com/ipfs/go-graphsync v0.14.7
-	github.com/ipfs/go-ipld-format v0.3.0
+	github.com/ipfs/go-graphsync v0.14.8
+	github.com/ipfs/go-ipld-format v0.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipld/go-ipld-prime v0.20.0
+	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/libp2p/go-libp2p v0.30.1-0.20230829055202-ac038dbf2d38
 	github.com/libp2p/go-libp2p-pubsub v0.9.3
 	github.com/libp2p/go-msgio v0.3.0
@@ -50,7 +50,7 @@ require (
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
-	github.com/go-logr/stdr v1.2.0 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -66,13 +66,13 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.5 // indirect
 	github.com/huin/goupnp v1.2.0 // indirect
-	github.com/ipfs/go-block-format v0.0.3 // indirect
-	github.com/ipfs/go-ipfs-pq v0.0.2 // indirect
+	github.com/ipfs/go-block-format v0.1.2 // indirect
+	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
-	github.com/ipfs/go-ipld-cbor v0.0.5 // indirect
+	github.com/ipfs/go-ipld-cbor v0.0.6 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
-	github.com/ipfs/go-peertaskqueue v0.8.0 // indirect
-	github.com/ipld/go-codec-dagpb v1.5.0 // indirect
+	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect
+	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
@@ -121,8 +121,8 @@ require (
 	github.com/smartystreets/assertions v1.13.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/urfave/cli/v2 v2.0.0 // indirect
-	go.opentelemetry.io/otel v1.3.0 // indirect
-	go.opentelemetry.io/otel/trace v1.3.0 // indirect
+	go.opentelemetry.io/otel v1.13.0 // indirect
+	go.opentelemetry.io/otel/trace v1.13.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/dig v1.17.0 // indirect
 	go.uber.org/fx v1.20.0 // indirect
