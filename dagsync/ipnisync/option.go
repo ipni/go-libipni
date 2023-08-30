@@ -82,8 +82,8 @@ func WithStartServer(start bool) Option {
 	}
 }
 
-// WithRequireTLS tells whether to allow the publisher to serve non-secure http
-// (false) or to require https (true). Default is false, allowing non-secure
+// WithRequireTLS tells whether to allow the publisher to require https (true)
+// or to serve non-secure http (false). Default is false, allowing non-secure
 // HTTP.
 func WithRequireTLS(require bool) Option {
 	return func(c *config) error {
@@ -123,8 +123,8 @@ func getClientOpts(opts []ClientOption) clientConfig {
 	return cfg
 }
 
-// ClientAuthServerPeerID tells the sync client that we MUST
-// authenticate the Server's PeerID.
+// ClientAuthServerPeerID tells the sync client that it must authenticate the
+// server's peer ID.
 func ClientAuthServerPeerID(require bool) ClientOption {
 	return func(c *clientConfig) {
 		c.authPeerID = require
