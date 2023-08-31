@@ -25,12 +25,9 @@ import (
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multihash"
 )
-
-const ProtocolID = protocol.ID("/ipnisync/v1")
 
 var log = logging.Logger("dagsync/ipnisync")
 
