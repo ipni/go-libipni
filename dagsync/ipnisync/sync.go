@@ -8,8 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
@@ -20,67 +23,152 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	"github.com/ipni/go-libipni/maurl"
+	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
+	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multihash"
 )
 
-const defaultHttpTimeout = 10 * time.Second
-
 var log = logging.Logger("dagsync/ipnisync")
+
+var ErrNoHTTPServer = errors.New("publisher has libp2p server without HTTP")
 
 // Sync provides sync functionality for use with all http syncs.
 type Sync struct {
-	blockHook func(peer.ID, cid.Cid)
-	client    *http.Client
-	lsys      ipld.LinkSystem
+	blockHook   func(peer.ID, cid.Cid)
+	client      http.Client
+	lsys        ipld.LinkSystem
+	httpTimeout time.Duration
+
+	// libp2phttp
+	clientHost      *libp2phttp.Host
+	clientHostMutex sync.Mutex
+	authPeerID      bool
+	rclient         *retryablehttp.Client
+}
+
+// Syncer provides sync functionality for a single sync with a peer.
+type Syncer struct {
+	client  *http.Client
+	peerID  peer.ID
+	rootURL url.URL
+	urls    []*url.URL
+	sync    *Sync
+
+	// For legacy HTTP and external server support without IPNI path.
+	noPath    bool
+	plainHTTP bool
 }
 
 // NewSync creates a new Sync.
-func NewSync(lsys ipld.LinkSystem, client *http.Client, blockHook func(peer.ID, cid.Cid)) *Sync {
-	if client == nil {
-		client = &http.Client{
-			Timeout: defaultHttpTimeout,
+func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...ClientOption) *Sync {
+	opts := getClientOpts(options)
+
+	s := &Sync{
+		blockHook: blockHook,
+		client: http.Client{
+			Timeout: opts.httpTimeout,
+		},
+		clientHost: &libp2phttp.Host{
+			StreamHost: opts.streamHost,
+		},
+		lsys:        lsys,
+		authPeerID:  opts.authPeerID,
+		httpTimeout: opts.httpTimeout,
+	}
+
+	if opts.httpRetryMax != 0 {
+		// Configure retryable HTTP client created by calls to NewSyncer.
+		s.rclient = &retryablehttp.Client{
+			RetryWaitMin: opts.httpRetryWaitMin,
+			RetryWaitMax: opts.httpRetryWaitMax,
+			RetryMax:     opts.httpRetryMax,
 		}
 	}
-	return &Sync{
-		blockHook: blockHook,
-		client:    client,
-		lsys:      lsys,
-	}
+
+	return s
 }
 
-// NewSyncer creates a new Syncer to use for a single sync operation against a peer.
-func (s *Sync) NewSyncer(peerID peer.ID, peerAddrs []multiaddr.Multiaddr) (*Syncer, error) {
-	urls := make([]*url.URL, len(peerAddrs))
-	for i := range peerAddrs {
-		u, err := maurl.ToURL(peerAddrs[i])
+// NewSyncer creates a new Syncer to use for a single sync operation against a
+// peer. A value for peerInfo.ID is optional for the HTTP transport.
+func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
+	var cli http.Client
+	var httpClient *http.Client
+	var err error
+	var rtOpts []libp2phttp.RoundTripperOption
+	if s.authPeerID {
+		rtOpts = append(rtOpts, libp2phttp.ServerMustAuthenticatePeerID)
+	}
+	s.clientHostMutex.Lock()
+	cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, rtOpts...)
+	s.clientHostMutex.Unlock()
+	var plainHTTP bool
+	if err != nil {
+		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
+		if len(httpAddrs) == 0 {
+			return nil, ErrNoHTTPServer
+		}
+		log.Infow("Publisher is not a libp2phttp server. Using plain http", "err", err, "peer", peerInfo.ID)
+		httpClient = &s.client
+		plainHTTP = true
+	} else {
+		log.Infow("Publisher supports libp2phttp", "peer", peerInfo.ID)
+		httpClient = &cli
+	}
+	httpClient.Timeout = s.httpTimeout
+
+	if s.rclient != nil {
+		// Instantiate retryable HTTP client.
+		rclient := &retryablehttp.Client{
+			HTTPClient:   httpClient,
+			RetryWaitMin: s.rclient.RetryWaitMin,
+			RetryWaitMax: s.rclient.RetryWaitMax,
+			RetryMax:     s.rclient.RetryMax,
+			CheckRetry:   retryablehttp.DefaultRetryPolicy,
+			Backoff:      retryablehttp.DefaultBackoff,
+		}
+		httpClient = rclient.StandardClient()
+	}
+
+	if len(peerInfo.Addrs) == 0 {
+		if s.clientHost.StreamHost == nil {
+			return nil, errors.New("no peer addrs and no stream host")
+		}
+		peerStore := s.clientHost.StreamHost.Peerstore()
+		if peerStore == nil {
+			return nil, errors.New("no peer addrs and no stream host peerstore")
+		}
+		peerInfo.Addrs = peerStore.Addrs(peerInfo.ID)
+		if len(peerInfo.Addrs) == 0 {
+			return nil, errors.New("no peer addrs and none found in peertore")
+		}
+	}
+
+	urls := make([]*url.URL, len(peerInfo.Addrs))
+	for i, addr := range peerInfo.Addrs {
+		u, err := maurl.ToURL(addr)
 		if err != nil {
 			return nil, err
 		}
-		urls[i] = u.JoinPath(IpniPath)
+		urls[i] = u.JoinPath(IPNIPath)
 	}
 
 	return &Syncer{
-		peerID:  peerID,
+		client:  httpClient,
+		peerID:  peerInfo.ID,
 		rootURL: *urls[0],
 		urls:    urls[1:],
 		sync:    s,
+
+		plainHTTP: plainHTTP,
 	}, nil
 }
 
 func (s *Sync) Close() {
 	s.client.CloseIdleConnections()
-}
-
-var errHeadFromUnexpectedPeer = errors.New("found head signed from an unexpected peer")
-
-// Syncer provides sync functionality for a single sync with a peer.
-type Syncer struct {
-	peerID  peer.ID
-	rootURL url.URL
-	urls    []*url.URL
-	sync    *Sync
+	s.clientHostMutex.Lock()
+	s.clientHost.Close()
+	s.clientHostMutex.Unlock()
 }
 
 // GetHead fetches the head of the peer's advertisement chain.
@@ -99,14 +187,18 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	if err != nil {
 		return cid.Undef, err
 	}
-	if signerID != s.peerID {
-		return cid.Undef, errHeadFromUnexpectedPeer
+	if s.peerID == "" {
+		log.Warn("Cannot verify publisher signature without peer ID")
+	} else if signerID != s.peerID {
+		return cid.Undef, errors.New("found head signed by an unexpected peer")
 	}
 
-	// TODO: Do something with signedHead.Topic.
-	//
-	// Should it be returned (and for what purpose)?
-	// Is it needed to construct the advertisement fetch URL?
+	// TODO: Check that the returned topic, if any, matches the expected topic.
+	//if signedHead.Topic != nil && *signedHead.Topic != "" && expectedTopic != "" {
+	//	if *signedHead.Topic != expectedTopic {
+	//		return nil, ErrTopicMismatch
+	//	}
+	//}
 
 	return signedHead.Head.(cidlink.Link).Cid, nil
 }
@@ -123,38 +215,34 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return fmt.Errorf("failed to traverse requested dag: %w", err)
 	}
 
-	// We run the block hook to emulate the behavior of graphsync's
-	// `OnIncomingBlockHook` callback (gets called even if block is already stored
-	// locally).
+	// The blockHook callback gets called for every synced block, even if block
+	// is already stored locally.
 	//
 	// We are purposefully not doing this in the StorageReadOpener because the
-	// hook can do anything, including deleting the block from the block store. If
-	// it did that then we would not be able to continue our traversal. So instead
-	// we remember the blocks seen during traversal and then call the hook at the
-	// end when we no longer care what it does with the blocks.
+	// hook can do anything, including deleting the block from the block store.
+	// If it did that then we would not be able to continue our traversal. So
+	// instead we remember the blocks seen during traversal and then call the
+	// hook at the end when we no longer care what it does with the blocks.
 	if s.sync.blockHook != nil {
 		for _, c := range cids {
 			s.sync.blockHook(s.peerID, c)
 		}
 	}
 
-	s.sync.client.CloseIdleConnections()
+	s.client.CloseIdleConnections()
 	return nil
 }
 
-// walkFetch is run by a traversal of the selector.  For each block that the
+// walkFetch is run by a traversal of the selector. For each block that the
 // selector walks over, walkFetch will look to see if it can find it in the
-// local data store. If it cannot, it will then go and get it over HTTP.  This
-// emulates way libp2p/graphsync fetches data, but the actual fetch of data is
-// done over HTTP.
+// local data store. If it cannot, it will then go and get it over HTTP.
 func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector) ([]cid.Cid, error) {
-	// Track the order of cids we've seen during our traversal so we can call the
-	// block hook function in the same order. We emulate the behavior of
-	// graphsync's `OnIncomingBlockHook`, this means we call the blockhook even if
-	// we have the block locally.
+	// Track the order of cids seen during traversal so that the block hook
+	// function gets called in the same order.
 	var traversalOrder []cid.Cid
 	getMissingLs := cidlink.DefaultLinkSystem()
-	// trusted because it'll be hashed/verified on the way into the link system when fetched.
+	// Trusted because it will be hashed/verified on the way into the link
+	// system when fetched.
 	getMissingLs.TrustedStorage = true
 	getMissingLs.StorageReadOpener = func(lc ipld.LinkContext, l ipld.Link) (io.Reader, error) {
 		c := l.(cidlink.Link).Cid
@@ -184,14 +272,14 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 		},
 		Path: datamodel.NewPath([]datamodel.PathSegment{}),
 	}
+
 	// get the direct node.
 	rootNode, err := getMissingLs.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: rootCid}, basicnode.Prototype.Any)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node for root cid %s: %w", rootCid, err)
 	}
-	err = progress.WalkMatching(rootNode, sel, func(p traversal.Progress, n datamodel.Node) error {
-		return nil
-	})
+
+	err = progress.WalkMatching(rootNode, sel, func(_ traversal.Progress, _ datamodel.Node) error { return nil })
 	if err != nil {
 		return nil, err
 	}
@@ -201,18 +289,20 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 nextURL:
 	fetchURL := s.rootURL.JoinPath(rsrc)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
 	}
 
-	resp, err := s.sync.client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		if len(s.urls) != 0 {
 			log.Errorw("Fetch request failed, will retry with next address", "err", err)
 			s.rootURL = *s.urls[0]
 			s.urls = s.urls[1:]
+			if s.noPath {
+				s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			}
 			goto nextURL
 		}
 		return fmt.Errorf("fetch request failed: %w", err)
@@ -220,15 +310,30 @@ nextURL:
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
+	case http.StatusOK:
+		return cb(resp.Body)
 	case http.StatusNotFound:
+		if s.plainHTTP && !s.noPath {
+			// Try again with no path for legacy http.
+			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
+			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			s.noPath = true
+			goto nextURL
+		}
 		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
 		// Include the string "content not found" so that indexers that have not
 		// upgraded gracefully handle the error case. Because, this string is
 		// being checked already.
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
-	case http.StatusOK:
-		log.Debugw("Found block from HTTP publisher", "resource", rsrc)
-		return cb(resp.Body)
+	case http.StatusForbidden:
+		if s.plainHTTP && !s.noPath {
+			// Try again with no path for legacy http.
+			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
+			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			s.noPath = true
+			goto nextURL
+		}
+		fallthrough
 	default:
 		return fmt.Errorf("non success http fetch response at %s: %d", fetchURL.String(), resp.StatusCode)
 	}

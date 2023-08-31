@@ -40,7 +40,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLinkSys := test.MkLinkSystem(srcStore)
 
-	pub, err := ipnisync.NewPublisher("127.0.0.1:0", srcLinkSys, srcPrivKey, ipnisync.WithServer(true))
+	pub, err := ipnisync.NewPublisher(srcLinkSys, srcPrivKey, ipnisync.WithHTTPListenAddrs("127.0.0.1:0"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		pub.Close()

@@ -1,8 +1,8 @@
 package dagsync
 
 import (
+	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -21,9 +21,11 @@ const (
 	defaultIdleHandlerTTL = time.Hour
 	// defaultSegDepthLimit disables (-1) segmented sync by default.
 	defaultSegDepthLimit = -1
-	// Maximum number of in-prgress graphsync requests.
+	// Maximum number of in-progress graphsync requests.
 	defaultGsMaxInRequests  = 1024
 	defaultGsMaxOutRequests = 1024
+	// defaultHttpTimeout is time limit for requests made by the HTTP client.
+	defaultHttpTimeout = 10 * time.Second
 )
 
 type LastKnownSyncFunc func(peer.ID) (cid.Cid, bool)
@@ -34,8 +36,7 @@ type config struct {
 
 	topic *pubsub.Topic
 
-	blockHook  BlockHookFunc
-	httpClient *http.Client
+	blockHook BlockHookFunc
 
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
@@ -52,6 +53,11 @@ type config struct {
 	gsMaxOutRequests uint64
 
 	strictAdsSelSeq bool
+
+	httpTimeout      time.Duration
+	httpRetryMax     int
+	httpRetryWaitMin time.Duration
+	httpRetryWaitMax time.Duration
 }
 
 // Option is a function that sets a value in a config.
@@ -61,6 +67,7 @@ type Option func(*config) error
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
 		addrTTL:          defaultAddrTTL,
+		httpTimeout:      defaultHttpTimeout,
 		idleHandlerTTL:   defaultIdleHandlerTTL,
 		segDepthLimit:    defaultSegDepthLimit,
 		gsMaxInRequests:  defaultGsMaxInRequests,
@@ -93,18 +100,37 @@ func Topic(topic *pubsub.Topic) Option {
 	}
 }
 
-// HttpClient provides Subscriber with an existing http client.
-func HttpClient(client *http.Client) Option {
+// HttpTimeout specifies a time limit for HTTP requests made by the sync
+// HTTP client. A value of zero means no timeout.
+func HttpTimeout(to time.Duration) Option {
 	return func(c *config) error {
-		c.httpClient = client
+		c.httpTimeout = to
 		return nil
 	}
 }
 
-// BlockHook adds a hook that is run when a block is received via Subscriber.Sync along with a
-// SegmentSyncActions to control the sync flow if segmented sync is enabled.
-// Note that if segmented sync is disabled, calls on SegmentSyncActions will have no effect.
-// See: SegmentSyncActions, SegmentDepthLimit, ScopedBlockHook.
+// RetryableHTTPClient configures a retriable HTTP client. Setting retryMax to
+// zero, the default, disables the retriable client.
+func RetryableHTTPClient(retryMax int, waitMin, waitMax time.Duration) Option {
+	return func(c *config) error {
+		if waitMin > waitMax {
+			return errors.New("minimum retry wait time cannot be greater than maximum")
+		}
+		if retryMax < 0 {
+			retryMax = 0
+		}
+		c.httpRetryMax = retryMax
+		c.httpRetryWaitMin = waitMin
+		c.httpRetryWaitMax = waitMax
+		return nil
+	}
+}
+
+// BlockHook adds a hook that is run when a block is received via
+// Subscriber.Sync along with a SegmentSyncActions to control the sync flow if
+// segmented sync is enabled. Note that if segmented sync is disabled, calls on
+// SegmentSyncActions will have no effect. See: SegmentSyncActions,
+// SegmentDepthLimit, ScopedBlockHook.
 func BlockHook(blockHook BlockHookFunc) Option {
 	return func(c *config) error {
 		c.blockHook = blockHook
@@ -171,7 +197,7 @@ func RecvAnnounce(opts ...announce.Option) Option {
 
 // MaxAsyncConcurrency sets the maximum number of concurrent asynchrouous syncs
 // (started by announce messages). This only takes effect if there is an
-// announcement reveiver configured by the RecvAnnounce option.
+// announcement receiver configured by the RecvAnnounce option.
 func MaxAsyncConcurrency(n int) Option {
 	return func(c *config) error {
 		if n != 0 {
@@ -241,7 +267,7 @@ func WithStopAdCid(stopAd cid.Cid) SyncOption {
 	}
 }
 
-// WithResyncAds causes the current sync to ignore anvertisements that have been
+// WithResyncAds causes the current sync to ignore advertisements that have been
 // previously synced. When true, sync does not record the latest synced CID or
 // send sync finished notification.
 func WithAdsResync(resync bool) SyncOption {

@@ -12,7 +12,7 @@ import (
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/traversal"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
-	"github.com/ipni/go-libipni/dagsync/p2p/protocol/head"
+	"github.com/ipni/go-libipni/dagsync/dtsync/head"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 

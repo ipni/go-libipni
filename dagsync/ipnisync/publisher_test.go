@@ -16,18 +16,233 @@ import (
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
 	"github.com/ipld/go-ipld-prime/datamodel"
+	"github.com/ipld/go-ipld-prime/fluent"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	"github.com/ipld/go-ipld-prime/traversal"
+	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPublisherWithLibp2pHTTP(t *testing.T) {
+	ctx := context.Background()
+	req := require.New(t)
+
+	publisherStore := &correctedMemStore{&memstore.Store{
+		Bag: make(map[string][]byte),
+	}}
+	publisherLsys := cidlink.DefaultLinkSystem()
+	publisherLsys.TrustedStorage = true
+	publisherLsys.SetReadStorage(publisherStore)
+	publisherLsys.SetWriteStorage(publisherStore)
+
+	privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 256, rand.Reader)
+	req.NoError(err)
+
+	// Use same identity as publisher. This is necessary so that same ID that
+	// the publisher uses to sign head/ query responses is the same as the ID
+	// used to identify the publisherStreamHost. Otherwise, it would be
+	// necessary for the sync client to know both IDs: one for the stream host
+	// to connect to, and one for the publisher to validate the dignatuse with.
+	publisherStreamHost, err := libp2p.New(libp2p.Identity(privKey), libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	req.NoError(err)
+
+	publisher, err := ipnisync.NewPublisher(publisherLsys, privKey,
+		ipnisync.WithHTTPListenAddrs("http://127.0.0.1:0"),
+		ipnisync.WithStreamHost(publisherStreamHost),
+		ipnisync.WithRequireTLS(false),
+	)
+	req.NoError(err)
+
+	req.Equal(2, len(publisher.Addrs()))
+	serverStreamMa := publisher.Addrs()[0]
+	serverHTTPMa := publisher.Addrs()[1]
+	req.Contains(serverHTTPMa.String(), "/http")
+	t.Log("libp2p stream server address:", serverStreamMa.String())
+	t.Log("libp2p http server address:", serverHTTPMa.String())
+
+	link, err := publisherLsys.Store(
+		ipld.LinkContext{Ctx: ctx},
+		cidlink.LinkPrototype{
+			Prefix: cid.Prefix{
+				Version:  1,
+				Codec:    uint64(multicodec.DagJson),
+				MhType:   uint64(multicodec.Sha2_256),
+				MhLength: -1,
+			},
+		},
+		fluent.MustBuildMap(basicnode.Prototype.Map, 4, func(na fluent.MapAssembler) {
+			na.AssembleEntry("fish").AssignString("lobster")
+			na.AssembleEntry("fish1").AssignString("lobster1")
+			na.AssembleEntry("fish2").AssignString("lobster2")
+			na.AssembleEntry("fish0").AssignString("lobster0")
+		}))
+	req.NoError(err)
+	publisher.SetRoot(link.(cidlink.Link).Cid)
+
+	testCases := []struct {
+		name       string
+		publisher  peer.AddrInfo
+		streamHost func(t *testing.T) host.Host
+	}{
+		{
+			"HTTP transport",
+			peer.AddrInfo{Addrs: []multiaddr.Multiaddr{serverHTTPMa}},
+			func(t *testing.T) host.Host {
+				return nil
+			},
+		},
+		{
+			"libp2p stream transport",
+			peer.AddrInfo{ID: publisherStreamHost.ID(), Addrs: []multiaddr.Multiaddr{serverStreamMa}},
+			func(t *testing.T) host.Host {
+				streamHost, err := libp2p.New(libp2p.NoListenAddrs)
+				req.NoError(err)
+				return streamHost
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Plumbing to set up the test.
+			clientStore := &correctedMemStore{&memstore.Store{
+				Bag: make(map[string][]byte),
+			}}
+			clientLsys := cidlink.DefaultLinkSystem()
+			clientLsys.TrustedStorage = true
+			clientLsys.SetReadStorage(clientStore)
+			clientLsys.SetWriteStorage(clientStore)
+			clientSync := ipnisync.NewSync(clientLsys, nil, ipnisync.ClientStreamHost(tc.streamHost(t)))
+
+			// In a dagsync Subscriber, the clientSync is created once and
+			// lives for the lifetime of the Subscriber (lifetime of indexer),
+			// The clientSyncer is created for each sync operation and only
+			// lives for the duration of the sync. The publisher's address may
+			// change from one sync to the next, and we do not know the
+			// addresses ahead of time.
+			t.Log("Syncing to publisher at:", tc.publisher.Addrs)
+			clientSyncer, err := clientSync.NewSyncer(tc.publisher)
+			req.NoError(err)
+
+			headCid, err := clientSyncer.GetHead(ctx)
+			req.NoError(err)
+
+			req.Equal(link.(cidlink.Link).Cid, headCid)
+
+			clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+			require.NoError(t, err)
+
+			// Assert that data is loadable from the link system.
+			wantLink := cidlink.Link{Cid: headCid}
+			node, err := clientLsys.Load(ipld.LinkContext{Ctx: ctx}, wantLink, basicnode.Prototype.Any)
+			require.NoError(t, err)
+
+			// Assert synced node link matches the computed link, i.e. is spec-compliant.
+			gotLink, err := clientLsys.ComputeLink(wantLink.Prototype(), node)
+			require.NoError(t, err)
+			require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
+		})
+	}
+}
+
+func TestExistingServerWithPublisher(t *testing.T) {
+	ctx := context.Background()
+	req := require.New(t)
+
+	publisherStore := &correctedMemStore{&memstore.Store{
+		Bag: make(map[string][]byte),
+	}}
+	publisherLsys := cidlink.DefaultLinkSystem()
+	publisherLsys.TrustedStorage = true
+	publisherLsys.SetReadStorage(publisherStore)
+	publisherLsys.SetWriteStorage(publisherStore)
+
+	privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 256, rand.Reader)
+	req.NoError(err)
+
+	// Start a server without using libp2phttp to:
+	// 1. Demonstrate this works without using libp2phttp
+	// 2. Give example of how an existing listener can be used to server the publisher.
+	const listenAddress = "127.0.0.1:0"
+	l, err := net.Listen("tcp", listenAddress)
+	req.NoError(err)
+	defer l.Close()
+	addr := "http://" + l.Addr().String()
+	publisher, err := ipnisync.NewPublisher(publisherLsys, privKey, ipnisync.WithHTTPListenAddrs(addr), ipnisync.WithStartServer(false))
+	req.NoError(err)
+	go http.Serve(l, publisher)
+
+	serverHTTPMa := publisher.Addrs()[0]
+	req.Contains(serverHTTPMa.String(), "/http")
+	t.Log("libp2p http server address:", serverHTTPMa.String())
+
+	link, err := publisherLsys.Store(
+		ipld.LinkContext{Ctx: ctx},
+		cidlink.LinkPrototype{
+			Prefix: cid.Prefix{
+				Version:  1,
+				Codec:    uint64(multicodec.DagJson),
+				MhType:   uint64(multicodec.Sha2_256),
+				MhLength: -1,
+			},
+		},
+		fluent.MustBuildMap(basicnode.Prototype.Map, 4, func(na fluent.MapAssembler) {
+			na.AssembleEntry("fish").AssignString("lobster")
+			na.AssembleEntry("fish1").AssignString("lobster1")
+			na.AssembleEntry("fish2").AssignString("lobster2")
+			na.AssembleEntry("fish0").AssignString("lobster0")
+		}))
+	req.NoError(err)
+	publisher.SetRoot(link.(cidlink.Link).Cid)
+
+	pubInfo := peer.AddrInfo{
+		ID:    publisher.ID(),
+		Addrs: []multiaddr.Multiaddr{serverHTTPMa},
+	}
+
+	// Plumbing to set up the test.
+	clientStore := &correctedMemStore{&memstore.Store{
+		Bag: make(map[string][]byte),
+	}}
+	clientLsys := cidlink.DefaultLinkSystem()
+	clientLsys.TrustedStorage = true
+	clientLsys.SetReadStorage(clientStore)
+	clientLsys.SetWriteStorage(clientStore)
+	clientSync := ipnisync.NewSync(clientLsys, nil)
+
+	t.Log("Syncing to publisher at:", pubInfo.Addrs)
+	clientSyncer, err := clientSync.NewSyncer(pubInfo)
+	req.NoError(err)
+
+	headCid, err := clientSyncer.GetHead(ctx)
+	req.NoError(err)
+	req.Equal(link.(cidlink.Link).Cid, headCid)
+
+	clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+	require.NoError(t, err)
+
+	// Assert that data is loadable from the link system.
+	wantLink := cidlink.Link{Cid: headCid}
+	node, err := clientLsys.Load(ipld.LinkContext{Ctx: ctx}, wantLink, basicnode.Prototype.Any)
+	require.NoError(t, err)
+
+	// Assert synced node link matches the computed link, i.e. is spec-compliant.
+	gotLink, err := clientLsys.ComputeLink(wantLink.Prototype(), node)
+	require.NoError(t, err)
+	require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
+}
 
 func TestNewPublisherForListener(t *testing.T) {
 	req := require.New(t)
@@ -51,7 +266,7 @@ func TestNewPublisherForListener(t *testing.T) {
 			privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 			req.NoError(err)
 			sender := &fakeSender{}
-			subject, err := ipnisync.NewPublisher(l.Addr().String(), lsys, privKey, ipnisync.WithServer(false), ipnisync.WithHandlerPath(handlerPath))
+			subject, err := ipnisync.NewPublisher(lsys, privKey, ipnisync.WithHTTPListenAddrs(l.Addr().String()), ipnisync.WithHandlerPath(handlerPath), ipnisync.WithStartServer(false))
 			req.NoError(err)
 
 			rootCid := rootLnk.(cidlink.Link).Cid
@@ -71,10 +286,9 @@ func TestNewPublisherForListener(t *testing.T) {
 
 			resp := &mockResponseWriter{}
 			u := &url.URL{
-				Path: path.Join("/", handlerPath, ipnisync.IpniPath, "/head"),
+				Path: path.Join("/", handlerPath, ipnisync.IPNIPath, "/head"),
 			}
-			//u = u.JoinPath(handlerPath, ipnisync.IpniPath, "/head")
-			//
+
 			subject.ServeHTTP(resp, &http.Request{URL: u})
 			req.Equal(0, resp.status) // not explicitly set
 			req.Nil(resp.header)
@@ -92,6 +306,149 @@ func TestNewPublisherForListener(t *testing.T) {
 			req.Equal(expectedSig, sig)
 			// nothing extra?
 			req.ElementsMatch([]string{"head", "pubkey", "sig"}, mapKeys(t, respNode))
+		})
+	}
+}
+
+func TestHandlerPath(t *testing.T) {
+	//t.Skip("needs work")
+	req := require.New(t)
+	ctx := context.Background()
+
+	publisherStore := &correctedMemStore{&memstore.Store{
+		Bag: make(map[string][]byte),
+	}}
+	publisherLsys := cidlink.DefaultLinkSystem()
+	publisherLsys.TrustedStorage = true
+	publisherLsys.SetReadStorage(publisherStore)
+	publisherLsys.SetWriteStorage(publisherStore)
+
+	privKey, _, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 256, rand.Reader)
+	req.NoError(err)
+
+	publisher, err := ipnisync.NewPublisher(publisherLsys, privKey,
+		ipnisync.WithHTTPListenAddrs("http://127.0.0.1:0"),
+		ipnisync.WithHandlerPath("/boop/bop/beep"),
+	)
+	req.NoError(err)
+
+	req.Equal(1, len(publisher.Addrs()))
+	serverHTTPMa := publisher.Addrs()[0]
+	req.Contains(serverHTTPMa.String(), "/http")
+	t.Log("libp2p http server address:", serverHTTPMa.String())
+
+	link, err := publisherLsys.Store(
+		ipld.LinkContext{Ctx: ctx},
+		cidlink.LinkPrototype{
+			Prefix: cid.Prefix{
+				Version:  1,
+				Codec:    uint64(multicodec.DagJson),
+				MhType:   uint64(multicodec.Sha2_256),
+				MhLength: -1,
+			},
+		},
+		fluent.MustBuildMap(basicnode.Prototype.Map, 4, func(na fluent.MapAssembler) {
+			na.AssembleEntry("fish").AssignString("lobster")
+			na.AssembleEntry("fish1").AssignString("lobster1")
+			na.AssembleEntry("fish2").AssignString("lobster2")
+			na.AssembleEntry("fish0").AssignString("lobster0")
+		}))
+	req.NoError(err)
+	publisher.SetRoot(link.(cidlink.Link).Cid)
+
+	testCases := []struct {
+		name      string
+		httpPath  string
+		expectErr bool
+	}{
+		{
+			"badPath1",
+			"",
+			true,
+		},
+		{
+			"badPath2",
+			"/",
+			true,
+		},
+		{
+			"badPath3",
+			"boop/bop",
+			true,
+		},
+		{
+			"badPath4",
+			"/boop/bop",
+			true,
+		},
+		{
+			"goodPath1 no leading slash",
+			"boop/bop/beep",
+			false,
+		},
+		{
+			"goodPath2 leading slash",
+			"/boop/bop/beep",
+			false,
+		},
+		{
+			"goodPath3 trailing slash",
+			"boop/bop/beep/",
+			false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Plumbing to set up the test.
+			clientStore := &correctedMemStore{&memstore.Store{
+				Bag: make(map[string][]byte),
+			}}
+			clientLsys := cidlink.DefaultLinkSystem()
+			clientLsys.TrustedStorage = true
+			clientLsys.SetReadStorage(clientStore)
+			clientLsys.SetWriteStorage(clientStore)
+			clientSync := ipnisync.NewSync(clientLsys, nil)
+
+			httpPath := strings.TrimPrefix(tc.httpPath, "/")
+			var maddr multiaddr.Multiaddr
+			if httpPath != "" {
+				httpath, err := multiaddr.NewComponent("httpath", url.PathEscape(httpPath))
+				req.NoError(err)
+				maddr = multiaddr.Join(serverHTTPMa, httpath)
+			} else {
+				maddr = serverHTTPMa
+			}
+			pubInfo := peer.AddrInfo{
+				//ID:    publisher.ID(), // optional
+				Addrs: []multiaddr.Multiaddr{maddr},
+			}
+			t.Log("Syncing to publisher at:", pubInfo.Addrs)
+			clientSyncer, err := clientSync.NewSyncer(pubInfo)
+			req.NoError(err)
+
+			headCid, err := clientSyncer.GetHead(ctx)
+
+			if tc.expectErr {
+				req.Error(err)
+				return
+			}
+
+			req.NoError(err)
+			req.Equal(link.(cidlink.Link).Cid, headCid)
+
+			clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+			require.NoError(t, err)
+
+			// Assert that data is loadable from the link system.
+			wantLink := cidlink.Link{Cid: headCid}
+			node, err := clientLsys.Load(ipld.LinkContext{Ctx: ctx}, wantLink, basicnode.Prototype.Any)
+			require.NoError(t, err)
+
+			// Assert synced node link matches the computed link, i.e. is spec-compliant.
+			gotLink, err := clientLsys.ComputeLink(wantLink.Prototype(), node)
+			require.NoError(t, err)
+			require.Equal(t, gotLink, wantLink, "computed %s but got %s", gotLink.String(), wantLink.String())
 		})
 	}
 }

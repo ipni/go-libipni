@@ -46,10 +46,10 @@ func TestScopedBlockHook(t *testing.T) {
 	err := quick.Check(func(ll llBuilder) bool {
 		return t.Run("Quickcheck", func(t *testing.T) {
 			ds := dssync.MutexWrap(datastore.NewMapDatastore())
-			pubHost := test.MkTestHost(t)
+			pubHost, privKey := test.MkTestHostPK(t)
 
 			lsys := test.MkLinkSystem(ds)
-			pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
+			pub, err := ipnisync.NewPublisher(lsys, privKey, ipnisync.WithStreamHost(pubHost))
 			require.NoError(t, err)
 
 			head := ll.Build(t, lsys)
@@ -63,8 +63,6 @@ func TestScopedBlockHook(t *testing.T) {
 			subHost := test.MkTestHost(t)
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
-
-			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
 			var calledGeneralBlockHookTimes int64
 			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic,
@@ -114,9 +112,9 @@ func TestSyncedCidsReturned(t *testing.T) {
 	err := quick.Check(func(ll llBuilder) bool {
 		return t.Run("Quickcheck", func(t *testing.T) {
 			ds := dssync.MutexWrap(datastore.NewMapDatastore())
-			pubHost := test.MkTestHost(t)
+			pubHost, privKey := test.MkTestHostPK(t)
 			lsys := test.MkLinkSystem(ds)
-			pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
+			pub, err := ipnisync.NewPublisher(lsys, privKey, ipnisync.WithStreamHost(pubHost))
 			require.NoError(t, err)
 
 			head := ll.Build(t, lsys)
@@ -130,8 +128,6 @@ func TestSyncedCidsReturned(t *testing.T) {
 			subHost := test.MkTestHost(t)
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
-
-			require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
 			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.StrictAdsSelector(false))
 			require.NoError(t, err)
@@ -175,12 +171,11 @@ func TestConcurrentSync(t *testing.T) {
 
 			for i := 0; i < publisherCount; i++ {
 				ds := dssync.MutexWrap(datastore.NewMapDatastore())
-				pubHost := test.MkTestHost(t)
+				pubHost, privKey := test.MkTestHostPK(t)
 
 				lsys := test.MkLinkSystem(ds)
-				pub, err := dtsync.NewPublisher(pubHost, ds, lsys, testTopic)
+				pub, err := ipnisync.NewPublisher(lsys, privKey, ipnisync.WithStreamHost(pubHost))
 				require.NoError(t, err)
-				require.NoError(t, test.WaitForP2PPublisher(pub, subHost, testTopic))
 
 				publishers = append(publishers, pubMeta{pub, pubHost})
 
@@ -391,11 +386,11 @@ func TestRoundTripSimple(t *testing.T) {
 func TestRoundTrip(t *testing.T) {
 	// Init dagsync publisher and subscriber
 	srcStore1 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost1 := test.MkTestHost(t)
+	srcHost1, privKey1 := test.MkTestHostPK(t)
 	srcLnkS1 := test.MkLinkSystem(srcStore1)
 
 	srcStore2 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost2 := test.MkTestHost(t)
+	srcHost2, privKey2 := test.MkTestHostPK(t)
 	srcLnkS2 := test.MkLinkSystem(srcStore2)
 
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
@@ -407,14 +402,14 @@ func TestRoundTrip(t *testing.T) {
 	p2pSender1, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
 	require.NoError(t, err)
 
-	pub1, err := dtsync.NewPublisher(srcHost1, srcStore1, srcLnkS1, "")
+	pub1, err := ipnisync.NewPublisher(srcLnkS1, privKey1, ipnisync.WithStreamHost(srcHost1))
 	require.NoError(t, err)
 	defer pub1.Close()
 
 	p2pSender2, err := p2psender.New(nil, "", p2psender.WithTopic(topics[1]))
 	require.NoError(t, err)
 
-	pub2, err := dtsync.NewPublisher(srcHost2, srcStore2, srcLnkS2, "")
+	pub2, err := ipnisync.NewPublisher(srcLnkS2, privKey2, ipnisync.WithStreamHost(srcHost2))
 	require.NoError(t, err)
 	defer pub2.Close()
 
@@ -605,16 +600,16 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 func TestMaxAsyncSyncs(t *testing.T) {
 	// Create two publishers
 	srcStore1 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost1 := test.MkTestHost(t)
+	srcHost1, privKey1 := test.MkTestHostPK(t)
 	srcLnkS1 := test.MkLinkSystem(srcStore1)
-	pub1, err := dtsync.NewPublisher(srcHost1, srcStore1, srcLnkS1, "")
+	pub1, err := ipnisync.NewPublisher(srcLnkS1, privKey1, ipnisync.WithStreamHost(srcHost1))
 	require.NoError(t, err)
 	defer pub1.Close()
 
 	srcStore2 := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcHost2 := test.MkTestHost(t)
+	srcHost2, privKey2 := test.MkTestHostPK(t)
 	srcLnkS2 := test.MkLinkSystem(srcStore2)
-	pub2, err := dtsync.NewPublisher(srcHost2, srcStore2, srcLnkS2, "")
+	pub2, err := ipnisync.NewPublisher(srcLnkS2, privKey2, ipnisync.WithStreamHost(srcHost2))
 	require.NoError(t, err)
 	defer pub2.Close()
 
@@ -851,6 +846,7 @@ func TestIdleHandlerCleaner(t *testing.T) {
 
 type dagsyncPubSubBuilder struct {
 	IsHttp      bool
+	IsDtSync    bool
 	P2PAnnounce bool
 }
 
@@ -884,13 +880,15 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 	var pub dagsync.Publisher
 	var err error
 	if b.IsHttp {
-		pub, err = ipnisync.NewPublisher("127.0.0.1:0", pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName))
+		pub, err = ipnisync.NewPublisher(pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName), ipnisync.WithHTTPListenAddrs("127.0.0.1:0"))
 		require.NoError(t, err)
-		require.NoError(t, test.WaitForHttpPublisher(pub))
-	} else {
+	} else if b.IsDtSync {
 		pub, err = dtsync.NewPublisher(pubSys.host, pubSys.ds, pubSys.lsys, topicName)
 		require.NoError(t, err)
 		require.NoError(t, test.WaitForP2PPublisher(pub, subSys.host, topicName))
+	} else {
+		pub, err = ipnisync.NewPublisher(pubSys.lsys, pubSys.privKey, ipnisync.WithStreamHost(pubSys.host), ipnisync.WithHeadTopic(topicName))
+		require.NoError(t, err)
 	}
 
 	subOpts = append(subOpts, dagsync.StrictAdsSelector(false))
