@@ -1,6 +1,7 @@
 package ipnisync
 
 import (
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -16,6 +17,7 @@ type config struct {
 	streamHost host.Host
 	requireTLS bool
 	httpAddrs  []string
+	tlsConfig  *tls.Config
 }
 
 // Option is a function that sets a value in a config.
@@ -97,6 +99,14 @@ func WithRequireTLS(require bool) Option {
 func WithStreamHost(h host.Host) Option {
 	return func(c *config) error {
 		c.streamHost = h
+		return nil
+	}
+}
+
+// WithTLSConfig sets the TLS config for the HTTP server.
+func WithTLSConfig(tlsConfig *tls.Config) Option {
+	return func(c *config) error {
+		c.tlsConfig = tlsConfig
 		return nil
 	}
 }

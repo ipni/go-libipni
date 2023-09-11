@@ -105,6 +105,7 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 		StreamHost:        opts.streamHost,
 		ListenAddrs:       httpListenAddrs,
 		InsecureAllowHTTP: !opts.requireTLS,
+		TLSConfig:         opts.tlsConfig,
 	}
 	pub.pubHost = publisherHost
 
