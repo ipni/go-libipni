@@ -246,18 +246,13 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 	getMissingLs.TrustedStorage = true
 	getMissingLs.StorageReadOpener = func(lc ipld.LinkContext, l ipld.Link) (io.Reader, error) {
 		c := l.(cidlink.Link).Cid
-		r, err := s.sync.lsys.StorageReadOpener(lc, l)
-		if err == nil {
-			// Found block read opener, so return it.
-			traversalOrder = append(traversalOrder, c)
-			return r, nil
-		}
-
-		if err = s.fetchBlock(ctx, c); err != nil {
+		// fetchBlock checks if the node is already present in storage.
+		err := s.fetchBlock(ctx, c)
+		if err != nil {
 			return nil, fmt.Errorf("failed to fetch block for cid %s: %w", c, err)
 		}
 
-		r, err = s.sync.lsys.StorageReadOpener(lc, l)
+		r, err := s.sync.lsys.StorageReadOpener(lc, l)
 		if err == nil {
 			traversalOrder = append(traversalOrder, c)
 		}
