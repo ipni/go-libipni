@@ -82,10 +82,11 @@ func QueryRootCid(ctx context.Context, host host.Host, topic string, peerID peer
 					// If protocol ID is wrong, then try the previous protocol ID.
 					var errNoSupport multistream.ErrNotSupported[protocol.ID]
 					if errors.As(err, &errNoSupport) {
+						origErr := err
 						oldProtoID := previousProtocolID(topic)
 						conn, err = gostream.Dial(ctx, host, peerID, oldProtoID)
 						if err != nil {
-							return nil, err
+							return nil, origErr
 						}
 						log.Infow("Peer head CID server uses old protocol ID", "peer", peerID, "proto", oldProtoID)
 					} else {
