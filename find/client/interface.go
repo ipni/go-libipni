@@ -2,24 +2,40 @@ package client
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
+	"github.com/ipni/go-libipni/apierror"
 	"github.com/ipni/go-libipni/find/model"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multihash"
 )
 
-// Interface is the interface implemented by all find clients.
-type Interface interface {
+// Finder is the interface implemented by all find clients.
+type Finder interface {
 	// Find queries for provider content records for a single multihash.
 	Find(context.Context, multihash.Multihash) (*model.FindResponse, error)
-	// FindBatch queries for provider content records for a batch of multihashes.
-	FindBatch(context.Context, []multihash.Multihash) (*model.FindResponse, error)
+}
 
-	// GetProvider gets information about the provider identified by peer.ID.
-	GetProvider(context.Context, peer.ID) (*model.ProviderInfo, error)
-	// ListPrividers gets information about all providers known to the indexer.
-	ListProviders(ctx context.Context) ([]*model.ProviderInfo, error)
-
-	// GetStats get statistics for indexer.
-	GetStats(context.Context) (*model.Stats, error)
+// FindBatch is a convenience function to lookup results for multiple
+// multihashes. This works with either the Client or DHashClient. If no results
+// are found, then an error is not returned and there are no results in the
+// response.
+func FindBatch(ctx context.Context, finder Finder, mhs []multihash.Multihash) (*model.FindResponse, error) {
+	var resp *model.FindResponse
+	for i := range mhs {
+		r, err := finder.Find(ctx, mhs[i])
+		if err != nil {
+			var ae *apierror.Error
+			if errors.As(err, &ae) && ae.Status() == http.StatusNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if resp == nil {
+			resp = r
+		} else {
+			resp.MultihashResults = append(resp.MultihashResults, r.MultihashResults...)
+		}
+	}
+	return resp, nil
 }

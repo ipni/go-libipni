@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,7 +29,7 @@ type Client struct {
 }
 
 // Client must implement Interface.
-var _ Interface = (*Client)(nil)
+var _ Finder = (*Client)(nil)
 
 // New creates a new find HTTP client.
 func New(baseURL string, options ...Option) (*Client, error) {
@@ -64,22 +63,6 @@ func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindRe
 		return nil, err
 	}
 
-	return c.sendRequest(req)
-}
-
-// FindBatch looks up content entries for a batch of multihashes
-func (c *Client) FindBatch(ctx context.Context, mhs []multihash.Multihash) (*model.FindResponse, error) {
-	if len(mhs) == 0 {
-		return &model.FindResponse{}, nil
-	}
-	data, err := model.MarshalFindRequest(&model.FindRequest{Multihashes: mhs})
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.findURL.String(), bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
 	return c.sendRequest(req)
 }
 
