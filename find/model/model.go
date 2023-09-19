@@ -10,11 +10,6 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-// FindRequest is the client request send by end user clients
-type FindRequest struct {
-	Multihashes []multihash.Multihash
-}
-
 // ProviderResult is a one of possibly multiple results when looking up a
 // provider of indexed context.
 type ProviderResult struct {
@@ -59,23 +54,6 @@ func (pr ProviderResult) Equal(other ProviderResult) bool {
 		return false
 	}
 	return true
-}
-
-// MarshalFindRequest serializes the request. Currently uses JSON, but could
-// use anything else.
-//
-// NOTE: Consider using other serialization formats? We could maybe use IPLD
-// schemas instead of structs for requests and response so we have any codec by
-// design.
-func MarshalFindRequest(r *FindRequest) ([]byte, error) {
-	return json.Marshal(r)
-}
-
-// UnmarshalFindRequest de-serializes the request.
-func UnmarshalFindRequest(b []byte) (*FindRequest, error) {
-	r := &FindRequest{}
-	err := json.Unmarshal(b, r)
-	return r, err
 }
 
 // MarshalFindResponse serializes a find response.
