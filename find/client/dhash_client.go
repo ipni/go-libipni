@@ -82,7 +82,7 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 		}
 		dhsAPI = &dhstoreHTTP{
 			c:             opts.httpClient,
-			dhFindURL:     dhsURL.JoinPath(findPath),
+			dhFindURL:     dhsURL.JoinPath("encrypted", findPath),
 			dhMetadataURL: dhsURL.JoinPath(metadataPath),
 		}
 	}
