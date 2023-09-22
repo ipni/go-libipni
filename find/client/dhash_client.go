@@ -10,6 +10,7 @@ import (
 	"github.com/ipni/go-libipni/dhash"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/ipni/go-libipni/pcache"
+	"github.com/libp2p/go-libp2p/core/peer"
 	b58 "github.com/mr-tron/base58/base58"
 	"github.com/multiformats/go-multihash"
 )
@@ -52,17 +53,20 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 		return nil, err
 	}
 
-	if len(opts.providersURLs) == 0 {
-		if opts.dhstoreURL == "" {
-			return nil, errors.New("no source of provider information")
+	var pc *pcache.ProviderCache
+	if !opts.metadataOnly {
+		if len(opts.providersURLs) == 0 {
+			if opts.dhstoreURL == "" {
+				return nil, errors.New("no source of provider information")
+			}
+			opts.providersURLs = []string{opts.dhstoreURL}
 		}
-		opts.providersURLs = []string{opts.dhstoreURL}
-	}
 
-	pc, err := pcache.New(pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload),
-		pcache.WithSourceURL(opts.providersURLs...))
-	if err != nil {
-		return nil, err
+		pc, err = pcache.New(pcache.WithTTL(opts.pcacheTTL), pcache.WithPreload(opts.preload),
+			pcache.WithSourceURL(opts.providersURLs...))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var dhsAPI DHStoreAPI
@@ -71,6 +75,9 @@ func NewDHashClient(options ...Option) (*DHashClient, error) {
 	} else {
 		var dhsURL *url.URL
 		if opts.dhstoreURL == "" {
+			if len(opts.providersURLs) == 0 {
+				return nil, errors.New("no destination for metadata lookup")
+			}
 			opts.dhstoreURL = opts.providersURLs[0]
 		}
 		dhsURL, err = url.Parse(opts.dhstoreURL)
@@ -148,7 +155,7 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				continue
 			}
 
-			pid, ctxId, err := dhash.SplitValueKey(vk)
+			pid, ctxID, err := dhash.SplitValueKey(vk)
 			if err != nil {
 				log.Warnw("Error splitting value key", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue
@@ -167,7 +174,26 @@ func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, res
 				continue
 			}
 
-			prs, err := c.pcache.GetResults(ctx, pid, ctxId, metadata)
+			// If only fetching metadata. The provider ID is still needed in
+			// order to identify which provider the metadata is associated
+			// with.
+			if c.pcache == nil {
+				pr := model.ProviderResult{
+					ContextID: ctxID,
+					Metadata:  metadata,
+					Provider: &peer.AddrInfo{
+						ID: pid,
+					},
+				}
+				select {
+				case resChan <- pr:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				continue
+			}
+
+			prs, err := c.pcache.GetResults(ctx, pid, ctxID, metadata)
 			if err != nil {
 				log.Warnw("Error fetching provider infos", "multihash", mh.B58String(), "evk", b58.Encode(evk), "err", err)
 				continue

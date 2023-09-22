@@ -16,6 +16,7 @@ type config struct {
 	providersURLs []string
 	dhstoreURL    string
 	dhstoreAPI    DHStoreAPI
+	metadataOnly  bool
 	pcacheTTL     time.Duration
 	preload       bool
 }
@@ -48,9 +49,22 @@ func WithClient(c *http.Client) Option {
 	}
 }
 
+// WithMetadataOnly configures lookups to only return metadata and not provider
+// information. This means that is it is not necessary to specify providers
+// URLs, using WithProvidersURL, when provider information is available from a
+// separate location.
+func WithMetadataOnly(metadataOnly bool) Option {
+	return func(cfg *config) error {
+		cfg.metadataOnly = metadataOnly
+		return nil
+	}
+}
+
 // WithProvidersURL specifies one or more URLs for retrieving provider
 // information (/providers and /providers/<pid> endpoints). Multiple URLs may
-// be given to specify multiple sources of provider information,
+// be given to specify multiple sources of provider information.
+//
+// This option is ignored if WithMetadataOnly(true) is specified.
 func WithProvidersURL(urls ...string) Option {
 	return func(cfg *config) error {
 		cfg.providersURLs = append(cfg.providersURLs, urls...)
@@ -80,6 +94,8 @@ func WithDHStoreAPI(dhsAPI DHStoreAPI) Option {
 
 // WithPcacheTTL sets the time that provider information remains in the cache
 // after it is not longer available from any of the original sources.
+//
+// This option is ignored if WithMetadataOnly(true) is specified.
 func WithPcacheTTL(ttl time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.pcacheTTL = ttl
@@ -91,7 +107,8 @@ func WithPcacheTTL(ttl time.Duration) Option {
 // should be enabled, even for short-lived clients needing to look up few
 // providers.
 //
-// Default is true (enabled).
+// Default is true (enabled). This option is ignored if WithMetadataOnly(true)
+// is specified.
 func WithPcachePreload(preload bool) Option {
 	return func(cfg *config) error {
 		cfg.preload = preload
