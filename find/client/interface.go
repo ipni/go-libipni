@@ -12,14 +12,14 @@ import (
 
 // Finder is the interface implemented by all find clients.
 type Finder interface {
-	// Find queries for provider content records for a single multihash.
+	// Find queries for provider content records for a single multihash. If no
+	// results are found then an empty response without error is returned.
 	Find(context.Context, multihash.Multihash) (*model.FindResponse, error)
 }
 
 // FindBatch is a convenience function to lookup results for multiple
 // multihashes. This works with either the Client or DHashClient. If no results
-// are found, then an error is not returned and there are no results in the
-// response.
+// are found then an empty response without error is returned.
 func FindBatch(ctx context.Context, finder Finder, mhs []multihash.Multihash) (*model.FindResponse, error) {
 	var resp *model.FindResponse
 	for i := range mhs {
@@ -31,11 +31,18 @@ func FindBatch(ctx context.Context, finder Finder, mhs []multihash.Multihash) (*
 			}
 			return nil, err
 		}
+		if r == nil || len(r.MultihashResults) == 0 {
+			// multihash not found
+			continue
+		}
 		if resp == nil {
 			resp = r
 		} else {
 			resp.MultihashResults = append(resp.MultihashResults, r.MultihashResults...)
 		}
+	}
+	if resp == nil {
+		resp = &model.FindResponse{}
 	}
 	return resp, nil
 }
