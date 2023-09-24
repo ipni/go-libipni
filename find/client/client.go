@@ -55,7 +55,8 @@ func New(baseURL string, options ...Option) (*Client, error) {
 	}, nil
 }
 
-// Find looks up content entries by multihash.
+// Find looks up content entries by multihash. If no results are found then an
+// empty response without error is returned.
 func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindResponse, error) {
 	u := c.findURL.JoinPath(m.B58String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -63,7 +64,26 @@ func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindRe
 		return nil, err
 	}
 
-	return c.sendRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	// Handle failed requests
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return &model.FindResponse{}, nil
+		}
+		return nil, fmt.Errorf("find query failed: %v", http.StatusText(resp.StatusCode))
+	}
+
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return model.UnmarshalFindResponse(b)
 }
 
 func (c *Client) ListProviders(ctx context.Context) ([]*model.ProviderInfo, error) {
@@ -153,27 +173,4 @@ func (c *Client) GetStats(ctx context.Context) (*model.Stats, error) {
 	}
 
 	return model.UnmarshalStats(body)
-}
-
-func (c *Client) sendRequest(req *http.Request) (*model.FindResponse, error) {
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	// Handle failed requests
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusNotFound {
-			return &model.FindResponse{}, nil
-		}
-		return nil, fmt.Errorf("batch find query failed: %v", http.StatusText(resp.StatusCode))
-	}
-
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return model.UnmarshalFindResponse(b)
 }

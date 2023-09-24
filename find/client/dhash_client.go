@@ -98,7 +98,8 @@ func (c *DHashClient) PCache() *pcache.ProviderCache {
 }
 
 // Find launches FindAsync in a separate go routine and assembles the result
-// into FindResponse as if it was a synchronous invocation.
+// into FindResponse as if it was a synchronous invocation. If no results are
+// found then an empty response without error is returned.
 func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.FindResponse, error) {
 	resChan := make(chan model.ProviderResult)
 	errChan := make(chan error, 1)
@@ -107,18 +108,25 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 		errChan <- c.FindAsync(ctx, mh, resChan)
 	}()
 
-	mhr := model.MultihashResult{
-		Multihash: mh,
-	}
+	var providerResults []model.ProviderResult
 	for pr := range resChan {
-		mhr.ProviderResults = append(mhr.ProviderResults, pr)
+		providerResults = append(providerResults, pr)
 	}
 	err := <-errChan
 	if err != nil {
 		return nil, err
 	}
+	if len(providerResults) == 0 {
+		return &model.FindResponse{}, nil
+	}
+
 	return &model.FindResponse{
-		MultihashResults: []model.MultihashResult{mhr},
+		MultihashResults: []model.MultihashResult{
+			{
+				Multihash:       mh,
+				ProviderResults: providerResults,
+			},
+		},
 	}, nil
 }
 
