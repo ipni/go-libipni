@@ -19,7 +19,7 @@ var log = logging.Logger("pcache")
 var ErrClosed = errors.New("cache closed")
 
 // ProviderSource in an interface that the cache uses to fetch provider
-// information for one or all providers from a specific supplier of that
+// information. Each ProviderSource is a specific supplier of provider
 // information. The cache can be configured with any number of sources that
 // supply provider information.
 type ProviderSource interface {
@@ -153,10 +153,11 @@ func (pc *ProviderCache) List() []*model.ProviderInfo {
 	return pinfos
 }
 
-// GetResults retrieves information about the provicer specified by pid and
-// composes a slice ProviderResults got the provider. If provider information
-// is not available, then a nil slice is returned. An error results from the
-// context being canceled or the cache closing.
+// GetResults retrieves information about the provider specified by peer ID and
+// composes a slice of ProviderResults for the provider and any extended
+// providers. If provider information is not available, then a nil slice is
+// returned. An error results from the context being canceled or the cache
+// closing.
 func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, metadata []byte) ([]model.ProviderResult, error) {
 	rpi, err := pc.getReadOnly(ctx, pid)
 	if err != nil {
@@ -190,7 +191,7 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 		override = ctxExtended.override
 		for i, xpinfo := range ctxExtended.providers {
 			xmd := ctxExtended.metadatas[i]
-			// Skippng the main provider's record if its metadata is nil or is
+			// Skipping the main provider's record if its metadata is nil or is
 			// the same as the one retrieved from the indexer, because such EP
 			// record does not advertise any new protocol.
 			if xpinfo.ID == pid && (len(xmd) == 0 || bytes.Equal(xmd, metadata)) {
@@ -219,7 +220,7 @@ func (pc *ProviderCache) GetResults(ctx context.Context, pid peer.ID, ctxID, met
 	extended := rpi.provider.ExtendedProviders
 	for i, xpinfo := range extended.Providers {
 		xmd := extended.Metadatas[i]
-		// Skippng the main provider's record if its metadata is nil or is the
+		// Skipping the main provider's record if its metadata is nil or is the
 		// same as the one retrieved from the indexer, because such EP record
 		// does not advertise any new protocol.
 		if xpinfo.ID == pid && (len(xmd) == 0 || bytes.Equal(xmd, metadata)) {
@@ -362,7 +363,7 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// get returns the provider information for the provider specified by pid. If
+// get returns the provider information for the provider specified by id. If
 // provider information is not available, then a nil slice is returned. An
 // error results from the context being canceled or the cache closing.
 //
