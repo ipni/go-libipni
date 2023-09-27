@@ -115,10 +115,7 @@ type clientConfig struct {
 	authPeerID bool
 	streamHost host.Host
 
-	httpTimeout      time.Duration
-	httpRetryMax     int
-	httpRetryWaitMin time.Duration
-	httpRetryWaitMax time.Duration
+	httpTimeout time.Duration
 }
 
 // Option is a function that sets a value in a config.
@@ -154,15 +151,5 @@ func ClientHTTPTimeout(to time.Duration) ClientOption {
 func ClientStreamHost(h host.Host) ClientOption {
 	return func(c *clientConfig) {
 		c.streamHost = h
-	}
-}
-
-// ClientHTTPRetry configures a retriable HTTP client. Setting retryMax to
-// zero, the default, disables the retriable client.
-func ClientHTTPRetry(retryMax int, waitMin, waitMax time.Duration) ClientOption {
-	return func(c *clientConfig) {
-		c.httpRetryMax = retryMax
-		c.httpRetryWaitMin = waitMin
-		c.httpRetryWaitMax = waitMax
 	}
 }

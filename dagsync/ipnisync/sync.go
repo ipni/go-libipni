@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
@@ -44,7 +43,6 @@ type Sync struct {
 	clientHost      *libp2phttp.Host
 	clientHostMutex sync.Mutex
 	authPeerID      bool
-	rclient         *retryablehttp.Client
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -64,7 +62,7 @@ type Syncer struct {
 func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...ClientOption) *Sync {
 	opts := getClientOpts(options)
 
-	s := &Sync{
+	return &Sync{
 		blockHook: blockHook,
 		client: http.Client{
 			Timeout: opts.httpTimeout,
@@ -76,17 +74,6 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 		authPeerID:  opts.authPeerID,
 		httpTimeout: opts.httpTimeout,
 	}
-
-	if opts.httpRetryMax != 0 {
-		// Configure retryable HTTP client created by calls to NewSyncer.
-		s.rclient = &retryablehttp.Client{
-			RetryWaitMin: opts.httpRetryWaitMin,
-			RetryWaitMax: opts.httpRetryWaitMax,
-			RetryMax:     opts.httpRetryMax,
-		}
-	}
-
-	return s
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a
@@ -116,19 +103,6 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		httpClient = &cli
 	}
 	httpClient.Timeout = s.httpTimeout
-
-	if s.rclient != nil {
-		// Instantiate retryable HTTP client.
-		rclient := &retryablehttp.Client{
-			HTTPClient:   httpClient,
-			RetryWaitMin: s.rclient.RetryWaitMin,
-			RetryWaitMax: s.rclient.RetryWaitMax,
-			RetryMax:     s.rclient.RetryMax,
-			CheckRetry:   retryablehttp.DefaultRetryPolicy,
-			Backoff:      retryablehttp.DefaultBackoff,
-		}
-		httpClient = rclient.StandardClient()
-	}
 
 	if len(peerInfo.Addrs) == 0 {
 		if s.clientHost.StreamHost == nil {

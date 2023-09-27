@@ -6,7 +6,6 @@ require (
 	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc7
 	github.com/gammazero/channelqueue v0.2.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/go-retryablehttp v0.7.4
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-graphsync v0.15.1
@@ -63,7 +62,6 @@ require (
 	github.com/hannahhoward/cbor-gen-for v0.0.0-20230214144701-5d17c9d5243c // indirect
 	github.com/hannahhoward/go-pubsub v0.0.0-20200423002714-8d62886cc36e // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.5 // indirect
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/ipfs/go-block-format v0.1.2 // indirect
