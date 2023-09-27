@@ -475,7 +475,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 	}
 
 	log = log.With("cid", nextCid)
-	log.Debug("Start advertisement chain sync at head CID")
+	log.Debug("Start advertisement chain sync")
 
 	if ctx.Err() != nil {
 		return cid.Undef, fmt.Errorf("sync canceled: %w", ctx.Err())
