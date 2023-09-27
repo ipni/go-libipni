@@ -2,6 +2,7 @@ package dagsync_test
 
 import (
 	"context"
+	"path"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
 
@@ -397,6 +399,49 @@ func TestSyncOnAnnounceDataTransfer(t *testing.T) {
 	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[2])
 	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[1])
 	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[0])
+}
+
+func TestUpdatePeerstoreAddr(t *testing.T) {
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstHost := test.MkTestHost(t)
+	dstLnkS := test.MkLinkSystem(dstStore)
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	require.NoError(t, err)
+	defer sub.Close()
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	srcHost := test.MkTestHost(t)
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcLnkS := test.MkLinkSystem(srcStore)
+	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	require.NoError(t, err)
+	defer pub.Close()
+	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
+
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+
+	// Store the whole chain in source node
+	chainLnks := test.MkChain(srcLnkS, true)
+
+	pubInfo := peer.AddrInfo{
+		ID:    pub.ID(),
+		Addrs: pub.Addrs(),
+	}
+
+	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[2])
+	require.Equal(t, pubInfo.Addrs, dstHost.Peerstore().Addrs(pub.ID()))
+
+	// Update publisher address, sync, and check that peerstore matches.
+	maddr, err := multiaddr.NewMultiaddr("/dns4/localhost/tcp/" + path.Base(pub.Addrs()[0].String()))
+	require.NoError(t, err)
+	pubInfo.Addrs = []multiaddr.Multiaddr{maddr}
+	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[1])
+	require.Equal(t, pubInfo.Addrs, dstHost.Peerstore().Addrs(pub.ID()))
 }
 
 func TestSyncOnAnnounceIPNI(t *testing.T) {
