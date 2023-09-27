@@ -757,9 +757,10 @@ func TestMaxAsyncSyncs(t *testing.T) {
 }
 
 func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, expectedCid cidlink.Link, watcher <-chan dagsync.SyncFinished) {
+	t.Helper()
 	select {
 	case <-time.After(updateTimeout):
-		t.Fatal("timed out waiting for sync to propogate")
+		require.FailNow(t, "timed out waiting for sync to propogate")
 	case downstream := <-watcher:
 		require.Equal(t, expectedCid.Cid, downstream.Cid, "sync'd cid unexpected")
 		_, err := store.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
