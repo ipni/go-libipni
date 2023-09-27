@@ -201,6 +201,5 @@ func TestSyncFnHttp(t *testing.T) {
 	}
 	cancelWatcher()
 
-	err = assertLatestSyncEquals(te.sub, te.srcHost.ID(), newHead)
-	require.NoError(t, err)
+	assertLatestSyncEquals(t, te.sub, te.srcHost.ID(), newHead)
 }
