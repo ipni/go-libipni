@@ -7,14 +7,14 @@
 // cache reads, such as those that must quickly deliver IPNI find results, or
 // that handle a high volume of provider information requests.
 //
-// ## Multiple Overlapping Data Sources
+// # Multiple Overlapping Data Sources
 //
 // The cache can be configured with multiple data sources from which provider
 // information is fetched. If the same provider information is returned from
 // multiple data sources, then the information with the most recent timestamp
 // is used.
 //
-// ## All Provider Information Cached
+// # All Provider Information Cached
 //
 // The provider cache maintains a unified view of all provider information
 // across all data sources. Caching provider information in builk allows the
@@ -23,7 +23,7 @@
 // important when there are multiple sources to fetch provider information
 // from, and when responses include infomration about multiple providers.
 //
-// ## Cache Refresh
+// # Cache Refresh
 //
 // If the cache refresh interval is non-zero (default is 2 minutes), then after
 // that time is elapsed, a timer sets a flag to indicate that refresh is
@@ -38,7 +38,7 @@
 // of the cached data is built, and is then atomically set as the cache's
 // read-only lock-free data.
 //
-// ## Negative Cache
+// # Negative Cache
 //
 // Lookups for provider information that are not currently cached will generate
 // an initial query to the cache's data sources. If the information is found
@@ -47,7 +47,7 @@
 // data sources. If the information becomes available the negative cache entry
 // is replaced at the next refresh.
 //
-// ## Cache Eviction
+// # Cache Eviction
 //
 // Cached provider information remains in the cache until the information is no
 // longer available from any of the sources for longer than the configured
