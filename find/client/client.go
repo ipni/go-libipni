@@ -69,6 +69,8 @@ func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindRe
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
+
 	// Handle failed requests
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusNotFound {
@@ -77,7 +79,6 @@ func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindRe
 		return nil, fmt.Errorf("find query failed: %v", http.StatusText(resp.StatusCode))
 	}
 
-	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
