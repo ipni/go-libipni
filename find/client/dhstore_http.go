@@ -33,10 +33,9 @@ func (d *dhstoreHTTP) FindMultihash(ctx context.Context, dhmh multihash.Multihas
 	if err != nil {
 		return nil, err
 	}
-
-	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +69,9 @@ func (d *dhstoreHTTP) FindMetadata(ctx context.Context, hvk []byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-
-	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

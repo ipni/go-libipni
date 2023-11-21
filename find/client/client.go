@@ -73,6 +73,7 @@ func (c *Client) Find(ctx context.Context, m multihash.Multihash) (*model.FindRe
 
 	// Handle failed requests
 	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode == http.StatusNotFound {
 			return &model.FindResponse{}, nil
 		}
