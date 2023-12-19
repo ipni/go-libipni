@@ -24,6 +24,7 @@ import (
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/ipni/go-libipni/mautil"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multihash"
@@ -190,7 +191,7 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	if s.peerID == "" {
 		log.Warn("Cannot verify publisher signature without peer ID")
 	} else if signerID != s.peerID {
-		return cid.Undef, errors.New("found head signed by an unexpected peer")
+		return cid.Undef, fmt.Errorf("found head signed by an unexpected peer, peerID: %s, signed-by: %s", s.peerID.String(), signerID.String())
 	}
 
 	// TODO: Check that the returned topic, if any, matches the expected topic.
@@ -284,6 +285,8 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 nextURL:
 	fetchURL := s.rootURL.JoinPath(rsrc)
+	var doneRetry bool
+retry:
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
@@ -299,6 +302,12 @@ nextURL:
 				s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
 			}
 			goto nextURL
+		}
+		if !doneRetry && errors.Is(err, network.ErrReset) {
+			log.Errorw("stream reset err, retrying", "publisher", s.peerID, "url", fetchURL.String())
+			// Only retry the same fetch once.
+			doneRetry = true
+			goto retry
 		}
 		return fmt.Errorf("fetch request failed: %w", err)
 	}
