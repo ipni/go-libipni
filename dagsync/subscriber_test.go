@@ -617,8 +617,11 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	dstHost := test.MkTestHost(t)
 	dstLnkS, blocked := test.MkBlockedLinkSystem(dstStore)
 	blocksSeenByHook := make(map[cid.Cid]struct{})
+	bhMutex := new(sync.Mutex)
 	blockHook := func(p peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+		bhMutex.Lock()
 		blocksSeenByHook[c] = struct{}{}
+		bhMutex.Unlock()
 	}
 
 	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
