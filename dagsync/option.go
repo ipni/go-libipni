@@ -21,9 +21,6 @@ const (
 	defaultIdleHandlerTTL = time.Hour
 	// defaultSegDepthLimit disables (-1) segmented sync by default.
 	defaultSegDepthLimit = -1
-	// Maximum number of in-progress graphsync requests.
-	defaultGsMaxInRequests  = 1024
-	defaultGsMaxOutRequests = 1024
 	// defaultHttpTimeout is time limit for requests made by the HTTP client.
 	defaultHttpTimeout = 10 * time.Second
 )
@@ -206,16 +203,6 @@ func MaxAsyncConcurrency(n int) Option {
 			}
 			c.maxAsyncSyncs = n
 		}
-		return nil
-	}
-}
-
-// WithMaxGraphsyncRequests sets the maximum number of in-progress inbound and
-// outbound graphsync requests.
-func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
-	return func(c *config) error {
-		c.gsMaxInRequests = maxIn
-		c.gsMaxOutRequests = maxOut
 		return nil
 	}
 }

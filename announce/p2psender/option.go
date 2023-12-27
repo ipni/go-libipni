@@ -6,7 +6,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-// config contains all options for configuring dtsync.publisher.
+// config contains all options for configuring ipnisync.publisher.
 type config struct {
 	topic     *pubsub.Topic
 	extraData []byte

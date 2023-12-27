@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/ipld/go-ipld-prime/fluent"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
-	"github.com/ipni/go-libipni/dagsync/dtsync/head"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
@@ -309,10 +309,27 @@ func WaitForP2PPublisher(publisher TestPublisher, clientHost host.Host, topic st
 		peerStore.AddAddrs(publisher.ID(), publisher.Addrs(), time.Minute+timeout)
 	}
 
+	var lsys ipld.LinkSystem
+	sync := ipnisync.NewSync(lsys, nil, ipnisync.ClientStreamHost(clientHost))
+	defer sync.Close()
+	pubInfo := peer.AddrInfo{
+		ID:    publisher.ID(),
+		Addrs: publisher.Addrs(),
+	}
+	syncer, err := sync.NewSyncer(pubInfo)
+	if err != nil {
+		panic(err)
+		//return err
+	}
+
 	for ctx.Err() == nil {
-		_, err := head.QueryRootCid(ctx, clientHost, topic, publisher.ID())
+		_, err := syncer.GetHead(ctx)
 		if err == nil {
 			// Publisher ready
+			return nil
+		}
+		if strings.Contains(err.Error(), "204") {
+			// Success, but no head CID set yet.
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)

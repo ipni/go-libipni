@@ -2,7 +2,6 @@ package dagsync_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -341,84 +339,6 @@ func TestAllowPeerAllows(t *testing.T) {
 	case <-time.After(updateTimeout):
 		t.Fatal("timed out waiting for SyncFinished")
 	case <-watcher:
-	}
-}
-
-func TestPublisherRejectsPeer(t *testing.T) {
-	t.Parallel()
-	// Init dagsync publisher and subscriber
-	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-
-	srcHost := test.MkTestHost(t)
-	dstHost := test.MkTestHost(t)
-
-	topics := test.WaitForMeshWithMessage(t, testTopic, srcHost, dstHost)
-
-	srcLnkS := test.MkLinkSystem(srcStore)
-
-	blockID := dstHost.ID()
-	var blockMutex sync.Mutex
-
-	allowPeer := func(peerID peer.ID) bool {
-		blockMutex.Lock()
-		defer blockMutex.Unlock()
-		return peerID != blockID
-	}
-
-	p2pSender, err := p2psender.New(nil, "", p2psender.WithTopic(topics[0]))
-	require.NoError(t, err)
-
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic, dtsync.WithAllowPeer(allowPeer))
-	require.NoError(t, err)
-	defer pub.Close()
-
-	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
-	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
-	dstLnkS := test.MkLinkSystem(dstStore)
-
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
-	require.NoError(t, err)
-	defer sub.Close()
-
-	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
-	require.NoError(t, err)
-
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
-
-	watcher, cncl := sub.OnSyncFinished()
-	defer cncl()
-
-	c := mkLnk(t, srcStore)
-
-	// Update root with item
-	pub.SetRoot(c)
-	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
-	require.NoError(t, err)
-
-	select {
-	case <-time.After(updateTimeout):
-		t.Log("publisher blocked")
-	case <-watcher:
-		t.Fatal("sync should not have happened with blocked ID")
-	}
-
-	blockMutex.Lock()
-	blockID = peer.ID("")
-	blockMutex.Unlock()
-
-	c = mkLnk(t, srcStore)
-
-	// Update root with item
-	pub.SetRoot(c)
-	err = announce.Send(context.Background(), c, pub.Addrs(), p2pSender)
-	require.NoError(t, err)
-
-	select {
-	case <-time.After(updateTimeout):
-		t.Fatal("timed out waiting for SyncFinished")
-	case <-watcher:
-		t.Log("synced with allowed ID")
 	}
 }
 

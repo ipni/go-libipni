@@ -12,7 +12,6 @@ import (
 	"github.com/gammazero/channelqueue"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/namespace"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
@@ -20,7 +19,6 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"github.com/ipni/go-libipni/announce"
-	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -80,7 +78,6 @@ type Subscriber struct {
 	watchDone chan struct{}
 	asyncWG   sync.WaitGroup
 
-	dtSync   *dtsync.Sync
 	ipniSync *ipnisync.Sync
 
 	// A separate peerstore is used to store HTTP addresses. This is necessary
@@ -101,8 +98,7 @@ type Subscriber struct {
 	adsDepthLimit selector.RecursionLimit
 	segDepthLimit int64
 
-	receiver  *announce.Receiver
-	topicName string
+	receiver *announce.Receiver
 
 	// Track explicit Sync calls in progress and allow them to complete before
 	// closing subscriber.
@@ -186,12 +182,6 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 
 	scopedBlockHookMutex, scopedBlockHook, blockHook := wrapBlockHook()
 
-	dtds := namespace.Wrap(ds, datastore.NewKey("data-transfer-v2"))
-	dtSync, err := dtsync.NewSync(host, dtds, lsys, blockHook, opts.gsMaxInRequests, opts.gsMaxOutRequests)
-	if err != nil {
-		return nil, err
-	}
-
 	httpPeerstore, err := pstoremem.NewPeerstore()
 	if err != nil {
 		return nil, err
@@ -217,7 +207,6 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		addEventChan: make(chan chan<- SyncFinished),
 		rmEventChan:  make(chan chan<- SyncFinished),
 
-		dtSync:   dtSync,
 		ipniSync: ipniSync,
 
 		httpPeerstore: httpPeerstore,
@@ -232,7 +221,6 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 
 		adsDepthLimit: recursionLimit(opts.adsDepthLimit),
 		segDepthLimit: opts.segDepthLimit,
-		topicName:     topic,
 
 		selectorOne: ssb.ExploreRecursive(selector.RecursionLimitDepth(0), all).Node(),
 		selectorAll: ssb.ExploreRecursive(selector.RecursionLimitNone(), all).Node(),
@@ -320,19 +308,18 @@ func (s *Subscriber) doClose() error {
 	// Wait for explicit Syncs calls to finish.
 	s.expSyncWG.Wait()
 
+	var err error
 	if s.receiver != nil {
 		// Close receiver and wait for watch to exit.
-		err := s.receiver.Close()
+		err = s.receiver.Close()
 		if err != nil {
-			log.Errorw("error closing receiver", "err", err)
+			err = fmt.Errorf("error closing receiver: %w", err)
 		}
 		<-s.watchDone
 	}
 
 	// Wait for any syncs to complete.
 	s.asyncWG.Wait()
-
-	err := s.dtSync.Close()
 
 	// Stop the distribution goroutine.
 	close(s.inEvents)
@@ -771,7 +758,7 @@ func delNotPresent(peerStore peerstore.Peerstore, peerID peer.ID, addrs []multia
 
 func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, func(), error) {
 	// Check for an HTTP address in peerAddrs, or if not given, in the http
-	// peerstore. This gives a preference to use ipnisync over dtsync.
+	// peerstore.
 	var httpAddrs []multiaddr.Multiaddr
 	if len(peerInfo.Addrs) == 0 {
 		httpAddrs = s.httpPeerstore.Addrs(peerInfo.ID)
@@ -824,9 +811,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 	syncer, err := s.ipniSync.NewSyncer(peerInfo)
 	if err != nil {
 		if errors.Is(err, ipnisync.ErrNoHTTPServer) {
-			log.Warnw("Using data-transfer sync", "peer", peerInfo.ID, "reason", err.Error())
-			// Publisher is libp2p without HTTP, so use the dtSync.
-			return s.dtSync.NewSyncer(peerInfo.ID, s.topicName), update, nil
+			err = fmt.Errorf("data-transfer sync is not supported: %w", err)
 		}
 		return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
 	}
