@@ -46,9 +46,6 @@ type config struct {
 	entriesDepthLimit int64
 	segDepthLimit     int64
 
-	gsMaxInRequests  uint64
-	gsMaxOutRequests uint64
-
 	strictAdsSelSeq bool
 
 	httpTimeout      time.Duration
@@ -63,13 +60,11 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		addrTTL:          defaultAddrTTL,
-		httpTimeout:      defaultHttpTimeout,
-		idleHandlerTTL:   defaultIdleHandlerTTL,
-		segDepthLimit:    defaultSegDepthLimit,
-		gsMaxInRequests:  defaultGsMaxInRequests,
-		gsMaxOutRequests: defaultGsMaxOutRequests,
-		strictAdsSelSeq:  true,
+		addrTTL:         defaultAddrTTL,
+		httpTimeout:     defaultHttpTimeout,
+		idleHandlerTTL:  defaultIdleHandlerTTL,
+		segDepthLimit:   defaultSegDepthLimit,
+		strictAdsSelSeq: true,
 	}
 
 	for i, opt := range opts {
