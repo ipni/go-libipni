@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipni/go-libipni/announce"
+	"github.com/ipni/go-libipni/ingest/schema"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -308,5 +310,37 @@ func ScopedSegmentDepthLimit(depth int64) SyncOption {
 func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 	return func(sc *syncCfg) {
 		sc.blockHook = hook
+	}
+}
+
+// MakeGeneralBlockHook creates a block hook function that loads an
+// advertisement and sets the next sync action.
+//
+// Use this when segmented sync is enabled and no other blockhook is not
+// defined.
+//
+// The supplied loadAd function loads an advertisement, generally stored by the
+// subscriber's LinkSystem.
+func MakeGeneralBlockHook(loadAd func(c cid.Cid) (schema.Advertisement, error)) BlockHookFunc {
+	return func(_ peer.ID, adCid cid.Cid, actions SegmentSyncActions) {
+		// The only kind of block we should get by loading CIDs here should be
+		// Advertisement.
+		//
+		// Because:
+		//  - the default subscription selector only selects advertisements.
+		//  - entries are synced with an explicit selector separate from
+		//    advertisement syncs and should use dagsync.ScopedBlockHook to
+		//    override this hook and decode chunks instead.
+		//
+		// Therefore, we only attempt to load advertisements here and signal
+		// failure if the load fails.
+		ad, err := loadAd(adCid)
+		if err != nil {
+			actions.FailSync(err)
+		} else if ad.PreviousID != nil {
+			actions.SetNextSyncCid(ad.PreviousID.(cidlink.Link).Cid)
+		} else {
+			actions.SetNextSyncCid(cid.Undef)
+		}
 	}
 }
