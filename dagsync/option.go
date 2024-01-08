@@ -316,8 +316,7 @@ func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 // MakeGeneralBlockHook creates a block hook function that loads an
 // advertisement and sets the next sync action.
 //
-// Use this when segmented sync is enabled and no other blockhook is not
-// defined.
+// Use this when segmented sync is enabled and no other blockhook is defined.
 //
 // The supplied loadAd function loads an advertisement, generally stored by the
 // subscriber's LinkSystem.
@@ -327,8 +326,8 @@ func MakeGeneralBlockHook(loadAd func(c cid.Cid) (schema.Advertisement, error)) 
 		// Advertisement.
 		//
 		// Because:
-		//  - the default subscription selector only selects advertisements.
-		//  - entries are synced with an explicit selector separate from
+		//  - The default subscription selector only selects advertisements.
+		//  - Entries are synced with an explicit selector separate from
 		//    advertisement syncs and should use dagsync.ScopedBlockHook to
 		//    override this hook and decode chunks instead.
 		//
