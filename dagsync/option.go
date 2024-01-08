@@ -39,8 +39,9 @@ type config struct {
 	lastKnownSync  LastKnownSyncFunc
 	maxAsyncSyncs  int
 
-	hasRcvr  bool
-	rcvrOpts []announce.Option
+	hasRcvr   bool
+	rcvrOpts  []announce.Option
+	rcvrTopic string
 
 	adsDepthLimit     int64
 	entriesDepthLimit int64
@@ -179,10 +180,11 @@ func SegmentDepthLimit(depth int64) Option {
 }
 
 // RecvAnnounce enables an announcement message receiver.
-func RecvAnnounce(opts ...announce.Option) Option {
+func RecvAnnounce(topic string, opts ...announce.Option) Option {
 	return func(c *config) error {
 		c.hasRcvr = true
 		c.rcvrOpts = opts
+		c.rcvrTopic = topic
 		return nil
 	}
 }

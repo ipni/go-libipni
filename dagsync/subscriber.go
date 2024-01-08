@@ -11,7 +11,6 @@ import (
 
 	"github.com/gammazero/channelqueue"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
@@ -174,7 +173,7 @@ func wrapBlockHook() (*sync.RWMutex, map[peer.ID]func(peer.ID, cid.Cid), func(pe
 
 // NewSubscriber creates a new Subscriber that processes pubsub messages and
 // syncs dags advertised using the specified selector.
-func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, topic string, options ...Option) (*Subscriber, error) {
+func NewSubscriber(host host.Host, lsys ipld.LinkSystem, options ...Option) (*Subscriber, error) {
 	opts, err := getOpts(options)
 	if err != nil {
 		return nil, err
@@ -242,7 +241,7 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		if opts.maxAsyncSyncs > 0 {
 			s.syncSem = make(chan struct{}, opts.maxAsyncSyncs)
 		}
-		s.receiver, err = announce.NewReceiver(host, topic, opts.rcvrOpts...)
+		s.receiver, err = announce.NewReceiver(host, opts.rcvrTopic, opts.rcvrOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create announcement receiver: %w", err)
 		}

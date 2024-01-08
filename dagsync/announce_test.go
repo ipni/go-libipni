@@ -33,7 +33,7 @@ func TestAnnounceReplace(t *testing.T) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS, dagsync.RecvAnnounce(testTopic),
 		dagsync.BlockHook(blockHook))
 	require.NoError(t, err)
 	defer sub.Close()
@@ -170,7 +170,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	subh := test.MkTestHost(t)
 	subds := dssync.MutexWrap(datastore.NewMapDatastore())
 	subls := test.MkLinkSystem(subds)
-	sub, err := dagsync.NewSubscriber(subh, subds, subls, testTopic, dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(subh, subls, dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -224,13 +224,13 @@ func TestAnnounceRepublish(t *testing.T) {
 
 	topics := test.WaitForMeshWithMessage(t, testTopic, dstHost, dstHost2)
 
-	sub2, err := dagsync.NewSubscriber(dstHost2, dstStore2, dstLnkS2, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])), dagsync.StrictAdsSelector(false))
+	sub2, err := dagsync.NewSubscriber(dstHost2, dstLnkS2,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1])), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub2.Close()
 
-	sub1, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[0]), announce.WithResend(true)),
+	sub1, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[0]), announce.WithResend(true)),
 		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub1.Close()
@@ -377,8 +377,8 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 
 	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
