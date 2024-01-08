@@ -317,7 +317,7 @@ retry:
 	case http.StatusOK:
 		return cb(resp.Body)
 	case http.StatusNotFound:
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if s.plainHTTP && !s.noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
@@ -331,7 +331,7 @@ retry:
 		// being checked already.
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 	case http.StatusForbidden:
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		if s.plainHTTP && !s.noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
@@ -341,7 +341,7 @@ retry:
 		}
 		fallthrough
 	default:
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("non success http fetch response at %s: %d", fetchURL.String(), resp.StatusCode)
 	}
 }

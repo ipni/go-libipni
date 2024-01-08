@@ -325,7 +325,6 @@ func TestLatestSyncFailure(t *testing.T) {
 	cncl()
 	sub.Close()
 
-	dstStore = dssync.MutexWrap(datastore.NewMapDatastore())
 	sub2, err := dagsync.NewSubscriber(dstHost, dstLnkS,
 		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
