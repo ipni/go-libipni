@@ -1,12 +1,21 @@
 package schema
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 
+	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipld/go-ipld-prime/multicodec"
 	"github.com/ipld/go-ipld-prime/node/bindnode"
 	"github.com/multiformats/go-multihash"
+
+	// Import so these codecs get registered.
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
+	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 )
 
 type (
@@ -82,6 +91,13 @@ func UnwrapAdvertisement(node ipld.Node) (*Advertisement, error) {
 	return ad, nil
 }
 
+func (a Advertisement) PreviousCid() cid.Cid {
+	if a.PreviousID == nil {
+		return cid.Undef
+	}
+	return a.PreviousID.(cidlink.Link).Cid
+}
+
 func (a Advertisement) Validate() error {
 	if len(a.ContextID) > MaxContextIDLen {
 		return errors.New("context id too long")
@@ -92,6 +108,43 @@ func (a Advertisement) Validate() error {
 	}
 
 	return nil
+}
+
+func BytesToAdvertisement(adCid cid.Cid, data []byte) (Advertisement, error) {
+	adNode, err := decodeIPLDNode(adCid.Prefix().Codec, bytes.NewBuffer(data), AdvertisementPrototype)
+	if err != nil {
+		return Advertisement{}, err
+	}
+	ad, err := UnwrapAdvertisement(adNode)
+	if err != nil {
+		return Advertisement{}, err
+	}
+	return *ad, nil
+}
+
+func BytesToEntry(entCid cid.Cid, data []byte) (EntryChunk, error) {
+	entNode, err := decodeIPLDNode(entCid.Prefix().Codec, bytes.NewBuffer(data), EntryChunkPrototype)
+	if err != nil {
+		return EntryChunk{}, err
+	}
+	ent, err := UnwrapEntryChunk(entNode)
+	if err != nil {
+		return EntryChunk{}, err
+	}
+	return *ent, nil
+}
+
+// decodeIPLDNode decodes an ipld.Node from bytes read from an io.Reader.
+func decodeIPLDNode(codec uint64, r io.Reader, prototype ipld.NodePrototype) (ipld.Node, error) {
+	nb := prototype.NewBuilder()
+	decoder, err := multicodec.LookupDecoder(codec)
+	if err != nil {
+		return nil, err
+	}
+	if err = decoder(nb, r); err != nil {
+		return nil, err
+	}
+	return nb.Build(), nil
 }
 
 // UnwrapEntryChunk unwraps the given node as an entry chunk.
