@@ -2,6 +2,7 @@ package dtsync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -110,9 +111,17 @@ func (s *Syncer) has(ctx context.Context, nextCid cid.Cid, sel ipld.Node) ([]cid
 	if err != nil {
 		return nil, false
 	}
-	if err := progress.WalkMatching(rootNode, csel, func(p traversal.Progress, n datamodel.Node) error {
+	err = progress.WalkMatching(rootNode, csel, func(p traversal.Progress, n datamodel.Node) error {
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
+		// Advertisement or entries block, not at start of chain, was not
+		// found. Consider this to mean the chain was truncated at this point,
+		// and return what was found so far.
+		if errors.Is(err, ipld.ErrNotExists{}) {
+			log.Warnw("stopping ipld traversal due to content not found")
+			return traversed, true
+		}
 		return nil, false
 	}
 	return traversed, true

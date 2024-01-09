@@ -277,6 +277,13 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 
 	err = progress.WalkMatching(rootNode, sel, func(_ traversal.Progress, _ datamodel.Node) error { return nil })
 	if err != nil {
+		// Advertisement or entries block, not at start of chain, was not
+		// found. Consider this to mean the chain was truncated at this point,
+		// and return what was found so far.
+		if errors.Is(err, ipld.ErrNotExists{}) {
+			log.Warnw("stopping ipld traversal due to content not found")
+			return traversalOrder, nil
+		}
 		return nil, err
 	}
 	return traversalOrder, nil
