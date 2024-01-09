@@ -6,9 +6,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
-	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipni/go-libipni/announce"
-	"github.com/ipni/go-libipni/ingest/schema"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -318,9 +316,9 @@ func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 //
 // Use this when segmented sync is enabled and no other blockhook is defined.
 //
-// The supplied loadAd function loads an advertisement, generally stored by the
-// subscriber's LinkSystem.
-func MakeGeneralBlockHook(loadAd func(c cid.Cid) (schema.Advertisement, error)) BlockHookFunc {
+// The supplied prevAdCid function takes the CID of the current advertisement
+// and returns the CID of the previous advertisement in the chain.
+func MakeGeneralBlockHook(prevAdCid func(adCid cid.Cid) (cid.Cid, error)) BlockHookFunc {
 	return func(_ peer.ID, adCid cid.Cid, actions SegmentSyncActions) {
 		// The only kind of block we should get by loading CIDs here should be
 		// Advertisement.
@@ -333,13 +331,11 @@ func MakeGeneralBlockHook(loadAd func(c cid.Cid) (schema.Advertisement, error)) 
 		//
 		// Therefore, we only attempt to load advertisements here and signal
 		// failure if the load fails.
-		ad, err := loadAd(adCid)
+		prevCid, err := prevAdCid(adCid)
 		if err != nil {
 			actions.FailSync(err)
-		} else if ad.PreviousID != nil {
-			actions.SetNextSyncCid(ad.PreviousID.(cidlink.Link).Cid)
 		} else {
-			actions.SetNextSyncCid(cid.Undef)
+			actions.SetNextSyncCid(prevCid)
 		}
 	}
 }
