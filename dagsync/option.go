@@ -310,3 +310,35 @@ func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 		sc.blockHook = hook
 	}
 }
+
+// MakeGeneralBlockHook creates a block hook function that sets the next sync
+// action based on whether the specified advertisement has a previous
+// advertisement in the chain..
+//
+// Use this when segmented sync is enabled and no other blockhook is defined.
+//
+// The supplied prevAdCid function takes the CID of the current advertisement
+// and returns the CID of the previous advertisement in the chain. This would
+// typically be done my loading the specified advertisement from the
+// ipld.LinkSystem and getting the previous CID.
+func MakeGeneralBlockHook(prevAdCid func(adCid cid.Cid) (cid.Cid, error)) BlockHookFunc {
+	return func(_ peer.ID, adCid cid.Cid, actions SegmentSyncActions) {
+		// The only kind of block we should get by loading CIDs here should be
+		// Advertisement.
+		//
+		// Because:
+		//  - The default subscription selector only selects advertisements.
+		//  - Entries are synced with an explicit selector separate from
+		//    advertisement syncs and should use dagsync.ScopedBlockHook to
+		//    override this hook and decode chunks instead.
+		//
+		// Therefore, we only attempt to load advertisements here and signal
+		// failure if the load fails.
+		prevCid, err := prevAdCid(adCid)
+		if err != nil {
+			actions.FailSync(err)
+		} else {
+			actions.SetNextSyncCid(prevCid)
+		}
+	}
+}
