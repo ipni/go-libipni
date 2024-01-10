@@ -91,6 +91,8 @@ func UnwrapAdvertisement(node ipld.Node) (*Advertisement, error) {
 	return ad, nil
 }
 
+// Return the Advertisement's previous CID, or cid.Undef if there is no
+// previous CID.
 func (a Advertisement) PreviousCid() cid.Cid {
 	if a.PreviousID == nil {
 		return cid.Undef
@@ -110,6 +112,9 @@ func (a Advertisement) Validate() error {
 	return nil
 }
 
+// BytesToAdvertisement deserializes an Advertisement from a buffer. It does
+// not check that the given CID matches the data, as this should have been done
+// when the data was acquired.
 func BytesToAdvertisement(adCid cid.Cid, data []byte) (Advertisement, error) {
 	adNode, err := decodeIPLDNode(adCid.Prefix().Codec, bytes.NewBuffer(data), AdvertisementPrototype)
 	if err != nil {
@@ -122,7 +127,10 @@ func BytesToAdvertisement(adCid cid.Cid, data []byte) (Advertisement, error) {
 	return *ad, nil
 }
 
-func BytesToEntry(entCid cid.Cid, data []byte) (EntryChunk, error) {
+// BytesToEntryChunk deserializes an EntryChunk from a buffer. It does not
+// check that the given CID matches the data, as this should have been done
+// when the data was acquired.
+func BytesToEntryChunk(entCid cid.Cid, data []byte) (EntryChunk, error) {
 	entNode, err := decodeIPLDNode(entCid.Prefix().Codec, bytes.NewBuffer(data), EntryChunkPrototype)
 	if err != nil {
 		return EntryChunk{}, err
