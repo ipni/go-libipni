@@ -311,13 +311,16 @@ func ScopedBlockHook(hook BlockHookFunc) SyncOption {
 	}
 }
 
-// MakeGeneralBlockHook creates a block hook function that loads an
-// advertisement and sets the next sync action.
+// MakeGeneralBlockHook creates a block hook function that sets the next sync
+// action based on whether the specified advertisement has a previous
+// advertisement in the chain..
 //
 // Use this when segmented sync is enabled and no other blockhook is defined.
 //
 // The supplied prevAdCid function takes the CID of the current advertisement
-// and returns the CID of the previous advertisement in the chain.
+// and returns the CID of the previous advertisement in the chain. This would
+// typically be done my loading the specified advertisement from the
+// ipld.LinkSystem and getting the previous CID.
 func MakeGeneralBlockHook(prevAdCid func(adCid cid.Cid) (cid.Cid, error)) BlockHookFunc {
 	return func(_ peer.ID, adCid cid.Cid, actions SegmentSyncActions) {
 		// The only kind of block we should get by loading CIDs here should be
