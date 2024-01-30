@@ -129,18 +129,6 @@ func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (
 	return pub, nil
 }
 
-// NewPublisherWithoutServer creates a new http publisher for an existing
-// network address. When providing an existing network address, running the
-// HTTP server is the caller's responsibility. ServeHTTP on the returned
-// Publisher can be used to handle requests. handlerPath is the path to handle
-// requests on before the /ipni/v1/ad/ portion of the path. See
-// WithHandlerPath.
-//
-// DEPRECATED: use NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
-func NewPublisherWithoutServer(address, handlerPath string, lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
-	return NewPublisher(lsys, privKey, WithHTTPListenAddrs(address), WithHandlerPath(handlerPath), WithStartServer(false))
-}
-
 // Addrs returns the slice of multiaddr addresses that the Publisher is
 // listening on.
 //
