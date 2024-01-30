@@ -174,6 +174,9 @@ func (p *Publisher) SetRoot(c cid.Cid) {
 
 // Close closes the Publisher.
 func (p *Publisher) Close() error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	if p.pubHost != nil {
 		err := p.pubHost.Close()
 		p.pubHost = nil
