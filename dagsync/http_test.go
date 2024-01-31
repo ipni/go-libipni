@@ -51,7 +51,7 @@ func setupPublisherSubscriber(t *testing.T, subscriberOptions []dagsync.Option) 
 	dstHost := test.MkTestHost(t)
 
 	subscriberOptions = append(subscriberOptions, dagsync.StrictAdsSelector(false))
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLinkSys, testTopic, subscriberOptions...)
+	sub, err := dagsync.NewSubscriber(dstHost, dstLinkSys, subscriberOptions...)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		sub.Close()

@@ -21,7 +21,6 @@ import (
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p"
@@ -65,7 +64,7 @@ func TestScopedBlockHook(t *testing.T) {
 			subLsys := test.MkLinkSystem(subDS)
 
 			var calledGeneralBlockHookTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic,
+			sub, err := dagsync.NewSubscriber(subHost, subLsys,
 				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 					atomic.AddInt64(&calledGeneralBlockHookTimes, 1)
 				}),
@@ -129,7 +128,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
 
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic, dagsync.StrictAdsSelector(false))
+			sub, err := dagsync.NewSubscriber(subHost, subLsys, dagsync.StrictAdsSelector(false))
 			require.NoError(t, err)
 
 			onFinished, cancel := sub.OnSyncFinished()
@@ -192,7 +191,7 @@ func TestConcurrentSync(t *testing.T) {
 			subLsys := test.MkLinkSystem(subDS)
 
 			var calledTimes int64
-			sub, err := dagsync.NewSubscriber(subHost, subDS, subLsys, testTopic,
+			sub, err := dagsync.NewSubscriber(subHost, subLsys,
 				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 					atomic.AddInt64(&calledTimes, 1)
 				}),
@@ -419,8 +418,8 @@ func TestRoundTrip(t *testing.T) {
 		t.Log("block hook got", c, "from", p)
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[2])),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[2])),
 		dagsync.BlockHook(blockHook),
 		dagsync.StrictAdsSelector(false),
 	)
@@ -624,8 +623,8 @@ func TestMaxAsyncSyncs(t *testing.T) {
 		bhMutex.Unlock()
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic),
 		dagsync.BlockHook(blockHook),
 		dagsync.StrictAdsSelector(false),
 		// If this value is > 1, then test must fail.
@@ -718,8 +717,8 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	dstLnkS, blocked = test.MkBlockedLinkSystem(dstStore)
 	blocksSeenByHook = make(map[cid.Cid]struct{})
 
-	sub, err = dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(),
+	sub, err = dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic),
 		dagsync.BlockHook(blockHook),
 		dagsync.StrictAdsSelector(false),
 		dagsync.MaxAsyncConcurrency(2),
@@ -779,7 +778,7 @@ func TestCloseSubscriber(t *testing.T) {
 
 	lsys := test.MkLinkSystem(st)
 
-	sub, err := dagsync.NewSubscriber(sh, st, lsys, testTopic, dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(sh, lsys, dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -850,7 +849,6 @@ func TestIdleHandlerCleaner(t *testing.T) {
 
 type dagsyncPubSubBuilder struct {
 	IsHttp      bool
-	IsDtSync    bool
 	P2PAnnounce bool
 }
 
@@ -868,7 +866,6 @@ func newHostSystem(t *testing.T) hostSystem {
 	return hostSystem{
 		privKey: privKey,
 		host:    test.MkTestHost(t, libp2p.Identity(privKey)),
-		ds:      ds,
 		lsys:    test.MkLinkSystem(ds),
 	}
 }
@@ -886,17 +883,13 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 	if b.IsHttp {
 		pub, err = ipnisync.NewPublisher(pubSys.lsys, pubSys.privKey, ipnisync.WithHeadTopic(topicName), ipnisync.WithHTTPListenAddrs("127.0.0.1:0"))
 		require.NoError(t, err)
-	} else if b.IsDtSync {
-		pub, err = dtsync.NewPublisher(pubSys.host, pubSys.ds, pubSys.lsys, topicName)
-		require.NoError(t, err)
-		require.NoError(t, test.WaitForP2PPublisher(pub, subSys.host, topicName))
 	} else {
 		pub, err = ipnisync.NewPublisher(pubSys.lsys, pubSys.privKey, ipnisync.WithStreamHost(pubSys.host), ipnisync.WithHeadTopic(topicName))
 		require.NoError(t, err)
 	}
 
 	subOpts = append(subOpts, dagsync.StrictAdsSelector(false))
-	sub, err := dagsync.NewSubscriber(subSys.host, subSys.ds, subSys.lsys, topicName, subOpts...)
+	sub, err := dagsync.NewSubscriber(subSys.host, subSys.lsys, subOpts...)
 	require.NoError(t, err)
 
 	return pub, sub, senders

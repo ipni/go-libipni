@@ -68,16 +68,14 @@ func ExampleSubscriber() {
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkSys, "/indexer/ingest/testnet")
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkSys, dagsync.RecvAnnounce("/indexer/ingest/testnet"))
 	if err != nil {
 		panic(err)
 	}
 	defer sub.Close()
 
-	// Connections must be made after Subscriber is created, because the
-	// gossip pubsub must be created before connections are made.  Otherwise,
-	// the connecting hosts will not see the destination host has pubsub and
-	// messages will not get published.
+	// Connections are made after Subscriber is created, so that the connecting
+	// host sees that the destination host has pubsub.
 	dstPeerInfo := dstHost.Peerstore().PeerInfo(dstHost.ID())
 	if err = srcHost.Connect(context.Background(), dstPeerInfo); err != nil {
 		panic(err)

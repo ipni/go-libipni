@@ -141,7 +141,7 @@ func TestPublisherWithLibp2pHTTP(t *testing.T) {
 
 			req.Equal(link.(cidlink.Link).Cid, headCid)
 
-			clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+			err = clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
 			require.NoError(t, err)
 
 			// Assert that data is loadable from the link system.
@@ -230,7 +230,7 @@ func TestExistingServerWithPublisher(t *testing.T) {
 	req.NoError(err)
 	req.Equal(link.(cidlink.Link).Cid, headCid)
 
-	clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+	err = clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
 	require.NoError(t, err)
 
 	// Assert that data is loadable from the link system.
@@ -437,7 +437,7 @@ func TestHandlerPath(t *testing.T) {
 			req.NoError(err)
 			req.Equal(link.(cidlink.Link).Cid, headCid)
 
-			clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
+			err = clientSyncer.Sync(ctx, headCid, selectorparse.CommonSelector_MatchPoint)
 			require.NoError(t, err)
 
 			// Assert that data is loadable from the link system.

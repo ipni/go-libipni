@@ -21,9 +21,6 @@ const (
 	defaultIdleHandlerTTL = time.Hour
 	// defaultSegDepthLimit disables (-1) segmented sync by default.
 	defaultSegDepthLimit = -1
-	// Maximum number of in-progress graphsync requests.
-	defaultGsMaxInRequests  = 1024
-	defaultGsMaxOutRequests = 1024
 	// defaultHttpTimeout is time limit for requests made by the HTTP client.
 	defaultHttpTimeout = 10 * time.Second
 )
@@ -42,15 +39,13 @@ type config struct {
 	lastKnownSync  LastKnownSyncFunc
 	maxAsyncSyncs  int
 
-	hasRcvr  bool
-	rcvrOpts []announce.Option
+	hasRcvr   bool
+	rcvrOpts  []announce.Option
+	rcvrTopic string
 
 	adsDepthLimit     int64
 	entriesDepthLimit int64
 	segDepthLimit     int64
-
-	gsMaxInRequests  uint64
-	gsMaxOutRequests uint64
 
 	strictAdsSelSeq bool
 
@@ -66,13 +61,11 @@ type Option func(*config) error
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) (config, error) {
 	cfg := config{
-		addrTTL:          defaultAddrTTL,
-		httpTimeout:      defaultHttpTimeout,
-		idleHandlerTTL:   defaultIdleHandlerTTL,
-		segDepthLimit:    defaultSegDepthLimit,
-		gsMaxInRequests:  defaultGsMaxInRequests,
-		gsMaxOutRequests: defaultGsMaxOutRequests,
-		strictAdsSelSeq:  true,
+		addrTTL:         defaultAddrTTL,
+		httpTimeout:     defaultHttpTimeout,
+		idleHandlerTTL:  defaultIdleHandlerTTL,
+		segDepthLimit:   defaultSegDepthLimit,
+		strictAdsSelSeq: true,
 	}
 
 	for i, opt := range opts {
@@ -187,10 +180,11 @@ func SegmentDepthLimit(depth int64) Option {
 }
 
 // RecvAnnounce enables an announcement message receiver.
-func RecvAnnounce(opts ...announce.Option) Option {
+func RecvAnnounce(topic string, opts ...announce.Option) Option {
 	return func(c *config) error {
 		c.hasRcvr = true
 		c.rcvrOpts = opts
+		c.rcvrTopic = topic
 		return nil
 	}
 }
@@ -206,16 +200,6 @@ func MaxAsyncConcurrency(n int) Option {
 			}
 			c.maxAsyncSyncs = n
 		}
-		return nil
-	}
-}
-
-// WithMaxGraphsyncRequests sets the maximum number of in-progress inbound and
-// outbound graphsync requests.
-func WithMaxGraphsyncRequests(maxIn, maxOut uint64) Option {
-	return func(c *config) error {
-		c.gsMaxInRequests = maxIn
-		c.gsMaxOutRequests = maxOut
 		return nil
 	}
 }

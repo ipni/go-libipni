@@ -14,7 +14,6 @@ import (
 	"github.com/ipni/go-libipni/announce"
 	"github.com/ipni/go-libipni/announce/p2psender"
 	"github.com/ipni/go-libipni/dagsync"
-	"github.com/ipni/go-libipni/dagsync/dtsync"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -42,8 +41,8 @@ func TestLatestSyncSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1])),
 		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
@@ -87,9 +86,9 @@ func TestSyncFn(t *testing.T) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
 		dagsync.BlockHook(blockHook),
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1])),
 		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
@@ -198,8 +197,8 @@ func TestPartialSync(t *testing.T) {
 	defer pub.Close()
 	test.MkChain(srcLnkS, true)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1])),
 		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
@@ -252,8 +251,8 @@ func TestStepByStepSync(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(announce.WithTopic(topics[1])),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce("", announce.WithTopic(topics[1])),
 		dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
@@ -292,8 +291,8 @@ func TestLatestSyncFailure(t *testing.T) {
 	t.Log("source host:", srcHost.ID())
 	t.Log("targer host:", dstHost.ID())
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -326,9 +325,8 @@ func TestLatestSyncFailure(t *testing.T) {
 	cncl()
 	sub.Close()
 
-	dstStore = dssync.MutexWrap(datastore.NewMapDatastore())
-	sub2, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	sub2, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub2.Close()
 
@@ -364,66 +362,28 @@ func TestLatestSyncFailure(t *testing.T) {
 	}
 }
 
-func TestSyncOnAnnounceDataTransfer(t *testing.T) {
-	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	dstHost := test.MkTestHost(t)
-	dstLnkS := test.MkLinkSystem(dstStore)
-
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
-	require.NoError(t, err)
-	defer sub.Close()
-
-	watcher, cncl := sub.OnSyncFinished()
-	defer cncl()
-
-	srcHost := test.MkTestHost(t)
-	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	srcLnkS := test.MkLinkSystem(srcStore)
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
-	require.NoError(t, err)
-	defer pub.Close()
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
-
-	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
-	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
-
-	// Store the whole chain in source node
-	chainLnks := test.MkChain(srcLnkS, true)
-
-	t.Log("Testing announce-sync with dtsync publisher at:", pub.Addrs())
-	pubInfo := peer.AddrInfo{
-		ID:    pub.ID(),
-		Addrs: pub.Addrs(),
-	}
-	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[2])
-	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[1])
-	announceTest(t, pub, sub, dstStore, watcher, pubInfo, chainLnks[0])
-}
-
 func TestUpdatePeerstoreAddr(t *testing.T) {
 	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
-	dstHost := test.MkTestHost(t)
 	dstLnkS := test.MkLinkSystem(dstStore)
-
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	dstHost := test.MkTestHost(t)
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
 	watcher, cncl := sub.OnSyncFinished()
 	defer cncl()
 
-	srcHost := test.MkTestHost(t)
+	srcHost, srcPrivKey := test.MkTestHostPK(t)
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
 	srcLnkS := test.MkLinkSystem(srcStore)
-	pub, err := dtsync.NewPublisher(srcHost, srcStore, srcLnkS, testTopic)
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost), ipnisync.WithHeadTopic(testTopic))
 	require.NoError(t, err)
 	defer pub.Close()
-	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
 
 	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+	require.NoError(t, test.WaitForP2PPublisher(pub, dstHost, testTopic))
 
 	// Store the whole chain in source node
 	chainLnks := test.MkChain(srcLnkS, true)
@@ -449,8 +409,8 @@ func TestSyncOnAnnounceIPNI(t *testing.T) {
 	dstHost := test.MkTestHost(t)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -485,8 +445,8 @@ func TestSyncOnAnnounceHTTP(t *testing.T) {
 	dstHost := test.MkTestHost(t)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
-		dagsync.RecvAnnounce(), dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.RecvAnnounce(testTopic), dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -528,7 +488,7 @@ func TestCancelDeadlock(t *testing.T) {
 	require.NoError(t, err)
 	defer pub.Close()
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.StrictAdsSelector(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS, dagsync.StrictAdsSelector(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
