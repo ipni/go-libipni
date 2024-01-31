@@ -8,7 +8,7 @@ Typically an application will be either a provider or a subscriber, but may be b
 
 ### Publisher
 
-Create a dagsync publisher. Update its root to cause it to publish.
+Create a dagsync publisher. Update its root to publish a new advertisement. Send announcement messages to inform indexers a new advertisement is available.
 
 ```golang
 publisher, err := ipnisync.NewPublisher(linkSys, privKey,
@@ -19,7 +19,7 @@ if err != nil {
 	panic(err)
 }
 
-// Create an announce senders to send advertisement announcements..
+// Create announcement senders to send advertisement announcements to indexers.
 var senders []announce.Sender
 httpSender, err := httpsender.New(announceURLs, id)
 if err != nil {
@@ -49,7 +49,7 @@ if err != nil {
 
 ### Subscriber
 
-The `Subscriber` handles subscribing to a topic, reading messages from the topic and tracking the state of each publisher.
+The `Subscriber` reads advertisement chains from index-providers. Its announcement receiver receives libp2p pubsub messages from a topic and direct HTTP announcements. The Subscriber reads advertisements is response to announcement messages.
 
 Create a `Subscriber`:
 
