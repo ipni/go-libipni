@@ -378,7 +378,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 	dstLnkS := test.MkLinkSystem(dstStore)
 
 	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
-		dagsync.RecvAnnounce("", announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
+		dagsync.RecvAnnounce(testTopic, announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 
 	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,11 +35,17 @@ const (
 // BlockHookFunc is the signature of a function that is called when a received.
 type BlockHookFunc func(peer.ID, cid.Cid, SegmentSyncActions)
 
-// Subscriber creates a single pubsub subscriber that receives messages from a
-// gossip pubsub topic, and creates a stateful message handler for each message
-// source peer. An optional externally-defined AllowPeerFunc determines whether
-// to allow or deny messages from specific peers.
+// Subscriber reads chains of advertisements from index-providers (publishers)
+// and keeps track of the latest advertisement read from each publisher.
+// Advertisements are read when explicitly requested, or in response to
+// announcement messages if an announcement receiver is configured.
 //
+// An announcement receiver can receive announcements that are broadcast over
+// libp2p gossip pubsub, and sent directly over HTTP. A receiver can be given
+// an optional externally-defined function to determines whether to allow or
+// deny messages from specific peers.
+//
+// A stateful message handler is maintained for each advertisement source peer.
 // Messages from separate peers are handled concurrently, and multiple messages
 // from the same peer are handled serially. If a handler is busy handling a
 // message, and more messages arrive from the same peer, then the last message
@@ -156,8 +161,8 @@ type handler struct {
 	expires time.Time
 }
 
-// wrapBlockHook wraps a possibly nil block hook func to allow a for
-// dispatching to a blockhook func that is scoped within a .Sync call.
+// wrapBlockHook wraps a possibly nil block hook func to allow dispatching to a
+// blockhook func that is scoped within a .Sync call.
 func wrapBlockHook() (*sync.RWMutex, map[peer.ID]func(peer.ID, cid.Cid), func(peer.ID, cid.Cid)) {
 	var scopedBlockHookMutex sync.RWMutex
 	scopedBlockHook := make(map[peer.ID]func(peer.ID, cid.Cid))
@@ -472,8 +477,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 		segdl = opts.segDepthLimit
 	}
 
-	// Check for an existing handler for the specified peer (publisher). If
-	// none, create one if allowed.
+	// Get existing or create new handler for the specified peer (publisher).
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 	sel := ExploreRecursiveWithStopNode(depthLimit, s.adsSelectorSeq, stopLnk)
 
@@ -557,8 +561,7 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 
 	log.Debugw("Start entries sync", "peer", peerInfo.ID, "cid", entCid)
 
-	// Check for an existing handler for the specified peer (publisher). If
-	// none, create one if allowed.
+	// Get existing or create new handler for the specified peer (publisher).
 	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl, cid.Undef)
@@ -622,7 +625,8 @@ func (s *Subscriber) distributeEvents() {
 	}
 }
 
-// getOrCreateHandler creates a handler for a specific peer
+// getOrCreateHandler returns an existing handler or creates a new one for the
+// specified peer (publisher).
 func (s *Subscriber) getOrCreateHandler(peerID peer.ID) *handler {
 	expires := time.Now().Add(s.idleHandlerTTL)
 
@@ -857,12 +861,6 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 			h.subscriber.receiver.UncacheCid(nextCid)
 		}
 		log.Errorw("Cannot process message", "err", err, "peer", h.peerID)
-		if strings.Contains(err.Error(), "response rejected") {
-			// A "response rejected" error happens when the indexer does not
-			// allow a provider. This is not an error with provider, so do not
-			// send an error event.
-			return
-		}
 		h.subscriber.inEvents <- SyncFinished{
 			Cid:    nextCid,
 			PeerID: h.peerID,
