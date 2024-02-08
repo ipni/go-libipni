@@ -136,7 +136,7 @@ type SyncFinished struct {
 	// PeerID identifies the peer this SyncFinished event pertains to. This is
 	// the publisher of the advertisement chain.
 	PeerID peer.ID
-	// Count is the number of CID synced.
+	// Count is the number of CIDs synced.
 	Count int
 	// Err is used to return a failure to complete an asynchronous sync in
 	// response to an announcement.
