@@ -58,6 +58,59 @@ func TestLatestSyncSuccess(t *testing.T) {
 	senderAnnounceTest(t, pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[0])
 }
 
+func TestFirstSyncDepth(t *testing.T) {
+	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	dstStore := dssync.MutexWrap(datastore.NewMapDatastore())
+	srcHost, srcPrivKey := test.MkTestHostPK(t)
+	srcLnkS := test.MkLinkSystem(srcStore)
+
+	dstHost := test.MkTestHost(t)
+	srcHost.Peerstore().AddAddrs(dstHost.ID(), dstHost.Addrs(), time.Hour)
+	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
+	dstLnkS := test.MkLinkSystem(dstStore)
+
+	pub, err := ipnisync.NewPublisher(srcLnkS, srcPrivKey, ipnisync.WithStreamHost(srcHost))
+	require.NoError(t, err)
+	defer pub.Close()
+
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
+		dagsync.FirstSyncDepth(1),
+		dagsync.RecvAnnounce(testTopic),
+		dagsync.StrictAdsSelector(false))
+	require.NoError(t, err)
+	defer sub.Close()
+
+	watcher, cncl := sub.OnSyncFinished()
+	defer cncl()
+
+	// Store the whole chain in source node
+	chainLnks := test.MkChain(srcLnkS, true)
+
+	lnk := chainLnks[0]
+	adCid := lnk.(cidlink.Link).Cid
+
+	pub.SetRoot(adCid)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pubInfo := peer.AddrInfo{
+		ID:    pub.ID(),
+		Addrs: pub.Addrs(),
+	}
+	err = sub.Announce(ctx, adCid, pubInfo)
+	require.NoError(t, err)
+
+	select {
+	case <-ctx.Done():
+		require.FailNow(t, "timed out waiting for sync to propagate")
+	case syncDone, open := <-watcher:
+		require.True(t, open, "event channel closed without receiving event")
+		require.Equal(t, adCid, syncDone.Cid, "sync returned unexpected cid")
+		_, err := dstStore.Get(context.Background(), datastore.NewKey(adCid.String()))
+		require.NoError(t, err, "data not in receiver store")
+		require.Equal(t, 1, syncDone.Count)
+	}
+}
+
 func TestSyncFn(t *testing.T) {
 	t.Parallel()
 	srcStore := dssync.MutexWrap(datastore.NewMapDatastore())
