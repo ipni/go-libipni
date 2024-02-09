@@ -98,8 +98,9 @@ type Subscriber struct {
 	// async syncs.
 	syncSem chan struct{}
 
-	adsDepthLimit selector.RecursionLimit
-	segDepthLimit int64
+	adsDepthLimit  selector.RecursionLimit
+	firstSyncDepth int64
+	segDepthLimit  int64
 
 	receiver  *announce.Receiver
 	topicName string
@@ -230,9 +231,10 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		latestSyncHandler: latestSyncHandler{},
 		lastKnownSync:     opts.lastKnownSync,
 
-		adsDepthLimit: recursionLimit(opts.adsDepthLimit),
-		segDepthLimit: opts.segDepthLimit,
-		topicName:     topic,
+		adsDepthLimit:  recursionLimit(opts.adsDepthLimit),
+		firstSyncDepth: opts.firstSyncDepth,
+		segDepthLimit:  opts.segDepthLimit,
+		topicName:      topic,
 
 		selectorOne: ssb.ExploreRecursive(selector.RecursionLimitDepth(0), all).Node(),
 		selectorAll: ssb.ExploreRecursive(selector.RecursionLimitNone(), all).Node(),
@@ -472,6 +474,8 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 			log.Infow("cid to sync to is the stop node. Nothing to do")
 			return nextCid, nil
 		}
+	} else if s.firstSyncDepth != 0 && opts.depthLimit == 0 {
+		depthLimit = recursionLimit(s.firstSyncDepth)
 	}
 
 	log = log.With("cid", nextCid)
@@ -854,6 +858,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 		return
 	}
 
+	adsDepthLimit := h.subscriber.adsDepthLimit
 	nextCid := amsg.Cid
 	latestSyncLink := h.subscriber.GetLatestSync(h.peerID)
 	var stopAtCid cid.Cid
@@ -863,9 +868,12 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 			log.Infow("CID to sync to is the stop node. Nothing to do.", "peer", h.peerID)
 			return
 		}
+	} else if h.subscriber.firstSyncDepth != 0 {
+		// If nothing synced yet, use first sync depth if configured.
+		adsDepthLimit = recursionLimit(h.subscriber.firstSyncDepth)
 	}
 
-	sel := ExploreRecursiveWithStopNode(h.subscriber.adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
+	sel := ExploreRecursiveWithStopNode(adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
 	syncCount, err := h.handle(ctx, nextCid, sel, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit, stopAtCid)
 	if err != nil {
 		// Failed to handle the sync, so allow another announce for the same CID.

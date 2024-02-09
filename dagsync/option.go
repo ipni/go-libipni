@@ -46,6 +46,7 @@ type config struct {
 	rcvrOpts []announce.Option
 
 	adsDepthLimit     int64
+	firstSyncDepth    int64
 	entriesDepthLimit int64
 	segDepthLimit     int64
 
@@ -169,6 +170,18 @@ func AdsDepthLimit(limit int64) Option {
 func EntriesDepthLimit(depth int64) Option {
 	return func(c *config) error {
 		c.entriesDepthLimit = depth
+		return nil
+	}
+}
+
+// FirstSyncDepth sets the advertisement chain depth to sync on the first sync
+// with a new provider. A value of 0, the default, means unlimited depth.
+func FirstSyncDepth(depth int64) Option {
+	return func(c *config) error {
+		if depth < 0 {
+			depth = 0
+		}
+		c.firstSyncDepth = depth
 		return nil
 	}
 }
