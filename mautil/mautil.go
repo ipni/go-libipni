@@ -80,3 +80,15 @@ func StringsToMultiaddrs(addrs []string) ([]multiaddr.Multiaddr, error) {
 	}
 	return maddrs, lastErr
 }
+
+func CleanPeerAddrInfo(target peer.AddrInfo) peer.AddrInfo {
+	for i := 0; i < len(target.Addrs); {
+		if target.Addrs[i] == nil {
+			target.Addrs[i] = target.Addrs[len(target.Addrs)-1]
+			target.Addrs = target.Addrs[:len(target.Addrs)-1]
+			continue
+		}
+		i++
+	}
+	return target
+}
