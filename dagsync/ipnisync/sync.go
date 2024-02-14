@@ -100,6 +100,24 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	if s.authPeerID {
 		rtOpts = append(rtOpts, libp2phttp.ServerMustAuthenticatePeerID)
 	}
+
+	peerInfo = mautil.CleanPeerAddrInfo(peerInfo)
+	if len(peerInfo.Addrs) == 0 {
+		if s.clientHost.StreamHost == nil {
+			return nil, errors.New("no peer addrs and no stream host")
+		}
+		peerStore := s.clientHost.StreamHost.Peerstore()
+		if peerStore == nil {
+			return nil, errors.New("no peer addrs and no stream host peerstore")
+		}
+		peerInfo.Addrs = peerStore.Addrs(peerInfo.ID)
+		if len(peerInfo.Addrs) == 0 {
+			return nil, errors.New("no peer addrs and none found in peertore")
+		}
+
+		// TODO: double check that libp2p peerstore never returns nil addrs.
+	}
+
 	s.clientHostMutex.Lock()
 	cli, err = s.clientHost.NamespacedClient(ProtocolID, peerInfo, rtOpts...)
 	s.clientHostMutex.Unlock()
