@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-libipni/mautil"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
@@ -66,4 +67,61 @@ func TestFindHTTPAddrs(t *testing.T) {
 
 	filtered = mautil.FilterPublic(nil)
 	require.Nil(t, filtered)
+}
+
+func TestCleanPeerAddrInfo(t *testing.T) {
+	t.Run("all-nils", func(t *testing.T) {
+		require.Len(t, mautil.CleanPeerAddrInfo(
+			peer.AddrInfo{
+				Addrs: make([]multiaddr.Multiaddr, 3),
+			}).Addrs, 0)
+	})
+
+	goodAddrs, err := mautil.StringsToMultiaddrs([]string{
+		"/ip4/11.0.0.0/tcp/80/http",
+		"/ip6/fc00::/tcp/1717",
+		"/ip6/fe00::/tcp/8080/https",
+	})
+	require.NoError(t, err)
+
+	t.Run("nil-sandwich", func(t *testing.T) {
+		subject := peer.AddrInfo{
+			Addrs: make([]multiaddr.Multiaddr, 3),
+		}
+		subject.Addrs[1] = goodAddrs[0]
+		cleaned := mautil.CleanPeerAddrInfo(subject)
+		require.Len(t, cleaned.Addrs, 1)
+		require.ElementsMatch(t, cleaned.Addrs, goodAddrs[:1])
+	})
+	t.Run("nil-head", func(t *testing.T) {
+		subject := peer.AddrInfo{
+			Addrs: make([]multiaddr.Multiaddr, 3),
+		}
+		subject.Addrs[1] = goodAddrs[0]
+		subject.Addrs[2] = goodAddrs[1]
+		cleaned := mautil.CleanPeerAddrInfo(subject)
+		require.Len(t, cleaned.Addrs, 2)
+		require.ElementsMatch(t, goodAddrs[:2], cleaned.Addrs)
+	})
+	t.Run("nil-tail", func(t *testing.T) {
+		subject := peer.AddrInfo{
+			Addrs: make([]multiaddr.Multiaddr, 3),
+		}
+		subject.Addrs[0] = goodAddrs[0]
+		subject.Addrs[1] = goodAddrs[1]
+		cleaned := mautil.CleanPeerAddrInfo(subject)
+		require.Len(t, cleaned.Addrs, 2)
+		require.ElementsMatch(t, goodAddrs[:2], cleaned.Addrs)
+	})
+	t.Run("no-nils", func(t *testing.T) {
+		subject := peer.AddrInfo{
+			Addrs: make([]multiaddr.Multiaddr, 3),
+		}
+		subject.Addrs[0] = goodAddrs[0]
+		subject.Addrs[1] = goodAddrs[1]
+		subject.Addrs[2] = goodAddrs[2]
+		cleaned := mautil.CleanPeerAddrInfo(subject)
+		require.Len(t, cleaned.Addrs, 3)
+		require.ElementsMatch(t, goodAddrs, cleaned.Addrs)
+	})
 }

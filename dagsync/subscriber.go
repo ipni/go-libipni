@@ -406,6 +406,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 		opts.blockHook = s.generalBlockHook
 	}
 
+	peerInfo = mautil.CleanPeerAddrInfo(peerInfo)
 	var err error
 	peerInfo, err = removeIDFromAddrs(peerInfo)
 	if err != nil {
@@ -553,6 +554,7 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 	s.expSyncMutex.Unlock()
 	defer s.expSyncWG.Done()
 
+	peerInfo = mautil.CleanPeerAddrInfo(peerInfo)
 	peerInfo, err := removeIDFromAddrs(peerInfo)
 	if err != nil {
 		return err
