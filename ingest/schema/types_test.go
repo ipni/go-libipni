@@ -269,6 +269,7 @@ func Test_LinkLoadNoEntries(t *testing.T) {
 func generateAdvertisement() *stischema.Advertisement {
 	mhs := test.RandomMultihashes(7)
 	prev := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
+	seq := uint64(54321)
 	return &stischema.Advertisement{
 		PreviousID: prev,
 		Provider:   mhs[1].String(),
@@ -280,6 +281,7 @@ func generateAdvertisement() *stischema.Advertisement {
 		Metadata:  mhs[5],
 		Signature: mhs[6],
 		IsRm:      false,
+		SeqNum:    &seq,
 	}
 }
 
