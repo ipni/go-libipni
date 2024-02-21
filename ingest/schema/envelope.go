@@ -12,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/record"
 	"github.com/multiformats/go-multihash"
+	"github.com/multiformats/go-varint"
 )
 
 var log = logging.Logger("indexer/schema")
@@ -93,9 +94,14 @@ func signaturePayload(ad *Advertisement, oldFormat bool) ([]byte, error) {
 		addrsLen += len(addr)
 	}
 
+	var seqLen int
+	if ad.SeqNum != nil {
+		seqLen = varint.UvarintSize(*ad.SeqNum)
+	}
+
 	// Signature data is previousID+entries+metadata+isRm
 	var sigBuf bytes.Buffer
-	sigBuf.Grow(len(bindex) + len(ent) + len(ad.Provider) + addrsLen + len(ad.Metadata) + 1)
+	sigBuf.Grow(len(bindex) + len(ent) + len(ad.Provider) + addrsLen + len(ad.Metadata) + 1 + seqLen)
 	sigBuf.Write(bindex)
 	sigBuf.Write(ent)
 	sigBuf.WriteString(ad.Provider)
@@ -107,6 +113,9 @@ func signaturePayload(ad *Advertisement, oldFormat bool) ([]byte, error) {
 		sigBuf.WriteByte(1)
 	} else {
 		sigBuf.WriteByte(0)
+	}
+	if ad.SeqNum != nil {
+		sigBuf.Write(varint.ToUvarint(*ad.SeqNum))
 	}
 
 	// Generates the old (incorrect) data payload used for signature.  This is
@@ -147,8 +156,11 @@ func extendedProviderSignaturePayload(ad *Advertisement, p *Provider) ([]byte, e
 	for _, addr := range p.Addresses {
 		addrsLen += len(addr)
 	}
-
-	sigBuf.Grow(len(bindex) + len(ent) + len(ad.Provider) + len(ad.ContextID) + len(p.ID) + addrsLen + len(p.Metadata) + 1)
+	var seqLen int
+	if ad.SeqNum != nil {
+		seqLen = varint.UvarintSize(*ad.SeqNum)
+	}
+	sigBuf.Grow(len(bindex) + len(ent) + len(ad.Provider) + len(ad.ContextID) + len(p.ID) + addrsLen + len(p.Metadata) + 1 + seqLen)
 	sigBuf.Write(bindex)
 	sigBuf.Write(ent)
 	sigBuf.WriteString(ad.Provider)
@@ -162,6 +174,9 @@ func extendedProviderSignaturePayload(ad *Advertisement, p *Provider) ([]byte, e
 		sigBuf.WriteByte(1)
 	} else {
 		sigBuf.WriteByte(0)
+	}
+	if ad.SeqNum != nil {
+		sigBuf.Write(varint.ToUvarint(*ad.SeqNum))
 	}
 
 	return multihash.Sum(sigBuf.Bytes(), multihash.SHA2_256, -1)
