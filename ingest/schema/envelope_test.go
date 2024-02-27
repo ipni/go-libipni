@@ -51,7 +51,7 @@ func testSignAndVerify(t *testing.T, signer func(*stischema.Advertisement, crypt
 	require.NoError(t, err)
 	elnk, err := lsys.Store(ipld.LinkContext{}, stischema.Linkproto, node)
 	require.NoError(t, err)
-
+	seq := uint64(123)
 	adv := stischema.Advertisement{
 		Provider: "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA",
 		Addresses: []string{
@@ -60,6 +60,7 @@ func testSignAndVerify(t *testing.T, signer func(*stischema.Advertisement, crypt
 		Entries:   elnk,
 		ContextID: []byte("test-context-id"),
 		Metadata:  []byte("test-metadata"),
+		SeqNum:    &seq,
 	}
 	err = signer(&adv, priv)
 	require.NoError(t, err)
