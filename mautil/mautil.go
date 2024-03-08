@@ -2,7 +2,9 @@
 package mautil
 
 import (
+	"bytes"
 	"net"
+	"slices"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -85,10 +87,32 @@ func CleanPeerAddrInfo(target peer.AddrInfo) peer.AddrInfo {
 	for i := 0; i < len(target.Addrs); {
 		if target.Addrs[i] == nil {
 			target.Addrs[i] = target.Addrs[len(target.Addrs)-1]
+			target.Addrs[len(target.Addrs)-1] = nil
 			target.Addrs = target.Addrs[:len(target.Addrs)-1]
 			continue
 		}
 		i++
 	}
 	return target
+}
+
+func MultiaddrsEqual(ma1, ma2 []multiaddr.Multiaddr) bool {
+	if len(ma1) != len(ma2) {
+		return false
+	}
+	if len(ma1) == 0 {
+		return true // both are nil or empty
+	}
+	if len(ma1) == 1 {
+		return ma1[0].Equal(ma2[0])
+	}
+	// Use slices package, as sort function does not allocate (sort.Slice does).
+	slices.SortFunc(ma1, func(a, b multiaddr.Multiaddr) int { return bytes.Compare(a.Bytes(), b.Bytes()) })
+	slices.SortFunc(ma2, func(a, b multiaddr.Multiaddr) int { return bytes.Compare(a.Bytes(), b.Bytes()) })
+	for i := 0; i < len(ma1); i++ {
+		if !ma1[i].Equal(ma2[i]) {
+			return false
+		}
+	}
+	return true
 }
