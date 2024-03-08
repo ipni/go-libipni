@@ -160,6 +160,8 @@ type handler struct {
 	pendingMsg atomic.Pointer[announce.Announce]
 	// expires is the time the handler is removed if it remains idle.
 	expires time.Time
+	// syncer is a sync client for this handler's peer.
+	syncer Syncer
 }
 
 // wrapBlockHook wraps a possibly nil block hook func to allow dispatching to a
@@ -415,7 +417,9 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 
 	log := log.With("peer", peerInfo.ID)
 
-	syncer, updatePeerstore, err := s.makeSyncer(peerInfo, true)
+	hnd := s.getOrCreateHandler(peerInfo.ID)
+
+	syncer, updatePeerstore, err := hnd.makeSyncer(peerInfo, true)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -482,8 +486,6 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 		segdl = opts.segDepthLimit
 	}
 
-	// Get existing or create new handler for the specified peer (publisher).
-	hnd := s.getOrCreateHandler(peerInfo.ID)
 	sel := ExploreRecursiveWithStopNode(depthLimit, s.adsSelectorSeq, stopLnk)
 
 	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, segdl, stopAtCid)
@@ -560,15 +562,14 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 		return err
 	}
 
-	syncer, _, err := s.makeSyncer(peerInfo, false)
+	hnd := s.getOrCreateHandler(peerInfo.ID)
+
+	syncer, _, err := hnd.makeSyncer(peerInfo, false)
 	if err != nil {
 		return err
 	}
 
 	log.Debugw("Start entries sync", "peer", peerInfo.ID, "cid", entCid)
-
-	// Get existing or create new handler for the specified peer (publisher).
-	hnd := s.getOrCreateHandler(peerInfo.ID)
 
 	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl, cid.Undef)
 	if err != nil {
@@ -765,7 +766,9 @@ func delNotPresent(peerStore peerstore.Peerstore, peerID peer.ID, addrs []multia
 	}
 }
 
-func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, func(), error) {
+func (h *handler) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, func(), error) {
+	s := h.subscriber
+
 	// Check for an HTTP address in peerAddrs, or if not given, in the http
 	// peerstore.
 	var httpAddrs []multiaddr.Multiaddr
@@ -787,9 +790,12 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 			ID:    peerInfo.ID,
 			Addrs: httpAddrs,
 		}
-		syncer, err := s.ipniSync.NewSyncer(httpPeerInfo)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
+		if h.syncer == nil || !h.syncer.SameAddrs(httpAddrs) {
+			syncer, err := s.ipniSync.NewSyncer(httpPeerInfo)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
+			}
+			h.syncer = syncer
 		}
 		if doUpdate {
 			update = func() {
@@ -798,7 +804,7 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 				s.httpPeerstore.AddAddrs(peerInfo.ID, httpAddrs, s.addrTTL)
 			}
 		}
-		return syncer, update, nil
+		return h.syncer, update, nil
 	}
 	if doUpdate {
 		peerStore := s.host.Peerstore()
@@ -817,14 +823,17 @@ func (s *Subscriber) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, 
 		}
 	}
 
-	syncer, err := s.ipniSync.NewSyncer(peerInfo)
-	if err != nil {
-		if errors.Is(err, ipnisync.ErrNoHTTPServer) {
-			err = fmt.Errorf("data-transfer sync is not supported: %w", err)
+	if h.syncer == nil || !h.syncer.SameAddrs(peerInfo.Addrs) {
+		syncer, err := s.ipniSync.NewSyncer(peerInfo)
+		if err != nil {
+			if errors.Is(err, ipnisync.ErrNoHTTPServer) {
+				err = fmt.Errorf("data-transfer sync is not supported: %w", err)
+			}
+			return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
 		}
-		return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
+		h.syncer = syncer
 	}
-	return syncer, update, nil
+	return h.syncer, update, nil
 }
 
 // asyncSyncAdChain processes the latest announce message received over pubsub
@@ -842,7 +851,8 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 		ID:    amsg.PeerID,
 		Addrs: amsg.Addrs,
 	}
-	syncer, updatePeerstore, err := h.subscriber.makeSyncer(peerInfo, true)
+
+	syncer, updatePeerstore, err := h.makeSyncer(peerInfo, true)
 	if err != nil {
 		log.Errorw("Cannot make syncer for announce", "err", err, "peer", h.peerID)
 		return

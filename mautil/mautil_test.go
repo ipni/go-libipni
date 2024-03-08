@@ -125,3 +125,54 @@ func TestCleanPeerAddrInfo(t *testing.T) {
 		require.ElementsMatch(t, goodAddrs, cleaned.Addrs)
 	})
 }
+
+func TestMultiaddrsEqual(t *testing.T) {
+	maddrs, err := mautil.StringsToMultiaddrs([]string{
+		"/ip4/11.0.0.0/tcp/80/http",
+		"/ip6/fc00::/tcp/1717",
+		"/ip6/fe00::/tcp/8080/https",
+		"/dns4/example.net/tcp/1234",
+	})
+	require.NoError(t, err)
+	rev := make([]multiaddr.Multiaddr, len(maddrs))
+	j := len(maddrs) - 1
+	for i := 0; i <= j; i++ {
+		rev[i] = maddrs[j-i]
+	}
+	m1 := make([]multiaddr.Multiaddr, len(maddrs))
+	m2 := make([]multiaddr.Multiaddr, len(maddrs))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.True(t, mautil.MultiaddrsEqual(m1, m2))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.Truef(t, mautil.MultiaddrsEqual(m1[1:], m2[:len(m2)-1]), "m1=%v, m2=%v", m1[1:], m2[:len(m2)-1])
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.True(t, mautil.MultiaddrsEqual(m1[2:3], m2[1:2]))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.True(t, mautil.MultiaddrsEqual(m1[:0], m2[:0]))
+
+	require.True(t, mautil.MultiaddrsEqual(nil, nil))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.True(t, mautil.MultiaddrsEqual(m1[:0], nil))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.False(t, mautil.MultiaddrsEqual(m1[1:], m2[1:]))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.False(t, mautil.MultiaddrsEqual(m1, m2[:len(m2)-1]))
+
+	copy(m1, maddrs)
+	copy(m2, rev)
+	require.False(t, mautil.MultiaddrsEqual(m1[:1], m2[:1]))
+}

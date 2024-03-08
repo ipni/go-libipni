@@ -27,6 +27,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
 
@@ -50,11 +51,11 @@ type Sync struct {
 
 // Syncer provides sync functionality for a single sync with a peer.
 type Syncer struct {
-	client  *http.Client
-	peerID  peer.ID
-	rootURL url.URL
-	urls    []*url.URL
-	sync    *Sync
+	client   *http.Client
+	peerInfo peer.AddrInfo
+	rootURL  url.URL
+	urls     []*url.URL
+	sync     *Sync
 
 	// For legacy HTTP and external server support without IPNI path.
 	noPath    bool
@@ -157,11 +158,11 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	}
 
 	return &Syncer{
-		client:  httpClient,
-		peerID:  peerInfo.ID,
-		rootURL: *urls[0],
-		urls:    urls[1:],
-		sync:    s,
+		client:   httpClient,
+		peerInfo: peerInfo,
+		rootURL:  *urls[0],
+		urls:     urls[1:],
+		sync:     s,
 
 		plainHTTP: plainHTTP,
 	}, nil
@@ -190,10 +191,10 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	if err != nil {
 		return cid.Undef, err
 	}
-	if s.peerID == "" {
+	if s.peerInfo.ID == "" {
 		log.Warn("Cannot verify publisher signature without peer ID")
-	} else if signerID != s.peerID {
-		return cid.Undef, fmt.Errorf("found head signed by an unexpected peer, peerID: %s, signed-by: %s", s.peerID.String(), signerID.String())
+	} else if signerID != s.peerInfo.ID {
+		return cid.Undef, fmt.Errorf("found head signed by an unexpected peer, peerID: %s, signed-by: %s", s.peerInfo.ID.String(), signerID.String())
 	}
 
 	// TODO: Check that the returned topic, if any, matches the expected topic.
@@ -204,6 +205,10 @@ func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	//}
 
 	return signedHead.Head.(cidlink.Link).Cid, nil
+}
+
+func (s *Syncer) SameAddrs(maddrs []multiaddr.Multiaddr) bool {
+	return mautil.MultiaddrsEqual(s.peerInfo.Addrs, maddrs)
 }
 
 // Sync syncs the peer's advertisement chain or entries chain.
@@ -228,7 +233,7 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 	// hook at the end when we no longer care what it does with the blocks.
 	if s.sync.blockHook != nil {
 		for _, c := range cids {
-			s.sync.blockHook(s.peerID, c)
+			s.sync.blockHook(s.peerInfo.ID, c)
 		}
 	}
 
@@ -306,7 +311,7 @@ retry:
 			goto nextURL
 		}
 		if !doneRetry && errors.Is(err, network.ErrReset) {
-			log.Errorw("stream reset err, retrying", "publisher", s.peerID, "url", fetchURL.String())
+			log.Errorw("stream reset err, retrying", "publisher", s.peerInfo.ID, "url", fetchURL.String())
 			// Only retry the same fetch once.
 			doneRetry = true
 			goto retry
