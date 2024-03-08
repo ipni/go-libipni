@@ -13,12 +13,14 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipni/go-libipni/dagsync/dtsync/head"
+	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 )
 
 // Syncer handles a single sync with a provider.
 type Syncer struct {
-	peerID    peer.ID
+	peerInfo  peer.AddrInfo
 	sync      *Sync
 	ls        *ipld.LinkSystem
 	topicName string
@@ -26,7 +28,11 @@ type Syncer struct {
 
 // GetHead queries a provider for the latest CID.
 func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
-	return head.QueryRootCid(ctx, s.sync.host, s.topicName, s.peerID)
+	return head.QueryRootCid(ctx, s.sync.host, s.topicName, s.peerInfo.ID)
+}
+
+func (s *Syncer) SameAddrs(maddrs []multiaddr.Multiaddr) bool {
+	return mautil.MultiaddrsEqual(s.peerInfo.Addrs, maddrs)
 }
 
 // Sync opens a datatransfer data channel and uses the selector to pull data
@@ -42,21 +48,21 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 	//             help with determining what the "next" CID would be if a DAG is partially
 	//             present. Similar to what SegmentSyncActions does.
 	if cids, ok := s.has(ctx, nextCid, sel); ok {
-		s.sync.signalLocallyFoundCids(s.peerID, cids)
-		inProgressSyncK := inProgressSyncKey{nextCid, s.peerID}
+		s.sync.signalLocallyFoundCids(s.peerInfo.ID, cids)
+		inProgressSyncK := inProgressSyncKey{nextCid, s.peerInfo.ID}
 		s.sync.signalSyncDone(inProgressSyncK, nil)
 		return nil
 	}
 
-	inProgressSyncK := inProgressSyncKey{nextCid, s.peerID}
+	inProgressSyncK := inProgressSyncKey{nextCid, s.peerInfo.ID}
 	syncDone := s.sync.notifyOnSyncDone(inProgressSyncK)
 
-	log.Debugw("Starting data channel for message source", "cid", nextCid, "source_peer", s.peerID)
+	log.Debugw("Starting data channel for message source", "cid", nextCid, "source_peer", s.peerInfo.ID)
 
 	v := Voucher{&nextCid}
 	// Do not pass cancelable context into OpenPullDataChannel because a
 	// canceled context causes it to hang.
-	_, err := s.sync.dtManager.OpenPullDataChannel(context.Background(), s.peerID, v.AsVoucher(), nextCid, sel)
+	_, err := s.sync.dtManager.OpenPullDataChannel(context.Background(), s.peerInfo.ID, v.AsVoucher(), nextCid, sel)
 	if err != nil {
 		s.sync.signalSyncDone(inProgressSyncK, nil)
 		return fmt.Errorf("cannot open data channel: %w", err)

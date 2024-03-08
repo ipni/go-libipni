@@ -27,4 +27,5 @@ type Publisher interface {
 type Syncer interface {
 	GetHead(context.Context) (cid.Cid, error)
 	Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
+	SameAddrs([]multiaddr.Multiaddr) bool
 }

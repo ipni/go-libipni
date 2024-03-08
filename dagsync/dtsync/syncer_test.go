@@ -81,7 +81,11 @@ func TestDTSync_CallsBlockHookWhenCIDsAreFullyFoundLocally(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, subject.Close()) })
 
 	// Sync l3 from the publisher.
-	syncer := subject.NewSyncer(pubh.ID(), topic)
+	pubInfo := peer.AddrInfo{
+		ID:    pubh.ID(),
+		Addrs: pubh.Addrs(),
+	}
+	syncer := subject.NewSyncer(pubInfo, topic)
 	require.NoError(t, syncer.Sync(ctx, l3.(cidlink.Link).Cid, selectorparse.CommonSelector_ExploreAllRecursively))
 
 	// Assert there are three synced CIDs.
@@ -175,7 +179,11 @@ func TestDTSync_CallsBlockHookWhenCIDsArePartiallyFoundLocally(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, subject.Close()) })
 
 	// Sync l3 from the publisher.
-	syncer := subject.NewSyncer(pubh.ID(), topic)
+	pubInfo := peer.AddrInfo{
+		ID:    pubh.ID(),
+		Addrs: pubh.Addrs(),
+	}
+	syncer := subject.NewSyncer(pubInfo, topic)
 	require.NoError(t, syncer.Sync(ctx, l3.(cidlink.Link).Cid, selectorparse.CommonSelector_ExploreAllRecursively))
 
 	// Assert there are three synced CIDs.

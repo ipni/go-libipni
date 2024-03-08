@@ -102,9 +102,9 @@ func (s *Sync) Close() error {
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a peer.
-func (s *Sync) NewSyncer(peerID peer.ID, topicName string) *Syncer {
+func (s *Sync) NewSyncer(peerInfo peer.AddrInfo, topicName string) *Syncer {
 	return &Syncer{
-		peerID:    peerID,
+		peerInfo:  peerInfo,
 		sync:      s,
 		topicName: topicName,
 		ls:        s.ls,
