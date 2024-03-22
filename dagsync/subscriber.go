@@ -671,8 +671,7 @@ func (s *Subscriber) idleHandlerCleaner() {
 
 	for {
 		select {
-		case <-t.C:
-			now := time.Now()
+		case now := <-t.C:
 			s.handlersMutex.Lock()
 			for pid, hnd := range s.handlers {
 				if now.After(hnd.expires) {
@@ -1037,6 +1036,7 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, sy
 	// - original selector has a recursion depth limit that is already less
 	//   than the maximum segment depth limit.
 	if !syncBySegment {
+		log.Debug("Starting non-segmented sync")
 		err := syncer.Sync(ctx, nextCid, sel)
 		if err != nil {
 			return 0, err
@@ -1048,6 +1048,7 @@ func (h *handler) handle(ctx context.Context, nextCid cid.Cid, sel ipld.Node, sy
 	var nextDepth = segdl
 	var depthSoFar int64
 
+	log.Debug("Starting segmented sync")
 SegSyncLoop:
 	for {
 		segmentSel, ok := withRecursionLimit(sel, selector.RecursionLimitDepth(nextDepth))
@@ -1086,7 +1087,6 @@ SegSyncLoop:
 			if depthSoFar >= origLimit.Depth() {
 				break SegSyncLoop
 			}
-
 			remainingDepth := origLimit.Depth() - depthSoFar
 			if remainingDepth < segdl {
 				nextDepth = remainingDepth
