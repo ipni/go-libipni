@@ -846,16 +846,6 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 
 	// Get the latest pending message.
 	amsg := h.pendingMsg.Swap(nil)
-	peerInfo := peer.AddrInfo{
-		ID:    amsg.PeerID,
-		Addrs: amsg.Addrs,
-	}
-
-	syncer, updatePeerstore, err := h.makeSyncer(peerInfo, true)
-	if err != nil {
-		log.Errorw("Cannot make syncer for announce", "err", err, "peer", h.peerID)
-		return
-	}
 
 	adsDepthLimit := h.subscriber.adsDepthLimit
 	nextCid := amsg.Cid
@@ -870,6 +860,16 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	} else if h.subscriber.firstSyncDepth != 0 {
 		// If nothing synced yet, use first sync depth if configured.
 		adsDepthLimit = recursionLimit(h.subscriber.firstSyncDepth)
+	}
+
+	peerInfo := peer.AddrInfo{
+		ID:    amsg.PeerID,
+		Addrs: amsg.Addrs,
+	}
+	syncer, updatePeerstore, err := h.makeSyncer(peerInfo, true)
+	if err != nil {
+		log.Errorw("Cannot make syncer for announce", "err", err, "peer", h.peerID)
+		return
 	}
 
 	sel := ExploreRecursiveWithStopNode(adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
