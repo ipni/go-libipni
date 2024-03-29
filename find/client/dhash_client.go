@@ -143,12 +143,7 @@ func (c *DHashClient) Find(ctx context.Context, mh multihash.Multihash) (*model.
 func (c *DHashClient) FindAsync(ctx context.Context, mh multihash.Multihash, resChan chan<- model.ProviderResult) error {
 	defer close(resChan)
 
-	dhmh, err := dhash.SecondMultihash(mh)
-	if err != nil {
-		return err
-	}
-
-	encryptedMultihashResults, err := c.dhstoreAPI.FindMultihash(ctx, dhmh)
+	encryptedMultihashResults, err := c.dhstoreAPI.FindMultihash(ctx, dhash.SecondMultihash(mh))
 	if err != nil {
 		return err
 	}
