@@ -41,9 +41,11 @@ func sha256Multiple(dest []byte, payloads ...[]byte) []byte {
 
 // SecondMultihash calculates SHA256 over the multihash and wraps it into
 // another multihash with DBL_SHA256 codec.
-func SecondMultihash(mh multihash.Multihash) (multihash.Multihash, error) {
+func SecondMultihash(mh multihash.Multihash) multihash.Multihash {
 	digest := SHA256(append(secondHashPrefix, mh...), nil)
-	return multihash.Encode(digest, multihash.DBL_SHA2_256)
+	// The error return from multihash.Encode is legacy; it is always nil.
+	mh2, _ := multihash.Encode(digest, multihash.DBL_SHA2_256)
+	return mh2
 }
 
 // deriveKey derives encryptioin key from the passphrase using SHA256
