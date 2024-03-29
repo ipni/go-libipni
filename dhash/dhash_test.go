@@ -61,8 +61,7 @@ func TestCanDecryptEncryptedValue(t *testing.T) {
 
 func TestSecondMultihash(t *testing.T) {
 	mh := test.RandomMultihashes(1)[0]
-	smh, err := SecondMultihash(mh)
-	require.NoError(t, err)
+	smh := SecondMultihash(mh)
 
 	h := sha256.New()
 	h.Write(append(secondHashPrefix, mh...))
