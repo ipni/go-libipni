@@ -15,12 +15,12 @@ require (
 	github.com/libp2p/go-libp2p-pubsub v0.10.1
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.2.0
-	github.com/multiformats/go-multiaddr v0.12.3
+	github.com/multiformats/go-multiaddr v0.12.4
 	github.com/multiformats/go-multicodec v0.9.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.0.7
 	github.com/stretchr/testify v1.8.4
-	github.com/whyrusleeping/cbor-gen v0.0.0-20230418232409-daab9ece03a0
+	github.com/whyrusleeping/cbor-gen v0.1.1
 	golang.org/x/crypto v0.23.0
 	google.golang.org/protobuf v1.33.0
 )

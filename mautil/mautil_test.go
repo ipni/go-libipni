@@ -26,7 +26,7 @@ func TestFilterPublic(t *testing.T) {
 	maddrs, err := mautil.StringsToMultiaddrs(addrs)
 	require.NoError(t, err)
 
-	expected := []multiaddr.Multiaddr{maddrs[1], maddrs[3], maddrs[5]}
+	expected := []multiaddr.Multiaddr{maddrs[1], maddrs[5]}
 
 	filtered := mautil.FilterPublic(maddrs)
 	require.Equal(t, len(expected), len(filtered))
