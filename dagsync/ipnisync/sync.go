@@ -73,6 +73,11 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 		},
 		clientHost: &libp2phttp.Host{
 			StreamHost: opts.streamHost,
+			// Allow compatibility with older version of libp2phttp.
+			//
+			// This should be deprecated once all storage providers have
+			// upgraded to a version of ipni that uses go-libp2p v0.34.0.
+			EnableCompatibilityWithLegacyWellKnownEndpoint: true,
 		},
 		lsys:        lsys,
 		authPeerID:  opts.authPeerID,
@@ -122,6 +127,9 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	s.clientHostMutex.Unlock()
 	var plainHTTP bool
 	if err != nil {
+		if strings.Contains(err.Error(), "limit exceeded") {
+			return nil, err
+		}
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer
