@@ -129,6 +129,9 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	s.clientHostMutex.Unlock()
 	var plainHTTP bool
 	if err != nil {
+		if strings.Contains(err.Error(), "limit exceeded") {
+			return nil, err
+		}
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
 			return nil, ErrNoHTTPServer

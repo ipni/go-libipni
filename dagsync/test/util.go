@@ -29,6 +29,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
@@ -229,7 +230,16 @@ func Store(srcStore datastore.Batching, n ipld.Node) (ipld.Link, error) {
 }
 
 func MkTestHost(t *testing.T, options ...libp2p.Option) host.Host {
-	options = append(options, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	// Do not limit connections per IP as all test connections go to localhost.
+	mgr, err := rcmgr.NewResourceManager(
+		rcmgr.NewFixedLimiter(rcmgr.DefaultLimits.AutoScale()),
+		rcmgr.WithLimitPeersPerCIDR(nil, nil),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	options = append(options, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"), libp2p.ResourceManager(mgr))
 	h, err := libp2p.New(options...)
 	require.NoError(t, err)
 	if err != nil {
