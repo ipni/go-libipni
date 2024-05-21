@@ -201,7 +201,6 @@ func TestConcurrentSync(t *testing.T) {
 			require.NoError(t, err)
 
 			wg := sync.WaitGroup{}
-			// Now sync again. We shouldn't call the hook because we persisted our latestSync
 			for _, pub := range publishers {
 				wg.Add(1)
 
@@ -211,12 +210,12 @@ func TestConcurrentSync(t *testing.T) {
 						ID:    pub.h.ID(),
 						Addrs: pub.h.Addrs(),
 					}
+					t.Log("Connecting to:", peerInfo)
 					_, err := sub.SyncAdChain(context.Background(), peerInfo)
 					if err != nil {
-						panic("sync failed")
+						panic("sync failed: " + err.Error())
 					}
 				}(pub)
-
 			}
 
 			doneChan := make(chan struct{})
