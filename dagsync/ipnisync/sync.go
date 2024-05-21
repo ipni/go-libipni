@@ -129,6 +129,9 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 	if err != nil {
 		httpAddrs := mautil.FindHTTPAddrs(peerInfo.Addrs)
 		if len(httpAddrs) == 0 {
+			if strings.Contains(err.Error(), "limit exceeded") {
+				return nil, err
+			}
 			return nil, ErrNoHTTPServer
 		}
 		log.Infow("Publisher is not a libp2phttp server. Using plain http", "err", err, "peer", peerInfo.ID)
