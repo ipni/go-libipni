@@ -233,7 +233,7 @@ func MkTestHost(t *testing.T, options ...libp2p.Option) host.Host {
 	// Do not limit connections per IP as all test connections go to localhost.
 	mgr, err := rcmgr.NewResourceManager(
 		rcmgr.NewFixedLimiter(rcmgr.DefaultLimits.AutoScale()),
-		rcmgr.WithLimitPeersPerCIDR([]rcmgr.ConnLimitPerCIDR{}, []rcmgr.ConnLimitPerCIDR{}),
+		rcmgr.WithLimitPerSubnet([]rcmgr.ConnLimitPerSubnet{}, []rcmgr.ConnLimitPerSubnet{}),
 	)
 	if err != nil {
 		panic(err)
