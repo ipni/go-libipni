@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/gammazero/channelqueue v0.2.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/go-retryablehttp v0.7.4
+	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ipld-format v0.6.0
