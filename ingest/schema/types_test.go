@@ -14,7 +14,7 @@ import (
 	ipldSchema "github.com/ipld/go-ipld-prime/schema"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	stischema "github.com/ipni/go-libipni/ingest/schema"
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipni/test/random"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
@@ -101,7 +101,7 @@ var newSchema []byte
 func TestOldAdsCanBeReadWithNewStructs(t *testing.T) {
 	oldSchema := createTestSchema(t, oldSchema, (*OldAdvertisement)(nil))
 
-	mhs := test.RandomMultihashes(7)
+	mhs := random.Multihashes(7)
 	prev := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
 	oldAd := &OldAdvertisement{
 		PreviousID: prev,
@@ -146,7 +146,7 @@ func TestNewAdsCanBeReadWithOldStructs(t *testing.T) {
 	oldSchema := createTestSchema(t, oldSchema, (*OldAdvertisement)(nil))
 	newSchema := createTestSchema(t, newSchema, (*stischema.Advertisement)(nil))
 
-	mhs := test.RandomMultihashes(7)
+	mhs := random.Multihashes(7)
 	prev := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
 	newAd := &stischema.Advertisement{
 		PreviousID: prev,
@@ -267,7 +267,7 @@ func Test_LinkLoadNoEntries(t *testing.T) {
 }
 
 func generateAdvertisement() *stischema.Advertisement {
-	mhs := test.RandomMultihashes(7)
+	mhs := random.Multihashes(7)
 	prev := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
 	return &stischema.Advertisement{
 		PreviousID: prev,
@@ -284,7 +284,7 @@ func generateAdvertisement() *stischema.Advertisement {
 }
 
 func generateEntryChunk() *stischema.EntryChunk {
-	mhs := test.RandomMultihashes(100)
+	mhs := random.Multihashes(100)
 	next := ipld.Link(cidlink.Link{Cid: cid.NewCidV1(cid.Raw, mhs[0])})
 	return &stischema.EntryChunk{
 		Entries: mhs,

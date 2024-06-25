@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipni/test/random"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	p2ptest "github.com/libp2p/go-libp2p/core/test"
 )
 
 func TestIngestRequest(t *testing.T) {
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 
 	metadata := []byte("test-metadata")
 

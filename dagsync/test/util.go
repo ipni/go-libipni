@@ -23,7 +23,7 @@ import (
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipni/test/random"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -170,7 +170,7 @@ func encode(lsys ipld.LinkSystem, n ipld.Node) (ipld.Node, ipld.Link) {
 }
 
 func RandomCids(n int) []cid.Cid {
-	return test.RandomCids(n)
+	return random.Cids(n)
 }
 
 func MkLinkSystem(ds datastore.Batching) ipld.LinkSystem {

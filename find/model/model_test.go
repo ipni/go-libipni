@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-libipni/find/model"
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipni/test/random"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -32,7 +32,7 @@ func TestMarshal(t *testing.T) {
 		MultihashResults: []model.MultihashResult{},
 	}
 
-	mhs := test.RandomMultihashes(3)
+	mhs := random.Multihashes(3)
 	for i := range mhs {
 		resp.MultihashResults = append(resp.MultihashResults, model.MultihashResult{
 			Multihash:       mhs[i],

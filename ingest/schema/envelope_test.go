@@ -11,7 +11,7 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	stischema "github.com/ipni/go-libipni/ingest/schema"
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipni/test/random"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	p2ptest "github.com/libp2p/go-libp2p/core/test"
@@ -44,7 +44,7 @@ func testSignAndVerify(t *testing.T, signer func(*stischema.Advertisement, crypt
 	require.NoError(t, err)
 
 	ec := stischema.EntryChunk{
-		Entries: test.RandomMultihashes(10),
+		Entries: random.Multihashes(10),
 	}
 
 	node, err := ec.ToNode()
@@ -93,7 +93,7 @@ func TestSignShouldFailIfAdHasExtendedProviders(t *testing.T) {
 	require.NoError(t, err)
 
 	ec := stischema.EntryChunk{
-		Entries: test.RandomMultihashes(10),
+		Entries: random.Multihashes(10),
 	}
 
 	node, err := ec.ToNode()
@@ -115,7 +115,7 @@ func TestSignShouldFailIfAdHasExtendedProviders(t *testing.T) {
 			Providers: []stischema.Provider{
 				{
 					ID:        ep1PeerID.String(),
-					Addresses: test.RandomAddrs(2),
+					Addresses: random.Addrs(2),
 					Metadata:  []byte("ep1-metadata"),
 				},
 			},
@@ -132,7 +132,7 @@ func TestSignWithExtendedProviderAndVerify(t *testing.T) {
 	lsys.SetWriteStorage(store)
 
 	ec := stischema.EntryChunk{
-		Entries: test.RandomMultihashes(10),
+		Entries: random.Multihashes(10),
 	}
 
 	node, err := ec.ToNode()
@@ -143,7 +143,7 @@ func TestSignWithExtendedProviderAndVerify(t *testing.T) {
 	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
 	ep2Priv, ep2PeerID := generateIdentityAndKey(t)
 	mpPriv, mpPeerID := generateIdentityAndKey(t)
-	mpAddrs := test.RandomAddrs(2)
+	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
 		Provider:  mpPeerID.String(),
@@ -155,12 +155,12 @@ func TestSignWithExtendedProviderAndVerify(t *testing.T) {
 			Providers: []stischema.Provider{
 				{
 					ID:        ep1PeerID.String(),
-					Addresses: test.RandomAddrs(2),
+					Addresses: random.Addrs(2),
 					Metadata:  []byte("ep1-metadata"),
 				},
 				{
 					ID:        ep2PeerID.String(),
-					Addresses: test.RandomAddrs(2),
+					Addresses: random.Addrs(2),
 					Metadata:  []byte("ep2-metadata"),
 				},
 				{
@@ -223,7 +223,7 @@ func TestSigVerificationFailsIfTheExtendedProviderMetadataIsIncorrect(t *testing
 
 func TestSigVerificationFailsIfTheExtendedProviderAddrsAreIncorrect(t *testing.T) {
 	extendedSignatureTest(t, func(adv stischema.Advertisement) {
-		adv.ExtendedProvider.Providers[1].Addresses = test.RandomAddrs(10)
+		adv.ExtendedProvider.Providers[1].Addresses = random.Addrs(10)
 		_, err := adv.VerifySignature()
 		require.Error(t, err)
 	})
@@ -262,7 +262,7 @@ func TestSignFailsIfMainProviderIsNotInExtendedList(t *testing.T) {
 	lsys.SetWriteStorage(store)
 
 	ec := stischema.EntryChunk{
-		Entries: test.RandomMultihashes(10),
+		Entries: random.Multihashes(10),
 	}
 
 	node, err := ec.ToNode()
@@ -272,7 +272,7 @@ func TestSignFailsIfMainProviderIsNotInExtendedList(t *testing.T) {
 
 	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
 	mpPriv, mpPeerID := generateIdentityAndKey(t)
-	mpAddrs := test.RandomAddrs(2)
+	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
 		Provider:  mpPeerID.String(),
@@ -284,7 +284,7 @@ func TestSignFailsIfMainProviderIsNotInExtendedList(t *testing.T) {
 			Providers: []stischema.Provider{
 				{
 					ID:        ep1PeerID.String(),
-					Addresses: test.RandomAddrs(2),
+					Addresses: random.Addrs(2),
 					Metadata:  []byte("ep1-metadata"),
 				},
 			},
@@ -310,7 +310,7 @@ func extendedSignatureTest(t *testing.T, testFunc func(adv stischema.Advertiseme
 	lsys.SetWriteStorage(store)
 
 	ec := stischema.EntryChunk{
-		Entries: test.RandomMultihashes(10),
+		Entries: random.Multihashes(10),
 	}
 
 	node, err := ec.ToNode()
@@ -320,7 +320,7 @@ func extendedSignatureTest(t *testing.T, testFunc func(adv stischema.Advertiseme
 
 	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
 	mpPriv, mpPeerID := generateIdentityAndKey(t)
-	mpAddrs := test.RandomAddrs(2)
+	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
 		Provider:  mpPeerID.String(),
@@ -337,7 +337,7 @@ func extendedSignatureTest(t *testing.T, testFunc func(adv stischema.Advertiseme
 				},
 				{
 					ID:        ep1PeerID.String(),
-					Addresses: test.RandomAddrs(2),
+					Addresses: random.Addrs(2),
 					Metadata:  []byte("ep1-metadata"),
 				},
 			},
