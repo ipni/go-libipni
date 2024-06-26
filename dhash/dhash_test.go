@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ipni/go-libipni/test"
+	"github.com/ipfs/go-test/random"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +60,7 @@ func TestCanDecryptEncryptedValue(t *testing.T) {
 }
 
 func TestSecondMultihash(t *testing.T) {
-	mh := test.RandomMultihashes(1)[0]
+	mh := random.Multihashes(1)[0]
 	smh := SecondMultihash(mh)
 
 	h := sha256.New()

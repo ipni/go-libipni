@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
@@ -138,7 +139,7 @@ func TestSyncFnHttp(t *testing.T) {
 
 	// Try to sync with a non-existing cid to chack that sync returns with err,
 	// and SyncFinished watcher does not get event.
-	cids := test.RandomCids(1)
+	cids := random.Cids(1)
 	ctx, syncncl := context.WithTimeout(context.Background(), time.Second)
 	defer syncncl()
 
