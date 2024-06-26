@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
@@ -14,7 +15,6 @@ import (
 	ipldSchema "github.com/ipld/go-ipld-prime/schema"
 	"github.com/ipld/go-ipld-prime/storage/memstore"
 	stischema "github.com/ipni/go-libipni/ingest/schema"
-	"github.com/ipni/test/random"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"

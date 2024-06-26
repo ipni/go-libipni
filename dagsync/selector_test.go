@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	selectorbuilder "github.com/ipld/go-ipld-prime/traversal/selector/builder"
-	"github.com/ipni/go-libipni/dagsync/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +31,7 @@ func TestGetStopNodeWhenNil(t *testing.T) {
 }
 
 func TestGetRecursionLimit(t *testing.T) {
-	testCid := test.RandomCids(1)
+	testCid := random.Cids(1)
 	testStopLink := cidlink.Link{Cid: testCid[0]}
 	ssb := selectorbuilder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	tests := []struct {
@@ -98,7 +98,7 @@ func TestGetRecursionLimit(t *testing.T) {
 }
 
 func TestWithRecursionLimit(t *testing.T) {
-	testCid := test.RandomCids(1)
+	testCid := random.Cids(1)
 	testStopLink := cidlink.Link{Cid: testCid[0]}
 	ssb := selectorbuilder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
 	tests := []struct {

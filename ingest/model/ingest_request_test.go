@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ipni/test/random"
+	"github.com/ipfs/go-test/random"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	p2ptest "github.com/libp2p/go-libp2p/core/test"

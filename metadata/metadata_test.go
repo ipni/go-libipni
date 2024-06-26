@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-libipni/metadata"
-	"github.com/ipni/test/random"
 	"github.com/multiformats/go-multicodec"
 	"github.com/multiformats/go-varint"
 	"github.com/stretchr/testify/require"

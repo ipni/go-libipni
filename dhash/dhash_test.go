@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ipni/test/random"
+	"github.com/ipfs/go-test/random"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )

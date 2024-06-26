@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-libipni/find/model"
-	"github.com/ipni/test/random"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )

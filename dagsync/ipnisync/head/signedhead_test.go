@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
-	"github.com/ipni/test/random"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
