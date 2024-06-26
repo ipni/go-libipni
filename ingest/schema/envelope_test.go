@@ -14,7 +14,6 @@ import (
 	stischema "github.com/ipni/go-libipni/ingest/schema"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
-	p2ptest "github.com/libp2p/go-libp2p/core/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,10 +37,7 @@ func testSignAndVerify(t *testing.T, signer func(*stischema.Advertisement, crypt
 	lsys.SetReadStorage(store)
 	lsys.SetWriteStorage(store)
 
-	priv, pub, err := p2ptest.RandTestKeyPair(crypto.Ed25519, 256)
-	require.NoError(t, err)
-	peerID, err := peer.IDFromPublicKey(pub)
-	require.NoError(t, err)
+	peerID, priv, _ := random.Identity()
 
 	ec := stischema.EntryChunk{
 		Entries: random.Multihashes(10),
@@ -87,10 +83,7 @@ func TestSignShouldFailIfAdHasExtendedProviders(t *testing.T) {
 	lsys.SetReadStorage(store)
 	lsys.SetWriteStorage(store)
 
-	priv, pub, err := p2ptest.RandTestKeyPair(crypto.Ed25519, 256)
-	require.NoError(t, err)
-	peerID, err := peer.IDFromPublicKey(pub)
-	require.NoError(t, err)
+	peerID, priv, _ := random.Identity()
 
 	ec := stischema.EntryChunk{
 		Entries: random.Multihashes(10),
@@ -101,7 +94,7 @@ func TestSignShouldFailIfAdHasExtendedProviders(t *testing.T) {
 	elnk, err := lsys.Store(ipld.LinkContext{}, stischema.Linkproto, node)
 	require.NoError(t, err)
 
-	_, ep1PeerID := generateIdentityAndKey(t)
+	ep1PeerID, _, _ := random.Identity()
 
 	adv := stischema.Advertisement{
 		Provider: peerID.String(),
@@ -140,9 +133,9 @@ func TestSignWithExtendedProviderAndVerify(t *testing.T) {
 	elnk, err := lsys.Store(ipld.LinkContext{}, stischema.Linkproto, node)
 	require.NoError(t, err)
 
-	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
-	ep2Priv, ep2PeerID := generateIdentityAndKey(t)
-	mpPriv, mpPeerID := generateIdentityAndKey(t)
+	ep1PeerID, ep1Priv, _ := random.Identity()
+	ep2PeerID, ep2Priv, _ := random.Identity()
+	mpPeerID, mpPriv, _ := random.Identity()
 	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
@@ -193,7 +186,7 @@ func TestSignWithExtendedProviderAndVerify(t *testing.T) {
 
 func TestSigVerificationFailsIfTheAdProviderIdentityIsIncorrect(t *testing.T) {
 	extendedSignatureTest(t, func(adv stischema.Advertisement) {
-		_, randomID := generateIdentityAndKey(t)
+		randomID, _, _ := random.Identity()
 		adv.Provider = randomID.String()
 		_, err := adv.VerifySignature()
 		require.Error(t, err)
@@ -203,7 +196,7 @@ func TestSigVerificationFailsIfTheAdProviderIdentityIsIncorrect(t *testing.T) {
 func TestSigVerificationFailsIfTheExtendedProviderIdentityIsIncorrect(t *testing.T) {
 	extendedSignatureTest(t, func(adv stischema.Advertisement) {
 		// main provider is the first one on the list
-		_, randomID := generateIdentityAndKey(t)
+		randomID, _, _ := random.Identity()
 		adv.ExtendedProvider.Providers[1].ID = randomID.String()
 		_, err := adv.VerifySignature()
 		require.Error(t, err)
@@ -270,8 +263,8 @@ func TestSignFailsIfMainProviderIsNotInExtendedList(t *testing.T) {
 	elnk, err := lsys.Store(ipld.LinkContext{}, stischema.Linkproto, node)
 	require.NoError(t, err)
 
-	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
-	mpPriv, mpPeerID := generateIdentityAndKey(t)
+	ep1PeerID, ep1Priv, _ := random.Identity()
+	mpPeerID, mpPriv, _ := random.Identity()
 	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
@@ -318,8 +311,8 @@ func extendedSignatureTest(t *testing.T, testFunc func(adv stischema.Advertiseme
 	elnk, err := lsys.Store(ipld.LinkContext{}, stischema.Linkproto, node)
 	require.NoError(t, err)
 
-	ep1Priv, ep1PeerID := generateIdentityAndKey(t)
-	mpPriv, mpPeerID := generateIdentityAndKey(t)
+	ep1PeerID, ep1Priv, _ := random.Identity()
+	mpPeerID, mpPriv, _ := random.Identity()
 	mpAddrs := random.Addrs(2)
 
 	adv := stischema.Advertisement{
@@ -359,12 +352,4 @@ func extendedSignatureTest(t *testing.T, testFunc func(adv stischema.Advertiseme
 	require.NoError(t, err)
 
 	testFunc(adv)
-}
-
-func generateIdentityAndKey(t *testing.T) (crypto.PrivKey, peer.ID) {
-	priv, pub, err := p2ptest.RandTestKeyPair(crypto.Ed25519, 256)
-	require.NoError(t, err)
-	peerID, err := peer.IDFromPublicKey(pub)
-	require.NoError(t, err)
-	return priv, peerID
 }

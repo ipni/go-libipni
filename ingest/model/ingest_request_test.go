@@ -5,24 +5,12 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-test/random"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-	p2ptest "github.com/libp2p/go-libp2p/core/test"
 )
 
 func TestIngestRequest(t *testing.T) {
 	mhs := random.Multihashes(1)
-
 	metadata := []byte("test-metadata")
-
-	privKey, pubKey, err := p2ptest.RandTestKeyPair(crypto.Ed25519, 256)
-	if err != nil {
-		t.Fatal(err)
-	}
-	peerID, err := peer.IDFromPublicKey(pubKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	peerID, privKey, _ := random.Identity()
 
 	ctxID := []byte("test-context-id")
 	address := "/ip4/127.0.0.1/tcp/7777"
