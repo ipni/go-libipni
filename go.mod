@@ -12,6 +12,7 @@ require (
 	github.com/ipfs/go-graphsync v0.17.0
 	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/ipfs/go-log/v2 v2.5.1
+	github.com/ipfs/go-test v0.0.1
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/libp2p/go-libp2p v0.35.1
 	github.com/libp2p/go-libp2p-pubsub v0.11.0
