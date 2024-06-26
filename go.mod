@@ -6,7 +6,7 @@ require (
 	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc8
 	github.com/gammazero/channelqueue v0.2.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/go-retryablehttp v0.7.4
+	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-graphsync v0.17.0
