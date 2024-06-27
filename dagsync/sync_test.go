@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipni/go-libipni/announce"
@@ -157,7 +158,7 @@ func TestSyncFn(t *testing.T) {
 
 	// Try to sync with a non-existing cid to check that sync returns with err,
 	// and SyncFinished watcher does not get event.
-	cids := test.RandomCids(1)
+	cids := random.Cids(1)
 	ctx, syncncl := context.WithTimeout(context.Background(), updateTimeout)
 	defer syncncl()
 	peerInfo := peer.AddrInfo{
@@ -361,7 +362,7 @@ func TestLatestSyncFailure(t *testing.T) {
 		Addrs: pub.Addrs(),
 	}
 	// Announce bad CID.
-	badCid := test.RandomCids(1)[0]
+	badCid := random.Cids(1)[0]
 	err = sub.Announce(context.Background(), badCid, pubInfo)
 	require.NoError(t, err)
 	// Check for fetch failure.

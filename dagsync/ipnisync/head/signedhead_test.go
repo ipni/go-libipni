@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
-	"github.com/ipni/go-libipni/test"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
@@ -69,7 +69,7 @@ func generateSignedHead() *headschema.SignedHead {
 	if err != nil {
 		panic(err.Error())
 	}
-	mhs := test.RandomMultihashes(1)
+	mhs := random.Multihashes(1)
 	headCid := cid.NewCidV1(cid.Raw, mhs[0])
 
 	sh, err := headschema.NewSignedHead(headCid, testTopic, privKey)
