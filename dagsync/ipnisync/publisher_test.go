@@ -3,6 +3,7 @@ package ipnisync_test
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -280,7 +281,7 @@ func TestNewPublisherForListener(t *testing.T) {
 			pathPart := strings.TrimLeft(handlerPath, "/")
 			expectedMaddr := "/ip4/192.168.200.1/tcp/8080/http"
 			if pathPart != "" {
-				expectedMaddr += "/httpath/" + url.PathEscape(pathPart)
+				expectedMaddr += fmt.Sprint("/", multiaddr.ProtocolWithCode(multiaddr.P_HTTP_PATH).Name, "/", url.PathEscape(pathPart))
 			}
 			req.Equal(expectedMaddr, maddr.String())
 
