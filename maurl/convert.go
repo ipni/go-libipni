@@ -10,7 +10,7 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-// register an 'httpath' component:
+// register old 'httpath' component:
 var transcodePath = multiaddr.NewTranscoderFromFunctions(pathStB, pathBtS, pathVal)
 
 func pathVal(b []byte) error {
@@ -29,10 +29,13 @@ func pathBtS(b []byte) (string, error) {
 }
 
 func init() {
-	_ = multiaddr.AddProtocol(protoHTTPath)
+	_ = multiaddr.AddProtocol(oldProtoHTTPath)
 }
 
-var protoHTTPath = multiaddr.Protocol{
+// oldProtoHTTPath was used before "http-path" was part of multiaddr.
+//
+// TODO: remove when all providers have upgraded to IPNI with support for multiaddr.P_HTTP_PPATH
+var oldProtoHTTPath = multiaddr.Protocol{
 	Name:       "httpath",
 	Code:       0x300200,
 	VCode:      multiaddr.CodeToVarint(0x300200),
@@ -85,7 +88,11 @@ func ToURL(ma multiaddr.Multiaddr) (*url.URL, error) {
 	}
 
 	path := ""
-	if pb, ok := pm[protoHTTPath.Code]; ok {
+	pb, ok := pm[multiaddr.P_HTTP_PATH]
+	if !ok {
+		pb, ok = pm[oldProtoHTTPath.Code]
+	}
+	if ok {
 		path, err = url.PathUnescape(pb)
 		if err != nil {
 			path = ""
@@ -138,11 +145,11 @@ func FromURL(u *url.URL) (multiaddr.Multiaddr, error) {
 
 	joint := multiaddr.Join(*addr, http)
 	if u.Path != "" {
-		httpath, err := multiaddr.NewComponent(protoHTTPath.Name, url.PathEscape(u.Path))
+		httppath, err := multiaddr.NewComponent(multiaddr.ProtocolWithCode(multiaddr.P_HTTP_PATH).Name, url.PathEscape(u.Path))
 		if err != nil {
 			return nil, err
 		}
-		joint = multiaddr.Join(joint, httpath)
+		joint = multiaddr.Join(joint, httppath)
 	}
 
 	return joint, nil
