@@ -1,6 +1,7 @@
 package rwriter
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,9 +85,13 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (*ResponseWr
 	}
 	switch pathType {
 	case opts.mhPathType:
-		b, err = base58.Decode(strings.TrimSpace(path.Base(r.URL.Path)))
+		mhStr := strings.TrimSpace(path.Base(r.URL.Path))
+		b, err = base58.Decode(mhStr)
 		if err != nil {
-			return nil, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
+			b, err = hex.DecodeString(mhStr)
+			if err != nil {
+				return nil, apierror.New(multihash.ErrInvalidMultihash, http.StatusBadRequest)
+			}
 		}
 		mh = multihash.Multihash(b)
 		cidKey = cid.NewCidV1(cid.Raw, mh)

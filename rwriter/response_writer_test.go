@@ -2,6 +2,7 @@ package rwriter_test
 
 import (
 	"bytes"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ipni/go-libipni/rwriter"
+	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,4 +89,32 @@ func TestResponseWriter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 	require.Equal(t, "unsupported resource type", strings.TrimSpace(string(body)))
+
+	// Check that invalid multihash is handled.
+	req, err = http.NewRequest(http.MethodGet, ts.URL+"/multihash/aflk324vecr-903r-0", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "application/json")
+	res, err = cli.Do(req)
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, res.Body)
+	require.NoError(t, err)
+	res.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+
+	b, err := base58.Decode("2DrjgbM2tfcpUE5imXMv3HnzryEaxd1FKh8DWMDEgtFkL7MDvT")
+	require.NoError(t, err)
+
+	// Check that hex multihash is handled.
+	req, err = http.NewRequest(http.MethodGet, ts.URL+"/multihash/"+hex.EncodeToString(b), nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "application/json")
+	res, err = cli.Do(req)
+	require.NoError(t, err)
+	body, err = io.ReadAll(res.Body)
+	res.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	require.Equal(t, testHeaderVal, res.Header.Get(testHeaderKey))
+	require.Equal(t, "ok", strings.TrimSpace(string(body)))
 }
