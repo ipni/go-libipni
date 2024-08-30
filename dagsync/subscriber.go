@@ -488,6 +488,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 
 	sel := ExploreRecursiveWithStopNode(depthLimit, s.adsSelectorSeq, stopLnk)
 
+	ctx = context.WithValue(ctx, ipnisync.CidSchemaCtxKey, ipnisync.CidSchemaAd)
 	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, segdl, stopAtCid)
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)
@@ -571,6 +572,7 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 
 	log.Debugw("Start entries sync", "peer", peerInfo.ID, "cid", entCid)
 
+	ctx = context.WithValue(ctx, ipnisync.CidSchemaCtxKey, ipnisync.CidSchemaEntries)
 	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl, cid.Undef)
 	if err != nil {
 		return fmt.Errorf("sync handler failed: %w", err)
@@ -872,6 +874,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 		return
 	}
 
+	ctx = context.WithValue(ctx, ipnisync.CidSchemaCtxKey, ipnisync.CidSchemaAd)
 	sel := ExploreRecursiveWithStopNode(adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
 	syncCount, err := h.handle(ctx, nextCid, sel, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit, stopAtCid)
 	if err != nil {

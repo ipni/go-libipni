@@ -226,6 +226,16 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return fmt.Errorf("failed to compile selector: %w", err)
 	}
 
+	// Check for valid cid schema type if set.
+	cidSchemaType, ok := ctx.Value(CidSchemaCtxKey).(string)
+	if ok {
+		switch cidSchemaType {
+		case CidSchemaAd, CidSchemaEntries:
+		default:
+			return fmt.Errorf("invalid cid schema type value: %s", cidSchemaType)
+		}
+	}
+
 	cids, err := s.walkFetch(ctx, nextCid, xsel)
 	if err != nil {
 		return fmt.Errorf("failed to traverse requested dag: %w", err)
@@ -305,6 +315,12 @@ retry:
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
+	}
+
+	// Value already checked in Sync.
+	reqType, ok := ctx.Value(CidSchemaCtxKey).(string)
+	if ok {
+		req.Header.Set(CidSchemaHeader, reqType)
 	}
 
 	resp, err := s.client.Do(req)

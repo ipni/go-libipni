@@ -1,6 +1,7 @@
 package ipnisync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,6 +42,10 @@ var _ http.Handler = (*Publisher)(nil)
 
 // NewPublisher creates a new ipni-sync publisher. Optionally, a libp2p stream
 // host can be provided to serve HTTP over libp2p.
+//
+// If the publisher receives a request that contains a valid CidSchemaHeader
+// header, then the ipld.Context passed to the lsys Load function contains a
+// context that has that header's value stored under the CidSchemaCtxKey key.
 func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
@@ -218,7 +223,14 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request: not a cid", http.StatusBadRequest)
 		return
 	}
-	item, err := p.lsys.Load(ipld.LinkContext{}, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
+
+	ipldCtx := ipld.LinkContext{}
+	reqType := r.Header.Get(CidSchemaHeader)
+	if reqType != "" {
+		ipldCtx.Ctx = context.WithValue(context.Background(), CidSchemaCtxKey, reqType)
+	}
+
+	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
 	if err != nil {
 		if errors.Is(err, ipld.ErrNotExists{}) {
 			http.Error(w, "cid not found", http.StatusNotFound)
