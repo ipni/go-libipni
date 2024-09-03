@@ -244,11 +244,10 @@ func TestRequestTypeHint(t *testing.T) {
 
 	publs.StorageReadOpener = func(lnkCtx linking.LinkContext, lnk datamodel.Link) (io.Reader, error) {
 		if lnkCtx.Ctx != nil {
-			hint, ok := lnkCtx.Ctx.Value(ipnisync.CidSchemaCtxKey).(string)
-			require.True(t, ok)
+			hint, err := ipnisync.CidSchemaFromCtx(lnkCtx.Ctx)
+			require.NoError(t, err)
 			require.NotEmpty(t, hint)
 			lastReqTypeHint = hint
-			t.Log("Request type hint:", hint)
 		} else {
 			lastReqTypeHint = ""
 		}
@@ -277,15 +276,18 @@ func TestRequestTypeHint(t *testing.T) {
 	testCid, err := cid.Decode(sampleNFTStorageCid)
 	require.NoError(t, err)
 
-	ctx := context.WithValue(context.Background(), ipnisync.CidSchemaCtxKey, ipnisync.CidSchemaAd)
+	ctx, err := ipnisync.CtxWithCidSchema(context.Background(), ipnisync.CidSchemaAdvertisement)
+	require.NoError(t, err)
 	_ = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
-	require.Equal(t, ipnisync.CidSchemaAd, lastReqTypeHint)
+	require.Equal(t, ipnisync.CidSchemaAdvertisement, lastReqTypeHint)
 
-	ctx = context.WithValue(context.Background(), ipnisync.CidSchemaCtxKey, ipnisync.CidSchemaEntries)
+	ctx, err = ipnisync.CtxWithCidSchema(context.Background(), ipnisync.CidSchemaEntryChunk)
+	require.NoError(t, err)
 	_ = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
-	require.Equal(t, ipnisync.CidSchemaEntries, lastReqTypeHint)
+	require.Equal(t, ipnisync.CidSchemaEntryChunk, lastReqTypeHint)
 
-	ctx = context.WithValue(context.Background(), ipnisync.CidSchemaCtxKey, "bad")
+	ctx, err = ipnisync.CtxWithCidSchema(context.Background(), "bad")
+	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
 	err = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
-	require.ErrorContains(t, err, "invalid cid schema type value")
+	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
 }

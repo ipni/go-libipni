@@ -227,13 +227,9 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 	}
 
 	// Check for valid cid schema type if set.
-	cidSchemaType, ok := ctx.Value(CidSchemaCtxKey).(string)
-	if ok {
-		switch cidSchemaType {
-		case CidSchemaAd, CidSchemaEntries:
-		default:
-			return fmt.Errorf("invalid cid schema type value: %s", cidSchemaType)
-		}
+	_, err = CidSchemaFromCtx(ctx)
+	if err != nil {
+		return err
 	}
 
 	cids, err := s.walkFetch(ctx, nextCid, xsel)
@@ -317,9 +313,9 @@ retry:
 		return err
 	}
 
-	// Value already checked in Sync.
-	reqType, ok := ctx.Value(CidSchemaCtxKey).(string)
-	if ok {
+	// Error already checked in Sync.
+	reqType, _ := CidSchemaFromCtx(ctx)
+	if reqType != "" {
 		req.Header.Set(CidSchemaHeader, reqType)
 	}
 

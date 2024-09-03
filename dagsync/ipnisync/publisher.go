@@ -1,7 +1,6 @@
 package ipnisync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -45,7 +44,7 @@ var _ http.Handler = (*Publisher)(nil)
 //
 // If the publisher receives a request that contains a valid CidSchemaHeader
 // header, then the ipld.Context passed to the lsys Load function contains a
-// context that has that header's value stored under the CidSchemaCtxKey key.
+// context that has that header's value retrievable with CidSchemaFromCtx.
 func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
@@ -227,7 +226,10 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ipldCtx := ipld.LinkContext{}
 	reqType := r.Header.Get(CidSchemaHeader)
 	if reqType != "" {
-		ipldCtx.Ctx = context.WithValue(context.Background(), CidSchemaCtxKey, reqType)
+		ipldCtx.Ctx, err = CtxWithCidSchema(ipldCtx.Ctx, reqType)
+		if err != nil {
+			log.Warnw(err.Error(), "value", reqType)
+		}
 	}
 
 	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
