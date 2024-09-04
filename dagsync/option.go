@@ -48,6 +48,7 @@ type config struct {
 	firstSyncDepth    int64
 	segDepthLimit     int64
 
+	cidSchemaHint   bool
 	strictAdsSelSeq bool
 
 	httpTimeout      time.Duration
@@ -66,6 +67,7 @@ func getOpts(opts []Option) (config, error) {
 		httpTimeout:     defaultHttpTimeout,
 		idleHandlerTTL:  defaultIdleHandlerTTL,
 		segDepthLimit:   defaultSegDepthLimit,
+		cidSchemaHint:   true,
 		strictAdsSelSeq: true,
 	}
 
@@ -337,5 +339,12 @@ func MakeGeneralBlockHook(prevAdCid func(adCid cid.Cid) (cid.Cid, error)) BlockH
 		} else {
 			actions.SetNextSyncCid(prevCid)
 		}
+	}
+}
+
+func WithCidSchemaHint(enable bool) Option {
+	return func(c *config) error {
+		c.cidSchemaHint = enable
+		return nil
 	}
 }

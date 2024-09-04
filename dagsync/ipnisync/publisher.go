@@ -12,9 +12,11 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
+	ipldmodel "github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
+	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -226,13 +228,29 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ipldCtx := ipld.LinkContext{}
 	reqType := r.Header.Get(CidSchemaHeader)
 	if reqType != "" {
+		log.Debug("sync request has cid schema type hint", "hint", reqType)
 		ipldCtx.Ctx, err = CtxWithCidSchema(ipldCtx.Ctx, reqType)
 		if err != nil {
+			// Log warning about unknown cid schema type, but continue on since
+			// the linksystem might recognize it.
 			log.Warnw(err.Error(), "value", reqType)
 		}
 	}
 
-	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
+	var ipldProto ipldmodel.NodePrototype
+
+	switch reqType {
+	case CidSchemaAdvertisement:
+		ipldProto = schema.AdvertisementPrototype
+	case CidSchemaEntryChunk:
+		ipldProto = schema.EntryChunkPrototype
+	default:
+		ipldProto = basicnode.Prototype.Any
+	}
+
+	//ipldProto = basicnode.Prototype.Any
+
+	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, ipldProto)
 	if err != nil {
 		if errors.Is(err, ipld.ErrNotExists{}) {
 			http.Error(w, "cid not found", http.StatusNotFound)
