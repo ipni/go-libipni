@@ -230,3 +230,64 @@ func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "content not found")
 }
+
+func TestRequestTypeHint(t *testing.T) {
+	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
+	require.NoError(t, err)
+	pubID, err := peer.IDFromPrivateKey(pubPrK)
+	require.NoError(t, err)
+
+	var lastReqTypeHint string
+
+	// Instantiate a dagsync publisher.
+	publs := cidlink.DefaultLinkSystem()
+
+	publs.StorageReadOpener = func(lnkCtx linking.LinkContext, lnk datamodel.Link) (io.Reader, error) {
+		if lnkCtx.Ctx != nil {
+			hint, err := ipnisync.CidSchemaFromCtx(lnkCtx.Ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, hint)
+			lastReqTypeHint = hint
+		} else {
+			lastReqTypeHint = ""
+		}
+
+		require.NotEmpty(t, lastReqTypeHint, "missing expected context value")
+		return nil, ipld.ErrNotExists{}
+	}
+
+	pub, err := ipnisync.NewPublisher(publs, pubPrK, ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pub.Close()) })
+
+	ls := cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ls.SetWriteStorage(store)
+	ls.SetReadStorage(store)
+
+	sync := ipnisync.NewSync(ls, nil)
+	pubInfo := peer.AddrInfo{
+		ID:    pubID,
+		Addrs: pub.Addrs(),
+	}
+	syncer, err := sync.NewSyncer(pubInfo)
+	require.NoError(t, err)
+
+	testCid, err := cid.Decode(sampleNFTStorageCid)
+	require.NoError(t, err)
+
+	ctx, err := ipnisync.CtxWithCidSchema(context.Background(), ipnisync.CidSchemaAdvertisement)
+	require.NoError(t, err)
+	_ = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
+	require.Equal(t, ipnisync.CidSchemaAdvertisement, lastReqTypeHint)
+
+	ctx, err = ipnisync.CtxWithCidSchema(context.Background(), ipnisync.CidSchemaEntryChunk)
+	require.NoError(t, err)
+	_ = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
+	require.Equal(t, ipnisync.CidSchemaEntryChunk, lastReqTypeHint)
+
+	ctx, err = ipnisync.CtxWithCidSchema(context.Background(), "bad")
+	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
+	err = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
+	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal"
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
+	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -226,7 +227,23 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return fmt.Errorf("failed to compile selector: %w", err)
 	}
 
-	cids, err := s.walkFetch(ctx, nextCid, xsel)
+	// Check for valid cid schema type if set.
+	reqType, err := CidSchemaFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+
+	var ipldProto datamodel.NodePrototype
+	switch reqType {
+	case CidSchemaAdvertisement:
+		ipldProto = schema.AdvertisementPrototype
+	case CidSchemaEntryChunk:
+		ipldProto = schema.EntryChunkPrototype
+	default:
+		ipldProto = basicnode.Prototype.Any
+	}
+
+	cids, err := s.walkFetch(ctx, nextCid, xsel, ipldProto)
 	if err != nil {
 		return fmt.Errorf("failed to traverse requested dag: %w", err)
 	}
@@ -252,7 +269,7 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 // walkFetch is run by a traversal of the selector. For each block that the
 // selector walks over, walkFetch will look to see if it can find it in the
 // local data store. If it cannot, it will then go and get it over HTTP.
-func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector) ([]cid.Cid, error) {
+func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector, ipldProto datamodel.NodePrototype) ([]cid.Cid, error) {
 	// Track the order of cids seen during traversal so that the block hook
 	// function gets called in the same order.
 	var traversalOrder []cid.Cid
@@ -263,7 +280,7 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 	getMissingLs.StorageReadOpener = func(lc ipld.LinkContext, l ipld.Link) (io.Reader, error) {
 		c := l.(cidlink.Link).Cid
 		// fetchBlock checks if the node is already present in storage.
-		err := s.fetchBlock(ctx, c)
+		err := s.fetchBlock(ctx, c, ipldProto)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch block for cid %s: %w", c, err)
 		}
@@ -285,7 +302,7 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 	}
 
 	// get the direct node.
-	rootNode, err := getMissingLs.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: rootCid}, basicnode.Prototype.Any)
+	rootNode, err := getMissingLs.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: rootCid}, ipldProto)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node for root cid %s: %w", rootCid, err)
 	}
@@ -305,6 +322,12 @@ retry:
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
 	if err != nil {
 		return err
+	}
+
+	// Error already checked in Sync.
+	reqType, _ := CidSchemaFromCtx(ctx)
+	if reqType != "" {
+		req.Header.Set(CidSchemaHeader, reqType)
 	}
 
 	resp, err := s.client.Do(req)
@@ -362,8 +385,8 @@ retry:
 }
 
 // fetchBlock fetches an item into the datastore at c if not locally available.
-func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
-	n, err := s.sync.lsys.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
+func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid, ipldProto datamodel.NodePrototype) error {
+	n, err := s.sync.lsys.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: c}, ipldProto)
 	// node is already present.
 	if n != nil && err == nil {
 		return nil

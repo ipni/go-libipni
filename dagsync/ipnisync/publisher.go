@@ -1,6 +1,7 @@
 package ipnisync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,9 +13,11 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
+	"github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
+	"github.com/ipni/go-libipni/ingest/schema"
 	"github.com/ipni/go-libipni/maurl"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -41,6 +44,10 @@ var _ http.Handler = (*Publisher)(nil)
 
 // NewPublisher creates a new ipni-sync publisher. Optionally, a libp2p stream
 // host can be provided to serve HTTP over libp2p.
+//
+// If the publisher receives a request that contains a valid CidSchemaHeader
+// header, then the ipld.Context passed to the lsys Load function contains a
+// context that has that header's value retrievable with CidSchemaFromCtx.
 func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
 	opts, err := getOpts(options)
 	if err != nil {
@@ -218,7 +225,30 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request: not a cid", http.StatusBadRequest)
 		return
 	}
-	item, err := p.lsys.Load(ipld.LinkContext{}, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
+
+	ipldCtx := ipld.LinkContext{}
+	reqType := r.Header.Get(CidSchemaHeader)
+	if reqType != "" {
+		log.Debug("sync request has cid schema type hint", "hint", reqType)
+		ipldCtx.Ctx, err = CtxWithCidSchema(context.Background(), reqType)
+		if err != nil {
+			// Log warning about unknown cid schema type, but continue on since
+			// the linksystem might recognize it.
+			log.Warnw(err.Error(), "value", reqType)
+		}
+	}
+
+	var ipldProto datamodel.NodePrototype
+	switch reqType {
+	case CidSchemaAdvertisement:
+		ipldProto = schema.AdvertisementPrototype
+	case CidSchemaEntryChunk:
+		ipldProto = schema.EntryChunkPrototype
+	default:
+		ipldProto = basicnode.Prototype.Any
+	}
+
+	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, ipldProto)
 	if err != nil {
 		if errors.Is(err, ipld.ErrNotExists{}) {
 			http.Error(w, "cid not found", http.StatusNotFound)
