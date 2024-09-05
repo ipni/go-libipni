@@ -17,7 +17,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/datamodel"
-	ipldmodel "github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	"github.com/ipld/go-ipld-prime/traversal"
@@ -234,7 +233,7 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		return err
 	}
 
-	var ipldProto ipldmodel.NodePrototype
+	var ipldProto datamodel.NodePrototype
 	switch reqType {
 	case CidSchemaAdvertisement:
 		ipldProto = schema.AdvertisementPrototype
@@ -270,7 +269,7 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 // walkFetch is run by a traversal of the selector. For each block that the
 // selector walks over, walkFetch will look to see if it can find it in the
 // local data store. If it cannot, it will then go and get it over HTTP.
-func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector, ipldProto ipldmodel.NodePrototype) ([]cid.Cid, error) {
+func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Selector, ipldProto datamodel.NodePrototype) ([]cid.Cid, error) {
 	// Track the order of cids seen during traversal so that the block hook
 	// function gets called in the same order.
 	var traversalOrder []cid.Cid
@@ -386,7 +385,7 @@ retry:
 }
 
 // fetchBlock fetches an item into the datastore at c if not locally available.
-func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid, ipldProto ipldmodel.NodePrototype) error {
+func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid, ipldProto datamodel.NodePrototype) error {
 	n, err := s.sync.lsys.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: c}, ipldProto)
 	// node is already present.
 	if n != nil && err == nil {

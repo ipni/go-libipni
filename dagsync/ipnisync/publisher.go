@@ -13,7 +13,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
-	ipldmodel "github.com/ipld/go-ipld-prime/datamodel"
+	"github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
 	headschema "github.com/ipni/go-libipni/dagsync/ipnisync/head"
@@ -238,7 +238,7 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var ipldProto ipldmodel.NodePrototype
+	var ipldProto datamodel.NodePrototype
 	switch reqType {
 	case CidSchemaAdvertisement:
 		ipldProto = schema.AdvertisementPrototype
