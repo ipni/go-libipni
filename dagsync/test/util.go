@@ -170,8 +170,12 @@ func encode(lsys ipld.LinkSystem, n ipld.Node) (ipld.Node, ipld.Link) {
 
 func MkLinkSystem(ds datastore.Batching) ipld.LinkSystem {
 	lsys := cidlink.DefaultLinkSystem()
-	lsys.StorageReadOpener = func(_ ipld.LinkContext, lnk ipld.Link) (io.Reader, error) {
-		val, err := ds.Get(context.Background(), datastore.NewKey(lnk.String()))
+	lsys.StorageReadOpener = func(ipldCtx ipld.LinkContext, lnk ipld.Link) (io.Reader, error) {
+		ctx := ipldCtx.Ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		val, err := ds.Get(ctx, datastore.NewKey(lnk.String()))
 		if err != nil {
 			return nil, err
 		}

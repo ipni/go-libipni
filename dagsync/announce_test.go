@@ -36,7 +36,7 @@ func TestAnnounceReplace(t *testing.T) {
 	}
 
 	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(),
-		dagsync.BlockHook(blockHook))
+		dagsync.BlockHook(blockHook), dagsync.WithCidSchemaHint(false))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -377,7 +377,8 @@ func TestPublisherRejectsPeer(t *testing.T) {
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+		dagsync.RecvAnnounce(announce.WithTopic(topics[1])))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -457,7 +458,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic,
+	sub, err := dagsync.NewSubscriber(dstHost, dstStore, dstLnkS, testTopic, dagsync.WithCidSchemaHint(false),
 		dagsync.RecvAnnounce(announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 

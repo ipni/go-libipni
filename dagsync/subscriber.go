@@ -105,6 +105,10 @@ type Subscriber struct {
 	receiver  *announce.Receiver
 	topicName string
 
+	// cidSchemaHint enables sending the cid schema type hint as
+	// an HTTP header in sync requests.
+	cidSchemaHint bool
+
 	// Track explicit Sync calls in progress and allow them to complete before
 	// closing subscriber.
 	expSyncClosed bool
@@ -244,6 +248,8 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 			ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) {
 				efsb.Insert("Next", ssb.ExploreRecursiveEdge()) // Next field in EntryChunk
 			})).Node(),
+
+		cidSchemaHint: opts.cidSchemaHint,
 	}
 
 	if opts.strictAdsSelSeq {
@@ -252,6 +258,7 @@ func NewSubscriber(host host.Host, ds datastore.Batching, lsys ipld.LinkSystem, 
 		}).Node()
 	} else {
 		s.adsSelectorSeq = ssb.ExploreAll(ssb.ExploreRecursiveEdge()).Node()
+		s.cidSchemaHint = false
 	}
 
 	if opts.hasRcvr {
@@ -497,6 +504,12 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 
 	sel := ExploreRecursiveWithStopNode(depthLimit, s.adsSelectorSeq, stopLnk)
 
+	if s.cidSchemaHint {
+		ctx, err = ipnisync.CtxWithCidSchema(ctx, ipnisync.CidSchemaAdvertisement)
+		if err != nil {
+			panic(err.Error())
+		}
+	}
 	syncCount, err := hnd.handle(ctx, nextCid, sel, syncer, opts.blockHook, segdl, stopAtCid)
 	if err != nil {
 		return cid.Undef, fmt.Errorf("sync handler failed: %w", err)
@@ -580,6 +593,12 @@ func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 
 	log.Debugw("Start entries sync", "peer", peerInfo.ID, "cid", entCid)
 
+	if s.cidSchemaHint {
+		ctx, err = ipnisync.CtxWithCidSchema(ctx, ipnisync.CidSchemaAdvertisement)
+		if err != nil {
+			panic(err.Error())
+		}
+	}
 	_, err = hnd.handle(ctx, entCid, sel, syncer, bh, segdl, cid.Undef)
 	if err != nil {
 		return fmt.Errorf("sync handler failed: %w", err)
@@ -881,6 +900,12 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	if err != nil {
 		log.Errorw("Cannot make syncer for announce", "err", err, "peer", h.peerID)
 		return
+	}
+	if h.subscriber.cidSchemaHint {
+		ctx, err = ipnisync.CtxWithCidSchema(ctx, ipnisync.CidSchemaAdvertisement)
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 	sel := ExploreRecursiveWithStopNode(adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
 	syncCount, err := h.handle(ctx, nextCid, sel, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit, stopAtCid)
