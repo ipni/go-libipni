@@ -9,12 +9,8 @@ import (
 )
 
 func TestCtxWithCidSchema(t *testing.T) {
-	ctx, err := ipnisync.CtxWithCidSchema(nil, "")
-	require.NoError(t, err)
-	require.Nil(t, ctx)
-
 	ctxOrig := context.Background()
-	ctx, err = ipnisync.CtxWithCidSchema(ctxOrig, "")
+	ctx, err := ipnisync.CtxWithCidSchema(ctxOrig, "")
 	require.NoError(t, err)
 	require.Equal(t, ctxOrig, ctx)
 
@@ -26,7 +22,7 @@ func TestCtxWithCidSchema(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ipnisync.CidSchemaAdvertisement, value)
 
-	ctx, err = ipnisync.CtxWithCidSchema(nil, ipnisync.CidSchemaEntryChunk)
+	ctx, err = ipnisync.CtxWithCidSchema(ctx, ipnisync.CidSchemaEntryChunk)
 	require.NoError(t, err)
 	value, err = ipnisync.CidSchemaFromCtx(ctx)
 	require.NoError(t, err)

@@ -37,9 +37,6 @@ const cidSchemaCtxKey cidSchemaTypeCtxKey = CidSchemaHeader
 // Returning unrecognized values with an  error allows consumers to retrieved
 // newer values that are not recognized by an older version of this library.
 func CidSchemaFromCtx(ctx context.Context) (string, error) {
-	if ctx == nil {
-		return "", nil
-	}
 	cidSchemaType, ok := ctx.Value(cidSchemaCtxKey).(string)
 	if !ok {
 		return "", nil
@@ -63,9 +60,6 @@ func CidSchemaFromCtx(ctx context.Context) (string, error) {
 func CtxWithCidSchema(ctx context.Context, cidSchemaType string) (context.Context, error) {
 	if cidSchemaType == "" {
 		return ctx, nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	var err error
 	switch cidSchemaType {

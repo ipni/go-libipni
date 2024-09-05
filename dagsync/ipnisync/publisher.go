@@ -1,6 +1,7 @@
 package ipnisync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -229,7 +230,7 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Header.Get(CidSchemaHeader)
 	if reqType != "" {
 		log.Debug("sync request has cid schema type hint", "hint", reqType)
-		ipldCtx.Ctx, err = CtxWithCidSchema(ipldCtx.Ctx, reqType)
+		ipldCtx.Ctx, err = CtxWithCidSchema(context.Background(), reqType)
 		if err != nil {
 			// Log warning about unknown cid schema type, but continue on since
 			// the linksystem might recognize it.
@@ -238,7 +239,6 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var ipldProto ipldmodel.NodePrototype
-
 	switch reqType {
 	case CidSchemaAdvertisement:
 		ipldProto = schema.AdvertisementPrototype
@@ -247,8 +247,6 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		ipldProto = basicnode.Prototype.Any
 	}
-
-	//ipldProto = basicnode.Prototype.Any
 
 	item, err := p.lsys.Load(ipldCtx, cidlink.Link{Cid: c}, ipldProto)
 	if err != nil {
