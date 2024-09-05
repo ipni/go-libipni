@@ -105,6 +105,10 @@ type Subscriber struct {
 
 	receiver *announce.Receiver
 
+	// cidSchemaHint enables sending the cid schema type hint as
+	// an HTTP header in sync requests.
+	cidSchemaHint bool
+
 	// Track explicit Sync calls in progress and allow them to complete before
 	// closing subscriber.
 	expSyncClosed bool
@@ -117,10 +121,6 @@ type Subscriber struct {
 	// traversal when the latest synced link is reached. So, this only
 	// specifies the selection sequence itself.
 	adsSelectorSeq ipld.Node
-
-	// cidSchemaHint enables sending the cid schema type hint as
-	// an HTTP header in sync requests.
-	cidSchemaHint bool
 
 	// selectorOne selects one multihash entries or HAMT block.
 	selectorOne ipld.Node
