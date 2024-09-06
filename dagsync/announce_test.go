@@ -33,8 +33,7 @@ func TestAnnounceReplace(t *testing.T) {
 		blocksSeenByHook[c] = struct{}{}
 	}
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS, dagsync.RecvAnnounce(testTopic),
-		dagsync.BlockHook(blockHook), dagsync.WithCidSchemaHint(false))
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS, dagsync.RecvAnnounce(testTopic), dagsync.BlockHook(blockHook))
 	require.NoError(t, err)
 	defer sub.Close()
 
@@ -377,7 +376,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 	dstHost.Peerstore().AddAddrs(srcHost.ID(), srcHost.Addrs(), time.Hour)
 	dstLnkS := test.MkLinkSystem(dstStore)
 
-	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS, dagsync.WithCidSchemaHint(false),
+	sub, err := dagsync.NewSubscriber(dstHost, dstLnkS,
 		dagsync.RecvAnnounce(testTopic, announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 
