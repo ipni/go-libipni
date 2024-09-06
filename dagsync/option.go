@@ -53,7 +53,6 @@ type config struct {
 	gsMaxInRequests  uint64
 	gsMaxOutRequests uint64
 
-	cidSchemaHint   bool
 	strictAdsSelSeq bool
 
 	httpTimeout      time.Duration
@@ -74,7 +73,6 @@ func getOpts(opts []Option) (config, error) {
 		segDepthLimit:    defaultSegDepthLimit,
 		gsMaxInRequests:  defaultGsMaxInRequests,
 		gsMaxOutRequests: defaultGsMaxOutRequests,
-		cidSchemaHint:    true,
 		strictAdsSelSeq:  true,
 	}
 
@@ -355,12 +353,5 @@ func MakeGeneralBlockHook(prevAdCid func(adCid cid.Cid) (cid.Cid, error)) BlockH
 		} else {
 			actions.SetNextSyncCid(prevCid)
 		}
-	}
-}
-
-func WithCidSchemaHint(enable bool) Option {
-	return func(c *config) error {
-		c.cidSchemaHint = enable
-		return nil
 	}
 }
