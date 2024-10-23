@@ -2,7 +2,7 @@ module github.com/ipni/go-libipni
 
 go 1.22.0
 
-toolchain go1.23.2
+toolchain go1.22.8
 
 require (
 	github.com/gammazero/channelqueue v0.2.2
