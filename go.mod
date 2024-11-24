@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.22.8
 
 require (
-	github.com/gammazero/channelqueue v0.2.2
+	github.com/gammazero/chanqueue v1.0.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/ipfs/go-cid v0.4.1
@@ -41,7 +41,7 @@ require (
 	github.com/elastic/gosigar v0.14.3 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
-	github.com/gammazero/deque v0.2.1 // indirect
+	github.com/gammazero/deque v1.0.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
