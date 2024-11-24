@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gammazero/channelqueue"
+	"github.com/gammazero/chanqueue"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
@@ -346,7 +346,7 @@ func (s *Subscriber) doClose() error {
 func (s *Subscriber) OnSyncFinished() (<-chan SyncFinished, context.CancelFunc) {
 	// Channel is buffered to prevent distribute() from blocking if a reader is
 	// not reading the channel immediately.
-	cq := channelqueue.New[SyncFinished](-1)
+	cq := chanqueue.New[SyncFinished]()
 	ch := cq.In()
 	s.addEventChan <- ch
 
