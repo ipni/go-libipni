@@ -16,14 +16,14 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipfs/go-test v0.0.4
 	github.com/ipld/go-ipld-prime v0.21.0
-	github.com/libp2p/go-libp2p v0.37.0
+	github.com/libp2p/go-libp2p v0.37.2
 	github.com/libp2p/go-libp2p-pubsub v0.12.0
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multiaddr v0.13.0
 	github.com/multiformats/go-multicodec v0.9.0
 	github.com/multiformats/go-multihash v0.2.3
-	github.com/multiformats/go-multistream v0.5.0
+	github.com/multiformats/go-multistream v0.6.0
 	github.com/multiformats/go-varint v0.0.7
 	github.com/stretchr/testify v1.9.0
 	github.com/whyrusleeping/cbor-gen v0.1.1
@@ -96,7 +96,7 @@ require (
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr-dns v0.4.0 // indirect
+	github.com/multiformats/go-multiaddr-dns v0.4.1 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -128,7 +128,7 @@ require (
 	github.com/prometheus/common v0.60.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.48.1 // indirect
+	github.com/quic-go/quic-go v0.48.2 // indirect
 	github.com/quic-go/webtransport-go v0.8.1-0.20241018022711-4ac2c9250e66 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
