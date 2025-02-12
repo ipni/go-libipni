@@ -29,7 +29,7 @@ func (t *Voucher) MarshalCBOR(w io.Writer) error {
 
 	// t.Head (cid.Cid) (struct)
 	if len("Head") > cbg.MaxLength {
-		return fmt.Errorf("Value in field \"Head\" was too long")
+		return fmt.Errorf("calue in field \"Head\" was too long")
 	}
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len("Head"))); err != nil {
@@ -130,7 +130,7 @@ func (t *VoucherResult) MarshalCBOR(w io.Writer) error {
 
 	// t.Code (uint64) (uint64)
 	if len("Code") > cbg.MaxLength {
-		return fmt.Errorf("Value in field \"Code\" was too long")
+		return fmt.Errorf("value in field \"Code\" was too long")
 	}
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len("Code"))); err != nil {
