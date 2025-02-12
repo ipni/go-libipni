@@ -1,8 +1,6 @@
 module github.com/ipni/go-libipni
 
-go 1.22.0
-
-toolchain go1.22.8
+go 1.23
 
 require (
 	github.com/gammazero/chanqueue v1.0.0
