@@ -10,10 +10,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	xerrors "golang.org/x/xerrors"
 )
 
-var _ = xerrors.Errorf
 var _ = cid.Undef
 var _ = math.E
 var _ = sort.Sort
@@ -31,7 +29,7 @@ func (t *Voucher) MarshalCBOR(w io.Writer) error {
 
 	// t.Head (cid.Cid) (struct)
 	if len("Head") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"Head\" was too long")
+		return fmt.Errorf("Value in field \"Head\" was too long")
 	}
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len("Head"))); err != nil {
@@ -47,7 +45,7 @@ func (t *Voucher) MarshalCBOR(w io.Writer) error {
 		}
 	} else {
 		if err := cbg.WriteCidBuf(scratch, w, *t.Head); err != nil {
-			return xerrors.Errorf("failed to write cid field t.Head: %w", err)
+			return fmt.Errorf("failed to write cid field t.Head: %w", err)
 		}
 	}
 
@@ -103,7 +101,7 @@ func (t *Voucher) UnmarshalCBOR(r io.Reader) error {
 
 					c, err := cbg.ReadCid(br)
 					if err != nil {
-						return xerrors.Errorf("failed to read cid field t.Head: %w", err)
+						return fmt.Errorf("failed to read cid field t.Head: %w", err)
 					}
 
 					t.Head = &c
@@ -132,7 +130,7 @@ func (t *VoucherResult) MarshalCBOR(w io.Writer) error {
 
 	// t.Code (uint64) (uint64)
 	if len("Code") > cbg.MaxLength {
-		return xerrors.Errorf("Value in field \"Code\" was too long")
+		return fmt.Errorf("Value in field \"Code\" was too long")
 	}
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len("Code"))); err != nil {
