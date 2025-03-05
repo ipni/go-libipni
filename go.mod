@@ -12,7 +12,7 @@ require (
 	github.com/ipfs/go-graphsync v0.17.0
 	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipfs/go-test v0.0.4
+	github.com/ipfs/go-test v0.2.1
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/libp2p/go-libp2p v0.41.0
 	github.com/libp2p/go-libp2p-pubsub v0.13.0
@@ -64,7 +64,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
-	github.com/ipfs/go-block-format v0.1.2 // indirect
+	github.com/ipfs/go-block-format v0.2.0 // indirect
 	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-ipld-cbor v0.0.6 // indirect
