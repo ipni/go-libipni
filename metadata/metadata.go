@@ -65,6 +65,7 @@ func init() {
 	d.protocols[multicodec.TransportBitswap] = func() Protocol { return &Bitswap{} }
 	d.protocols[multicodec.TransportGraphsyncFilecoinv1] = func() Protocol { return &GraphsyncFilecoinV1{} }
 	d.protocols[multicodec.TransportIpfsGatewayHttp] = func() Protocol { return &IpfsGatewayHttp{} }
+	d.protocols[multicodec.TransportFilecoinPieceHttp] = func() Protocol { return &FilecoinPieceHttp{} }
 	Default = &d
 }
 
