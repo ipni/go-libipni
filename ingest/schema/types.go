@@ -40,6 +40,7 @@ type (
 		ContextID        []byte
 		Metadata         []byte
 		IsRm             bool
+		SeqNum           *uint64
 		ExtendedProvider *ExtendedProvider
 	}
 	EntryChunk struct {
@@ -98,6 +99,13 @@ func (a Advertisement) PreviousCid() cid.Cid {
 		return cid.Undef
 	}
 	return a.PreviousID.(cidlink.Link).Cid
+}
+
+func (a Advertisement) Sequence() uint64 {
+	if a.SeqNum == nil {
+		return 0
+	}
+	return uint64(*a.SeqNum)
 }
 
 func (a Advertisement) Validate() error {
