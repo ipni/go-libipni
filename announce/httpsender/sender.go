@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"go.uber.org/multierr"
 )
 
 const DefaultAnnouncePath = "/announce"
@@ -164,7 +164,7 @@ func (s *Sender) sendData(ctx context.Context, buf *bytes.Buffer, js bool) error
 	for i := 0; i < len(s.announceURLs); i++ {
 		err := <-errChan
 		if err != nil {
-			errs = multierror.Append(errs, err)
+			errs = multierr.Append(errs, err)
 		}
 	}
 	return errs

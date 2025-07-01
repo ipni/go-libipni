@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	dt "github.com/filecoin-project/go-data-transfer/v2"
-	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipld/go-ipld-prime"
@@ -15,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"go.uber.org/multierr"
 )
 
 // Publisher serves an advertisement over libp2p using data-transfer.
@@ -109,13 +109,13 @@ func (p *Publisher) Close() error {
 	p.closeOnce.Do(func() {
 		err := p.headPublisher.Close()
 		if err != nil {
-			errs = multierror.Append(errs, err)
+			errs = multierr.Append(errs, err)
 		}
 
 		if p.dtClose != nil {
 			err = p.dtClose()
 			if err != nil {
-				errs = multierror.Append(errs, err)
+				errs = multierr.Append(errs, err)
 			}
 		}
 	})
