@@ -64,6 +64,8 @@ type Advertisement struct {
     Metadata Bytes
     # IsRm specifies whether this advertisement represents the content are no longer retrievalbe fom the provider.
     IsRm Bool
+    # SeqNum is a monotonically increasing sequence number that gives the advertisement's distance in the chain.
+    SeqNum optional Int
     # ExtendedProvider might optionally specify a set of providers where the ad entries are available from. 
     # See: https://github.com/ipni/storetheindex/blob/main/doc/ingest.md#extendedprovider
     ExtendedProvider optional ExtendedProvider
