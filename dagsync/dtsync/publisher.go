@@ -2,6 +2,7 @@ package dtsync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"go.uber.org/multierr"
 )
 
 // Publisher serves an advertisement over libp2p using data-transfer.
@@ -105,19 +105,19 @@ func (p *Publisher) SetRoot(c cid.Cid) {
 
 // Close closes the publisher.
 func (p *Publisher) Close() error {
-	var errs error
+	var errs []error
 	p.closeOnce.Do(func() {
 		err := p.headPublisher.Close()
 		if err != nil {
-			errs = multierr.Append(errs, err)
+			errs = append(errs, err)
 		}
 
 		if p.dtClose != nil {
 			err = p.dtClose()
 			if err != nil {
-				errs = multierr.Append(errs, err)
+				errs = append(errs, err)
 			}
 		}
 	})
-	return errs
+	return errors.Join(errs...)
 }

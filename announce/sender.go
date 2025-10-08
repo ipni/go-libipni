@@ -7,7 +7,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/multiformats/go-multiaddr"
-	"go.uber.org/multierr"
 )
 
 // Sender is the interface for announce sender implementations.
@@ -31,7 +30,7 @@ func Send(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr, senders .
 	}
 	msg.SetAddrs(addrs)
 
-	var errs error
+	var errs []error
 	for _, sender := range senders {
 		if sender == nil {
 			continue
@@ -40,8 +39,8 @@ func Send(ctx context.Context, c cid.Cid, addrs []multiaddr.Multiaddr, senders .
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
-			errs = multierr.Append(errs, err)
+			errs = append(errs, err)
 		}
 	}
-	return errs
+	return errors.Join(errs...)
 }

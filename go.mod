@@ -1,6 +1,6 @@
 module github.com/ipni/go-libipni
 
-go 1.24.0
+go 1.24.6
 
 require (
 	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc8
@@ -10,10 +10,10 @@ require (
 	github.com/ipfs/go-datastore v0.9.0
 	github.com/ipfs/go-graphsync v0.17.0
 	github.com/ipfs/go-ipld-format v0.6.3
-	github.com/ipfs/go-log/v2 v2.8.1
+	github.com/ipfs/go-log/v2 v2.8.2
 	github.com/ipfs/go-test v0.2.3
 	github.com/ipld/go-ipld-prime v0.21.0
-	github.com/libp2p/go-libp2p v0.43.0
+	github.com/libp2p/go-libp2p v0.44.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.2.0
@@ -24,9 +24,8 @@ require (
 	github.com/multiformats/go-varint v0.1.0
 	github.com/stretchr/testify v1.11.1
 	github.com/whyrusleeping/cbor-gen v0.3.1
-	go.uber.org/multierr v1.11.0
 	golang.org/x/crypto v0.42.0
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.10
 )
 
 require (
@@ -49,7 +48,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hannahhoward/cbor-gen-for v0.0.0-20230214144701-5d17c9d5243c // indirect
@@ -73,7 +71,7 @@ require (
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.3.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
-	github.com/libp2p/go-netroute v0.2.2 // indirect
+	github.com/libp2p/go-netroute v0.3.0 // indirect
 	github.com/libp2p/go-reuseport v0.4.0 // indirect
 	github.com/libp2p/go-yamux/v5 v5.0.1 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
@@ -116,7 +114,7 @@ require (
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.54.0 // indirect
+	github.com/quic-go/quic-go v0.55.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
@@ -132,6 +130,7 @@ require (
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/mock v0.5.2 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
 	golang.org/x/mod v0.27.0 // indirect
