@@ -13,7 +13,6 @@ import (
 
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"go.uber.org/multierr"
 )
 
 const DefaultAnnouncePath = "/announce"
@@ -160,14 +159,14 @@ func (s *Sender) sendData(ctx context.Context, buf *bytes.Buffer, js bool) error
 			errChan <- nil
 		}(u)
 	}
-	var errs error
+	var errs []error
 	for i := 0; i < len(s.announceURLs); i++ {
 		err := <-errChan
 		if err != nil {
-			errs = multierr.Append(errs, err)
+			errs = append(errs, err)
 		}
 	}
-	return errs
+	return errors.Join(errs...)
 }
 
 func (s *Sender) sendAnnounce(ctx context.Context, announceURL string, buf *bytes.Buffer, js bool) error {
