@@ -144,12 +144,19 @@ func (pc *ProviderCache) List() []*model.ProviderInfo {
 			delete(m, pid)
 		}
 	}
-	pinfos := make([]*model.ProviderInfo, len(m))
-	var i int
+	pinfos := make([]*model.ProviderInfo, 0, len(m))
 	for _, pi := range m {
-		pinfos[i] = pi
-		i++
+		pinfos = append(pinfos, pi)
 	}
+
+	// If a refresh interval defined, and elapsed, then trigger a refresh.
+	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
+		go func() {
+			pc.Refresh(context.Background())
+			pc.refreshTimer.Reset(pc.refreshIn)
+		}()
+	}
+
 	return pinfos
 }
 

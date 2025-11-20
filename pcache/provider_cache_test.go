@@ -350,6 +350,12 @@ func TestAutoRefresh(t *testing.T) {
 
 	time.Sleep(300 * time.Millisecond)
 	require.Equal(t, int32(2), src1.callFetchAll.Load())
+
+	pc.List()
+	require.NoError(t, err)
+
+	time.Sleep(300 * time.Millisecond)
+	require.Equal(t, int32(3), src1.callFetchAll.Load())
 }
 
 func TestTTL(t *testing.T) {
