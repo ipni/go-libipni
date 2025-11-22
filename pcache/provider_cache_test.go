@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/ipni/go-libipni/pcache"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -60,6 +61,15 @@ func (s *mockSource) addInfo(pid peer.ID) {
 		LastAdvertisementTime: time.Now().Format(time.RFC3339),
 	}
 	s.infos = append(s.infos, info)
+}
+
+func (s *mockSource) rmInfo(n int) {
+	if n > len(s.infos) {
+		s.infos = nil
+		return
+	}
+	clear(s.infos[len(s.infos)-n:])
+	s.infos = s.infos[:len(s.infos)-n]
 }
 
 func (s *mockSource) Fetch(ctx context.Context, pid peer.ID) (*model.ProviderInfo, error) {
@@ -402,4 +412,101 @@ func TestTTL(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 	require.Equal(t, int32(2), src.callFetch.Load())
+}
+
+func TestManyProviders(t *testing.T) {
+	const npids = 250
+	pids := random.Peers(npids)
+	src := newMockSource(pids...)
+	pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(100*time.Millisecond),
+		pcache.WithTTL(200*time.Millisecond))
+
+	require.NoError(t, err)
+	require.Equal(t, npids, pc.Len())
+	require.Equal(t, int32(1), src.callFetchAll.Load())
+
+	pinfos := pc.List()
+	require.Len(t, pinfos, npids)
+
+	time.Sleep(200 * time.Millisecond)
+
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids)
+
+	time.Sleep(200 * time.Millisecond)
+
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids)
+
+	extras := random.Peers(3)
+	for _, pid := range extras {
+		src.addInfo(pid)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// First time gets current count and triggers update.
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids)
+
+	// Wait for update
+	time.Sleep(50 * time.Millisecond)
+
+	// Should see update now.
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids+len(extras))
+
+	// remove item
+	src.rmInfo(len(extras))
+	time.Sleep(300 * time.Millisecond)
+
+	// Gets current count and triggers update.
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids+len(extras))
+
+	// Wait for update
+	time.Sleep(50 * time.Millisecond)
+
+	// Gets update; starts ttl for missing providers
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids+len(extras))
+
+	time.Sleep(300 * time.Millisecond)
+
+	// missing provider ttl over, trigger update
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids+len(extras))
+
+	// Wait for update
+	time.Sleep(50 * time.Millisecond)
+
+	// Final update flushes missing providers
+	pinfos = pc.List()
+	require.Len(t, pinfos, npids)
+}
+
+func TestReal(t *testing.T) {
+	t.Skip("Requires tunnel to internal indexer port")
+
+	sources := []string{
+		"http://localhost:3000/providers",
+		"https://cid.contact/providers",
+	}
+
+	for i, srcURL := range sources {
+		src, err := pcache.NewHTTPSource(srcURL, nil)
+		require.NoError(t, err)
+
+		pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(30*time.Second))
+		require.NoError(t, err)
+
+		fetched, err := src.FetchAll(context.Background())
+		require.NoError(t, err)
+		t.Log("Fetched source", i, len(fetched), "infos")
+
+		pinfos := pc.List()
+		t.Log("Listed source ", i, len(pinfos), "infos")
+
+		require.Equal(t, len(fetched), len(pinfos))
+	}
 }
