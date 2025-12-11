@@ -34,7 +34,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
-	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/gammazero/deque v1.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -95,8 +94,8 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.55.0 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
+	github.com/quic-go/quic-go v0.57.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
 	github.com/smartystreets/assertions v1.13.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
