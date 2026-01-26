@@ -1,3 +1,5 @@
+//go:build go1.25
+
 package pcache_test
 
 import (
@@ -9,6 +11,7 @@ import (
 	"path"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ipni/go-libipni/find/model"
@@ -332,74 +335,78 @@ func TestNoTimestamp(t *testing.T) {
 }
 
 func TestAutoRefresh(t *testing.T) {
-	src1 := newMockSource(pid1)
+	synctest.Test(t, func(t *testing.T) {
+		src1 := newMockSource(pid1)
 
-	pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(200*time.Millisecond))
-	require.NoError(t, err)
-	require.Equal(t, 1, pc.Len())
-	require.Equal(t, int32(1), src1.callFetchAll.Load())
+		pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(200*time.Millisecond))
+		require.NoError(t, err)
+		require.Equal(t, 1, pc.Len())
+		require.Equal(t, int32(1), src1.callFetchAll.Load())
 
-	_, err = pc.Get(context.Background(), pid1)
-	require.NoError(t, err)
+		_, err = pc.Get(context.Background(), pid1)
+		require.NoError(t, err)
 
-	time.Sleep(300 * time.Millisecond)
-	require.Equal(t, int32(1), src1.callFetchAll.Load())
+		time.Sleep(300 * time.Millisecond)
+		require.Equal(t, int32(1), src1.callFetchAll.Load())
 
-	_, err = pc.Get(context.Background(), pid1)
-	require.NoError(t, err)
+		_, err = pc.Get(context.Background(), pid1)
+		require.NoError(t, err)
 
-	time.Sleep(300 * time.Millisecond)
-	require.Equal(t, int32(2), src1.callFetchAll.Load())
+		time.Sleep(300 * time.Millisecond)
+		require.Equal(t, int32(2), src1.callFetchAll.Load())
 
-	pc.List()
-	require.NoError(t, err)
+		pc.List()
+		require.NoError(t, err)
 
-	time.Sleep(300 * time.Millisecond)
-	require.Equal(t, int32(3), src1.callFetchAll.Load())
+		time.Sleep(300 * time.Millisecond)
+		require.Equal(t, int32(3), src1.callFetchAll.Load())
+	})
 }
 
 func TestTTL(t *testing.T) {
-	src := newMockSource(pid1)
-	pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(0),
-		pcache.WithTTL(200*time.Millisecond))
-	require.NoError(t, err)
-	require.Equal(t, 1, pc.Len())
-	require.Equal(t, int32(1), src.callFetchAll.Load())
+	synctest.Test(t, func(t *testing.T) {
+		src := newMockSource(pid1)
+		pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(0),
+			pcache.WithTTL(200*time.Millisecond))
+		require.NoError(t, err)
+		require.Equal(t, 1, pc.Len())
+		require.Equal(t, int32(1), src.callFetchAll.Load())
 
-	// Test TTL of disappeared provider
-	origInfos := src.infos
-	src.infos = nil
-	require.NoError(t, pc.Refresh(context.Background()))
-	require.Equal(t, 1, len(pc.List()))
+		// Test TTL of disappeared provider
+		origInfos := src.infos
+		src.infos = nil
+		require.NoError(t, pc.Refresh(context.Background()))
+		require.Equal(t, 1, len(pc.List()))
 
-	time.Sleep(220 * time.Millisecond)
-	require.NoError(t, pc.Refresh(context.Background()))
-	require.Zero(t, len(pc.List()))
+		time.Sleep(220 * time.Millisecond)
+		require.NoError(t, pc.Refresh(context.Background()))
+		require.Zero(t, len(pc.List()))
 
-	// Provider reappears.
-	src.infos = origInfos
-	require.NoError(t, pc.Refresh(context.Background()))
-	require.Equal(t, 1, len(pc.List()))
+		// Provider reappears.
+		src.infos = origInfos
+		require.NoError(t, pc.Refresh(context.Background()))
+		require.Equal(t, 1, len(pc.List()))
 
-	// Test TTL of negative entry
-	pinfo, err := pc.Get(context.Background(), pid2)
-	require.NoError(t, err)
-	require.Nil(t, pinfo)
-	require.Equal(t, int32(1), src.callFetch.Load())
+		// Test TTL of negative entry
+		pinfo, err := pc.Get(context.Background(), pid2)
+		require.NoError(t, err)
+		require.Nil(t, pinfo)
+		require.Equal(t, int32(1), src.callFetch.Load())
 
-	src.infos = nil // Cause cache update that moves neg entry to main map
-	require.NoError(t, pc.Refresh(context.Background()))
-	pinfo, err = pc.Get(context.Background(), pid2)
-	require.NoError(t, err)
-	require.Nil(t, pinfo)
-	require.Equal(t, int32(1), src.callFetch.Load())
+		src.infos = nil // Cause cache update that moves neg entry to main map
+		require.NoError(t, pc.Refresh(context.Background()))
+		pinfo, err = pc.Get(context.Background(), pid2)
+		require.NoError(t, err)
+		require.Nil(t, pinfo)
+		require.Equal(t, int32(1), src.callFetch.Load())
 
-	// Refresh after TTL should remove negative cache entry, and next Get
-	// should call Fetch again.
-	time.Sleep(220 * time.Millisecond)
-	require.NoError(t, pc.Refresh(context.Background()))
-	pinfo, err = pc.Get(context.Background(), pid2)
-	require.NoError(t, err)
-	require.Nil(t, pinfo)
-	require.Equal(t, int32(2), src.callFetch.Load())
+		// Refresh after TTL should remove negative cache entry, and next Get
+		// should call Fetch again.
+		time.Sleep(220 * time.Millisecond)
+		require.NoError(t, pc.Refresh(context.Background()))
+		pinfo, err = pc.Get(context.Background(), pid2)
+		require.NoError(t, err)
+		require.Nil(t, pinfo)
+		require.Equal(t, int32(2), src.callFetch.Load())
+	})
 }
