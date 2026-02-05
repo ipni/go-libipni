@@ -304,8 +304,12 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 }
 
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
+	noPath := s.noPath
+	rootURL := s.rootURL
+	urls := s.urls
+
 nextURL:
-	fetchURL := s.rootURL.JoinPath(rsrc)
+	fetchURL := rootURL.JoinPath(rsrc)
 	var doneRetry bool
 retry:
 	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL.String(), nil)
@@ -321,12 +325,12 @@ retry:
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		if len(s.urls) != 0 {
+		if len(urls) != 0 {
 			log.Errorw("Fetch request failed, will retry with next address", "err", err)
-			s.rootURL = *s.urls[0]
-			s.urls = s.urls[1:]
-			if s.noPath {
-				s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
+			rootURL = *urls[0]
+			urls = urls[1:]
+			if noPath {
+				rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
 			}
 			goto nextURL
 		}
@@ -345,11 +349,11 @@ retry:
 		return cb(resp.Body)
 	case http.StatusNotFound:
 		_, _ = io.Copy(io.Discard, resp.Body)
-		if s.plainHTTP && !s.noPath {
+		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
-			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
-			s.noPath = true
+			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
+			noPath = true
 			goto nextURL
 		}
 		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
@@ -359,11 +363,11 @@ retry:
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 	case http.StatusForbidden:
 		_, _ = io.Copy(io.Discard, resp.Body)
-		if s.plainHTTP && !s.noPath {
+		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
-			s.rootURL.Path = strings.TrimSuffix(s.rootURL.Path, strings.Trim(IPNIPath, "/"))
-			s.noPath = true
+			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
+			noPath = true
 			goto nextURL
 		}
 		fallthrough
