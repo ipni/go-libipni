@@ -168,7 +168,7 @@ func TestConcurrentSync(t *testing.T) {
 
 			subHost := test.MkTestHost(t)
 
-			for i := 0; i < publisherCount; i++ {
+			for range publisherCount {
 				ds := dssync.MutexWrap(datastore.NewMapDatastore())
 				pubHost, privKey := test.MkTestHostPK(t)
 
@@ -692,7 +692,7 @@ func TestMaxAsyncSyncs(t *testing.T) {
 		close(release2)
 	}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-timer.C:
 			t.Fatal("timed out waiting for sync")

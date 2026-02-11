@@ -42,7 +42,7 @@ type testSchema struct {
 	typeSystem             *ipldSchema.TypeSystem
 }
 
-func createTestSchema(t *testing.T, schemaBytes []byte, adInterfacePtr interface{}) *testSchema {
+func createTestSchema(t *testing.T, schemaBytes []byte, adInterfacePtr any) *testSchema {
 	ts := &testSchema{
 		linkproto: cidlink.LinkPrototype{
 			Prefix: cid.Prefix{

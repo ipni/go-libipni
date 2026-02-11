@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -757,13 +758,7 @@ func delNotPresent(peerStore peerstore.Peerstore, peerID peer.ID, addrs []multia
 	var del []multiaddr.Multiaddr
 	oldAddrs := peerStore.Addrs(peerID)
 	for _, old := range oldAddrs {
-		keep := false
-		for _, new := range addrs {
-			if old.Equal(new) {
-				keep = true
-				break
-			}
-		}
+		keep := slices.ContainsFunc(addrs, old.Equal)
 		if !keep {
 			del = append(del, old)
 		}
