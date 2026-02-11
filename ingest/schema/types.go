@@ -197,7 +197,7 @@ func (e EntryChunk) ToNode() (n ipld.Node, err error) {
 	return
 }
 
-func toError(r interface{}) error {
+func toError(r any) error {
 	switch x := r.(type) {
 	case string:
 		return errors.New(x)

@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/ipfs/go-cid"
@@ -43,8 +44,8 @@ func New(w http.ResponseWriter, r *http.Request, options ...Option) (*ResponseWr
 	accepts := r.Header.Values("Accept")
 	var nd, okJson bool
 	for _, accept := range accepts {
-		amts := strings.Split(accept, ",")
-		for _, amt := range amts {
+		amts := strings.SplitSeq(accept, ",")
+		for amt := range amts {
 			mt, _, err := mime.ParseMediaType(amt)
 			if err != nil {
 				return nil, apierror.New(errors.New("invalid Accept header"), http.StatusBadRequest)
@@ -187,10 +188,8 @@ func MatchQueryParam(r *http.Request, key, value string) (bool, bool) {
 	if !present {
 		return false, false
 	}
-	for _, label := range labels {
-		if label == value {
-			return true, true
-		}
+	if slices.Contains(labels, value) {
+		return true, true
 	}
 	return true, false
 }

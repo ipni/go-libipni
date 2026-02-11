@@ -109,7 +109,7 @@ func MultiaddrsEqual(ma1, ma2 []multiaddr.Multiaddr) bool {
 	// Use slices package, as sort function does not allocate (sort.Slice does).
 	slices.SortFunc(ma1, func(a, b multiaddr.Multiaddr) int { return bytes.Compare(a.Bytes(), b.Bytes()) })
 	slices.SortFunc(ma2, func(a, b multiaddr.Multiaddr) int { return bytes.Compare(a.Bytes(), b.Bytes()) })
-	for i := 0; i < len(ma1); i++ {
+	for i := range ma1 {
 		if !ma1[i].Equal(ma2[i]) {
 			return false
 		}

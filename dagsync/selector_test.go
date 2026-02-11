@@ -88,7 +88,6 @@ func TestGetRecursionLimit(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			gotLimit, gotFound := getRecursionLimit(tt.givenSelector)
 			require.Equal(t, tt.wantFound, gotFound)
@@ -159,7 +158,6 @@ func TestWithRecursionLimit(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			gotSelector, gotApplied := withRecursionLimit(tt.givenSelector, tt.givenLimit)
 			require.Equal(t, tt.wantApplied, gotApplied)

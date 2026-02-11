@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -324,9 +325,7 @@ func (pc *ProviderCache) Refresh(ctx context.Context) error {
 
 	// Shallow-copy update map.
 	updates := make(map[peer.ID]*readProviderInfo, len(read.u))
-	for pid, rpi := range read.u {
-		updates[pid] = rpi
-	}
+	maps.Copy(updates, read.u)
 
 	for pid, cinfo := range pc.write {
 		if cinfo.seq != seq {
@@ -486,9 +485,7 @@ func (pc *ProviderCache) fetchMissing(ctx context.Context, pid peer.ID) (*readPr
 
 	// Regenerate and add to extended read map.
 	updates := make(map[peer.ID]*readProviderInfo, len(read.u)+1)
-	for id, rpi := range read.u {
-		updates[id] = rpi
-	}
+	maps.Copy(updates, read.u)
 	rpinfo := apiToCacheInfo(cinfo.provider)
 	updates[pid] = rpinfo
 

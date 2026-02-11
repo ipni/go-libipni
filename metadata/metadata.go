@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 
 	"github.com/multiformats/go-multicodec"
@@ -74,9 +75,7 @@ func (mc *metadataContext) WithProtocol(id multicodec.Code, factory func() Proto
 	derived := metadataContext{
 		protocols: make(map[multicodec.Code]func() Protocol),
 	}
-	for k, v := range mc.protocols {
-		derived.protocols[k] = v
-	}
+	maps.Copy(derived.protocols, mc.protocols)
 	derived.protocols[id] = factory
 	return &derived
 }
