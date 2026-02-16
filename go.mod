@@ -6,11 +6,11 @@ require (
 	github.com/gammazero/chanqueue v1.1.2
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/ipfs/go-cid v0.6.0
-	github.com/ipfs/go-datastore v0.9.0
+	github.com/ipfs/go-datastore v0.9.1
 	github.com/ipfs/go-ipld-format v0.6.3
 	github.com/ipfs/go-log/v2 v2.9.1
 	github.com/ipfs/go-test v0.2.3
-	github.com/ipld/go-ipld-prime v0.21.0
+	github.com/ipld/go-ipld-prime v0.22.0
 	github.com/libp2p/go-libp2p v0.47.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0
 	github.com/libp2p/go-msgio v0.3.0
@@ -38,7 +38,6 @@ require (
 	github.com/gammazero/deque v1.2.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
@@ -89,7 +88,7 @@ require (
 	github.com/pion/turn/v4 v4.0.2 // indirect
 	github.com/pion/webrtc/v4 v4.1.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/polydawn/refmt v0.89.0 // indirect
+	github.com/polydawn/refmt v0.89.1-0.20231129105047-37766d95467a // indirect
 	github.com/prometheus/client_golang v1.23.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
@@ -97,7 +96,6 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
-	github.com/smartystreets/assertions v1.13.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.uber.org/dig v1.19.0 // indirect
