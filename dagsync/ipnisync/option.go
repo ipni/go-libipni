@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 )
 
 // pubConfig contains all options for configuring Publisher.
@@ -164,5 +165,34 @@ func ClientHTTPRetry(retryMax int, waitMin, waitMax time.Duration) ClientOption 
 		c.httpRetryMax = retryMax
 		c.httpRetryWaitMin = waitMin
 		c.httpRetryWaitMax = waitMax
+	}
+}
+
+type syncerConfig struct {
+	peerStore peerstore.Peerstore
+	addrTTL   time.Duration
+}
+
+// SyncerOption is a function that supplies an option value to a Syncer.
+type SyncerOption func(*syncerConfig)
+
+func getSyncerOpts(opts []SyncerOption) syncerConfig {
+	cfg := syncerConfig{
+		addrTTL: time.Hour,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
+// WithPeerstore sets the peerstore in which to periodically refresh the
+// addresses of the peer being synced.
+func WithPeerstore(peerStore peerstore.Peerstore, addrTTL time.Duration) SyncerOption {
+	return func(c *syncerConfig) {
+		c.peerStore = peerStore
+		if addrTTL != 0 {
+			c.addrTTL = addrTTL
+		}
 	}
 }
