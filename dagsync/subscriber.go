@@ -718,8 +718,7 @@ func (s *Subscriber) watch() {
 
 		// If old message is nil, then any previous message is already handled.
 		// Start a new goroutine to handle this message.
-		s.asyncWG.Add(1)
-		go func() {
+		s.asyncWG.Go(func() {
 			// Wait for any previous asyncSyncAdChain to finish before removing the
 			// latest pending messaged and reducing the available items in the sync
 			// semaphore.
@@ -735,8 +734,7 @@ func (s *Subscriber) watch() {
 				}
 			}
 			hnd.asyncSyncAdChain(ctx)
-			s.asyncWG.Done()
-		}()
+		})
 	}
 }
 

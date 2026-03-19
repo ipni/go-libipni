@@ -153,7 +153,7 @@ func (pc *ProviderCache) List() []*model.ProviderInfo {
 	// If a refresh interval defined, and elapsed, then trigger a refresh.
 	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
 		go func() {
-			pc.Refresh(context.Background())
+			_ = pc.Refresh(context.Background())
 			pc.refreshTimer.Reset(pc.refreshIn)
 		}()
 	}
@@ -393,7 +393,7 @@ func (pc *ProviderCache) getReadOnly(ctx context.Context, pid peer.ID) (*readPro
 	// If a refresh interval defined, and elapsed, then trigger a refresh.
 	if pc.refreshTimer != nil && pc.needsRefresh.CompareAndSwap(true, false) {
 		go func() {
-			pc.Refresh(context.Background())
+			_ = pc.Refresh(context.Background())
 			pc.refreshTimer.Reset(pc.refreshIn)
 		}()
 	}

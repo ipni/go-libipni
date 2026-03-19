@@ -301,7 +301,7 @@ func TestNewPublisherForListener(t *testing.T) {
 			req.NoError(err)
 			pubkey := mustBytes(t, respNode, ipld.ParsePath("/pubkey"))
 			req.Equal(expectedPubkey, pubkey)
-			expectedSig, err := privKey.Sign(rootLnk.(cidlink.Link).Cid.Bytes())
+			expectedSig, err := privKey.Sign(rootLnk.(cidlink.Link).Bytes())
 			req.NoError(err)
 			sig := mustBytes(t, respNode, ipld.ParsePath("/sig"))
 			req.Equal(expectedSig, sig)

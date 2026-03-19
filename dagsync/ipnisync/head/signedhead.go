@@ -125,7 +125,7 @@ func (s SignedHead) Validate() (peer.ID, error) {
 	}
 
 	var sigBuf bytes.Buffer
-	cidBytes := s.Head.(cidlink.Link).Cid.Bytes()
+	cidBytes := s.Head.(cidlink.Link).Bytes()
 	var topicLen int
 	if s.Topic != nil {
 		topicLen = len(*s.Topic)
@@ -154,7 +154,7 @@ func (s SignedHead) Validate() (peer.ID, error) {
 
 func (s *SignedHead) Sign(privKey ic.PrivKey) error {
 	var sigBuf bytes.Buffer
-	cidBytes := s.Head.(cidlink.Link).Cid.Bytes()
+	cidBytes := s.Head.(cidlink.Link).Bytes()
 	var topicLen int
 	if s.Topic != nil {
 		topicLen = len(*s.Topic)
