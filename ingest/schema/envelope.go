@@ -84,9 +84,9 @@ func (r *epSignatureRecord) UnmarshalRecord(buf []byte) error {
 func signaturePayload(ad *Advertisement, oldFormat bool) ([]byte, error) {
 	bindex := cid.Undef.Bytes()
 	if ad.PreviousID != nil {
-		bindex = ad.PreviousID.(cidlink.Link).Cid.Bytes()
+		bindex = ad.PreviousID.(cidlink.Link).Bytes()
 	}
-	ent := ad.Entries.(cidlink.Link).Cid.Bytes()
+	ent := ad.Entries.(cidlink.Link).Bytes()
 
 	var addrsLen int
 	for _, addr := range ad.Addresses {
@@ -129,9 +129,9 @@ func extendedProviderSignaturePayload(ad *Advertisement, p *Provider) ([]byte, e
 
 	bindex := cid.Undef.Bytes()
 	if ad.PreviousID != nil {
-		bindex = ad.PreviousID.(cidlink.Link).Cid.Bytes()
+		bindex = ad.PreviousID.(cidlink.Link).Bytes()
 	}
-	ent := ad.Entries.(cidlink.Link).Cid.Bytes()
+	ent := ad.Entries.(cidlink.Link).Bytes()
 
 	// Extended signature is an authrorisation for the publisher of the main Ad
 	// to publish on behalf of the signee.
