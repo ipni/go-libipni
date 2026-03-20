@@ -791,7 +791,7 @@ func (h *handler) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, fun
 			Addrs: httpAddrs,
 		}
 		if h.syncer == nil || !h.syncer.SameAddrs(httpAddrs) {
-			syncer, err := s.ipniSync.NewSyncer(httpPeerInfo)
+			syncer, err := s.ipniSync.NewSyncer(httpPeerInfo, ipnisync.WithPeerstore(s.httpPeerstore, tempAddrTTL))
 			if err != nil {
 				return nil, nil, fmt.Errorf("cannot create ipni-sync handler: %w", err)
 			}
@@ -806,8 +806,9 @@ func (h *handler) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, fun
 		}
 		return h.syncer, update, nil
 	}
+	var peerStore peerstore.Peerstore
 	if doUpdate {
-		peerStore := s.host.Peerstore()
+		peerStore = s.host.Peerstore()
 		if peerStore != nil && len(peerInfo.Addrs) != 0 {
 			delNotPresent(peerStore, peerInfo.ID, peerInfo.Addrs)
 			// Add it to peerstore with a small TTL first, and extend it if/when
@@ -824,7 +825,10 @@ func (h *handler) makeSyncer(peerInfo peer.AddrInfo, doUpdate bool) (Syncer, fun
 	}
 
 	if h.syncer == nil || !h.syncer.SameAddrs(peerInfo.Addrs) {
-		syncer, err := s.ipniSync.NewSyncer(peerInfo)
+		if peerStore == nil {
+			peerStore = s.host.Peerstore()
+		}
+		syncer, err := s.ipniSync.NewSyncer(peerInfo, ipnisync.WithPeerstore(peerStore, tempAddrTTL))
 		if err != nil {
 			if errors.Is(err, ipnisync.ErrNoHTTPServer) {
 				err = fmt.Errorf("data-transfer sync is not supported: %w", err)

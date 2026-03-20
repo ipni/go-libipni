@@ -26,6 +26,7 @@ import (
 	"github.com/ipni/go-libipni/mautil"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
@@ -60,6 +61,11 @@ type Syncer struct {
 	// For legacy HTTP and external server support without IPNI path.
 	noPath    bool
 	plainHTTP bool
+
+	// For refreshing arrds in peerstore.
+	addrTTL   time.Duration
+	peerStore peerstore.Peerstore
+	refreshAt time.Time
 }
 
 // NewSync creates a new Sync.
@@ -97,8 +103,13 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 }
 
 // NewSyncer creates a new Syncer to use for a single sync operation against a
-// peer. A value for peerInfo.ID is optional for the HTTP transport.
-func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
+// peer. A value for peerInfo.ID is optional for the HTTP transport. If a
+// peerstore is provided, the peer's addressed will be refreshed in that
+// peerstore while the sync is ongoing. If no peerstore is provided then the
+// peer's addresses are refreshed in the streamhost's peerstore.
+func (s *Sync) NewSyncer(peerInfo peer.AddrInfo, options ...SyncerOption) (*Syncer, error) {
+	opts := getSyncerOpts(options)
+
 	var cli http.Client
 	var httpClient *http.Client
 	var err error
@@ -107,12 +118,13 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		rtOpts = append(rtOpts, libp2phttp.ServerMustAuthenticatePeerID)
 	}
 
+	peerStore := opts.peerStore
+	if peerStore == nil && s.clientHost.StreamHost != nil {
+		peerStore = s.clientHost.StreamHost.Peerstore()
+	}
+
 	peerInfo = mautil.CleanPeerAddrInfo(peerInfo)
 	if len(peerInfo.Addrs) == 0 {
-		if s.clientHost.StreamHost == nil {
-			return nil, errors.New("no peer addrs and no stream host")
-		}
-		peerStore := s.clientHost.StreamHost.Peerstore()
 		if peerStore == nil {
 			return nil, errors.New("no peer addrs and no stream host peerstore")
 		}
@@ -173,6 +185,10 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo) (*Syncer, error) {
 		sync:     s,
 
 		plainHTTP: plainHTTP,
+
+		addrTTL:   opts.addrTTL,
+		peerStore: peerStore,
+		refreshAt: time.Now().Add(opts.addrTTL / 2),
 	}, nil
 }
 
@@ -304,6 +320,14 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 }
 
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
+	if s.peerStore != nil {
+		now := time.Now()
+		// Refresh addrs in peerstore so that they do not expire while syncing.
+		if now.After(s.refreshAt) {
+			s.peerStore.AddAddrs(s.peerInfo.ID, s.peerInfo.Addrs, s.addrTTL)
+			s.refreshAt = now.Add(s.addrTTL / 2)
+		}
+	}
 	noPath := s.noPath
 	rootURL := s.rootURL
 	urls := s.urls
