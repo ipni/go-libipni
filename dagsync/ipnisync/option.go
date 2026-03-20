@@ -8,8 +8,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
-// config contains all options for configuring Publisher.
-type config struct {
+// pubConfig contains all options for configuring Publisher.
+type pubConfig struct {
 	handlerPath string
 	startServer bool
 	topic       string
@@ -20,17 +20,17 @@ type config struct {
 	tlsConfig  *tls.Config
 }
 
-// Option is a function that sets a value in a config.
-type Option func(*config) error
+// PubOption is a function that supplies an option value to a Publisher.
+type PubOption func(*pubConfig) error
 
 // getPubOpts creates a pubConfig and applies Options to it.
-func getOpts(opts []Option) (config, error) {
-	cfg := config{
+func getPubOpts(opts []PubOption) (pubConfig, error) {
+	cfg := pubConfig{
 		startServer: true,
 	}
 	for i, opt := range opts {
 		if err := opt(&cfg); err != nil {
-			return config{}, fmt.Errorf("option %d failed: %s", i, err)
+			return pubConfig{}, fmt.Errorf("option %d failed: %s", i, err)
 		}
 	}
 	return cfg, nil
@@ -43,8 +43,8 @@ func getOpts(opts []Option) (config, error) {
 //
 // Setting HTTP listen addresses is optional when a stream host is provided by
 // the WithStreamHost option.
-func WithHTTPListenAddrs(addrs ...string) Option {
-	return func(c *config) error {
+func WithHTTPListenAddrs(addrs ...string) PubOption {
+	return func(c *pubConfig) error {
 		for _, addr := range addrs {
 			if addr != "" {
 				c.httpAddrs = append(c.httpAddrs, addr)
@@ -58,8 +58,8 @@ func WithHTTPListenAddrs(addrs ...string) Option {
 // This specifies the portion of the path before the implicit /ipni/v1/ad/ part
 // of the path. Calling WithHandlerPath("/foo/bar") configures the publisher to
 // handle HTTP requests on the path "/foo/bar/ipni/v1/ad/".
-func WithHandlerPath(urlPath string) Option {
-	return func(c *config) error {
+func WithHandlerPath(urlPath string) PubOption {
+	return func(c *pubConfig) error {
 		c.handlerPath = urlPath
 		return nil
 	}
@@ -67,8 +67,8 @@ func WithHandlerPath(urlPath string) Option {
 
 // WithHeadTopic sets the optional topic returned in a head query response.
 // This is the topic on which advertisement are announced.
-func WithHeadTopic(topic string) Option {
-	return func(c *config) error {
+func WithHeadTopic(topic string) PubOption {
+	return func(c *pubConfig) error {
 		c.topic = topic
 		return nil
 	}
@@ -77,8 +77,8 @@ func WithHeadTopic(topic string) Option {
 // WithStartServer, if true, starts an http server listening on the given
 // address. an HTTP server. If this option is not specified, then no server is
 // started and this will need to be done by the caller.
-func WithStartServer(start bool) Option {
-	return func(c *config) error {
+func WithStartServer(start bool) PubOption {
+	return func(c *pubConfig) error {
 		c.startServer = start
 		return nil
 	}
@@ -87,8 +87,8 @@ func WithStartServer(start bool) Option {
 // WithRequireTLS tells whether to allow the publisher to require https (true)
 // or to serve non-secure http (false). Default is false, allowing non-secure
 // HTTP.
-func WithRequireTLS(require bool) Option {
-	return func(c *config) error {
+func WithRequireTLS(require bool) PubOption {
+	return func(c *pubConfig) error {
 		c.requireTLS = require
 		return nil
 	}
@@ -96,16 +96,16 @@ func WithRequireTLS(require bool) Option {
 
 // WithStreamHost specifies an optional stream based libp2p host used to do
 // HTTP over libp2p streams.
-func WithStreamHost(h host.Host) Option {
-	return func(c *config) error {
+func WithStreamHost(h host.Host) PubOption {
+	return func(c *pubConfig) error {
 		c.streamHost = h
 		return nil
 	}
 }
 
 // WithTLSConfig sets the TLS config for the HTTP server.
-func WithTLSConfig(tlsConfig *tls.Config) Option {
-	return func(c *config) error {
+func WithTLSConfig(tlsConfig *tls.Config) PubOption {
+	return func(c *pubConfig) error {
 		c.tlsConfig = tlsConfig
 		return nil
 	}
@@ -121,7 +121,7 @@ type clientConfig struct {
 	httpRetryWaitMax time.Duration
 }
 
-// Option is a function that sets a value in a config.
+// ClientOption is a function that supplies an option value to a Client.
 type ClientOption func(*clientConfig)
 
 // getClientOpts creates a pubConfig and applies Options to it.

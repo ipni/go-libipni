@@ -46,8 +46,8 @@ var _ http.Handler = (*Publisher)(nil)
 // If the publisher receives a request that contains a valid CidSchemaHeader
 // header, then the ipld.Context passed to the lsys Load function contains a
 // context that has that header's value retrievable with CidSchemaFromCtx.
-func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...Option) (*Publisher, error) {
-	opts, err := getOpts(options)
+func NewPublisher(lsys ipld.LinkSystem, privKey ic.PrivKey, options ...PubOption) (*Publisher, error) {
+	opts, err := getPubOpts(options)
 	if err != nil {
 		return nil, err
 	}
