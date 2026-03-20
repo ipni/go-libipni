@@ -322,7 +322,7 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 	if s.peerStore != nil {
 		now := time.Now()
-		// Refresh addrs in peerstore so that they do not expore while syncing.
+		// Refresh addrs in peerstore so that they do not expire while syncing.
 		if now.After(s.refreshAt) {
 			s.peerStore.AddAddrs(s.peerInfo.ID, s.peerInfo.Addrs, s.addrTTL)
 			s.refreshAt = now.Add(s.addrTTL / 2)
