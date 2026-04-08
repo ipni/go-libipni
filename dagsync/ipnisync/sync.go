@@ -370,6 +370,12 @@ retry:
 
 	switch resp.StatusCode {
 	case http.StatusOK:
+		// persist path/url changes from 403/404 retries so subsequent
+		// fetches don't repeat the failed attempt
+		if noPath != s.noPath {
+			s.noPath = noPath
+			s.rootURL = rootURL
+		}
 		return cb(resp.Body)
 	case http.StatusNotFound:
 		_, _ = io.Copy(io.Discard, resp.Body)
