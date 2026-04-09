@@ -106,7 +106,7 @@ func TestFirstSyncDepth(t *testing.T) {
 	case syncDone, open := <-watcher:
 		require.True(t, open, "event channel closed without receiving event")
 		require.Equal(t, adCid, syncDone.Cid, "sync returned unexpected cid")
-		_, err := dstStore.Get(context.Background(), datastore.NewKey(adCid.String()))
+		_, err := dstStore.Get(t.Context(), datastore.NewKey(adCid.String()))
 		require.NoError(t, err, "data not in receiver store")
 		require.Equal(t, 1, syncDone.Count)
 	}

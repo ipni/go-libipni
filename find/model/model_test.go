@@ -8,13 +8,14 @@ import (
 	"github.com/ipni/go-libipni/find/model"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMarshal(t *testing.T) {
 	// Generate some multihashes and populate indexer
 	metadata := []byte("test-metadata")
 	ctxID := []byte("test-context-id")
-	p, _ := peer.Decode("12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA")
+	p := random.Peers(1)[0]
 	m1, _ := multiaddr.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	m2, _ := multiaddr.NewMultiaddr("/dns4/ipni.io/tcp/443/https/httpath/http-cid-data")
 
@@ -41,18 +42,11 @@ func TestMarshal(t *testing.T) {
 	}
 
 	b, err := model.MarshalFindResponse(resp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	r2, err := model.UnmarshalFindResponse(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !equalMultihashResult(resp.MultihashResults, r2.MultihashResults) {
-		t.Fatal("failed marshal/unmarshaling response")
-	}
-
+	require.NoError(t, err)
+	require.True(t, equalMultihashResult(resp.MultihashResults, r2.MultihashResults), "failed marshal/unmarshaling response")
 }
 
 func equalMultihashResult(res1, res2 []model.MultihashResult) bool {

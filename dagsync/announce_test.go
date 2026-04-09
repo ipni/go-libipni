@@ -64,7 +64,7 @@ func TestAnnounceReplace(t *testing.T) {
 
 	// Have the subscriber receive an announce.  This is the same as if it was
 	// published by the publisher without having to wait for it to arrive.
-	err = sub.Announce(context.Background(), firstCid, srcHostInfo)
+	err = sub.Announce(t.Context(), firstCid, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 
@@ -82,13 +82,13 @@ func TestAnnounceReplace(t *testing.T) {
 	// Announce two more times.
 	c := chainLnks[1].(cidlink.Link).Cid
 	pub.SetRoot(c)
-	err = sub.Announce(context.Background(), c, srcHostInfo)
+	err = sub.Announce(t.Context(), c, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for second CID", c)
 
 	lastCid := chainLnks[0].(cidlink.Link).Cid
 	pub.SetRoot(lastCid)
-	err = sub.Announce(context.Background(), lastCid, srcHostInfo)
+	err = sub.Announce(t.Context(), lastCid, srcHostInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for last CID", lastCid)
 
@@ -108,7 +108,7 @@ func TestAnnounceReplace(t *testing.T) {
 	case downstream, open := <-watcher:
 		require.True(t, open, "event channel closed without receiving event")
 		require.Equal(t, firstCid, downstream.Cid, "sync returned unexpected first cid")
-		_, err = dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err = dstStore.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, downstream.Cid.String()+" not in receiver store")
 		t.Log("Received sync notification for first CID:", firstCid)
 	}
@@ -120,7 +120,7 @@ func TestAnnounceReplace(t *testing.T) {
 	case downstream, open := <-watcher:
 		require.True(t, open, "event channle closed without receiving event")
 		require.Equal(t, lastCid, downstream.Cid, "sync returned unexpected last cid")
-		_, err = dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err = dstStore.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, downstream.Cid.String()+" not in receiver store")
 		t.Log("Received sync notification for last CID:", lastCid)
 	}
@@ -173,7 +173,7 @@ func TestAnnounce_LearnsHttpPublisherAddr(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -252,7 +252,7 @@ func TestAnnounceRepublish(t *testing.T) {
 		ID:    pub.ID(),
 		Addrs: pub.Addrs(),
 	}
-	err = sub1.Announce(context.Background(), firstCid, pubInfo)
+	err = sub1.Announce(t.Context(), firstCid, pubInfo)
 	require.NoError(t, err)
 	t.Log("Sent announce for first CID", firstCid)
 
@@ -263,7 +263,7 @@ func TestAnnounceRepublish(t *testing.T) {
 	case downstream, open := <-watcher2:
 		require.True(t, open, "event channel closed without receiving event")
 		require.True(t, downstream.Cid.Equals(firstCid), "sync returned unexpected first cid %s, expected %s", downstream.Cid, firstCid)
-		_, err = dstStore2.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err = dstStore2.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, "data not in second receiver store: %s", err)
 		t.Log("Received sync notification for first CID:", firstCid)
 	}
@@ -297,7 +297,7 @@ func TestAllowPeerReject(t *testing.T) {
 
 	// Update root with item
 	pub.SetRoot(c)
-	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
+	err := announce.Send(t.Context(), c, pub.Addrs(), sender)
 	require.NoError(t, err)
 
 	select {
@@ -331,7 +331,7 @@ func TestAllowPeerAllows(t *testing.T) {
 
 	// Update root with item
 	pub.SetRoot(c)
-	err := announce.Send(context.Background(), c, pub.Addrs(), sender)
+	err := announce.Send(t.Context(), c, pub.Addrs(), sender)
 	require.NoError(t, err)
 
 	select {
@@ -380,7 +380,7 @@ func initPubSub(t *testing.T, srcStore, dstStore datastore.Batching, allowPeer f
 		dagsync.RecvAnnounce(testTopic, announce.WithTopic(topics[1]), announce.WithAllowPeer(allowPeer)))
 	require.NoError(t, err)
 
-	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	err = srcHost.Connect(t.Context(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
 	require.NoError(t, err)
 
 	return srcHost, dstHost, pub, sub, p2pSender

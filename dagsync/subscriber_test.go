@@ -2,8 +2,6 @@ package dagsync_test
 
 import (
 	"context"
-	cryptorand "crypto/rand"
-	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +11,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
 	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/linking"
@@ -77,7 +76,7 @@ func TestScopedBlockHook(t *testing.T) {
 				ID:    pubHost.ID(),
 				Addrs: pubHost.Addrs(),
 			}
-			_, err = sub.SyncAdChain(context.Background(), peerInfo, dagsync.ScopedBlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
+			_, err = sub.SyncAdChain(t.Context(), peerInfo, dagsync.ScopedBlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
 				atomic.AddInt64(&calledScopedBlockHookTimes, 1)
 			}))
 			require.NoError(t, err)
@@ -95,7 +94,7 @@ func TestScopedBlockHook(t *testing.T) {
 
 			pub.SetRoot(anotherLL.(cidlink.Link).Cid)
 
-			_, err = sub.SyncAdChain(context.Background(), peerInfo)
+			_, err = sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 
 			require.Equal(t, int64(ll.Length), atomic.LoadInt64(&calledGeneralBlockHookTimes),
@@ -137,7 +136,7 @@ func TestSyncedCidsReturned(t *testing.T) {
 				ID:    pubHost.ID(),
 				Addrs: pubHost.Addrs(),
 			}
-			_, err = sub.SyncAdChain(context.Background(), peerInfo)
+			_, err = sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 
 			finishedVal := <-onFinished
@@ -209,7 +208,7 @@ func TestConcurrentSync(t *testing.T) {
 						ID:    pub.h.ID(),
 						Addrs: pub.h.Addrs(),
 					}
-					_, err := sub.SyncAdChain(context.Background(), peerInfo)
+					_, err := sub.SyncAdChain(t.Context(), peerInfo)
 					if err != nil {
 						panic("sync failed: " + err.Error())
 					}
@@ -264,13 +263,13 @@ func TestSync(t *testing.T) {
 				ID:    pub.ID(),
 				Addrs: pub.Addrs(),
 			}
-			_, err := sub.SyncAdChain(context.Background(), peerInfo)
+			_, err := sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 			calledTimesFirstSync := calledTimes
 			latestSync := sub.GetLatestSync(pubSys.host.ID())
 			require.Equal(t, head, latestSync, "Subscriber did not persist latest sync")
 			// Now sync again. We shouldn't call the hook.
-			_, err = sub.SyncAdChain(context.Background(), peerInfo)
+			_, err = sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 			require.Equalf(t, calledTimes, calledTimesFirstSync,
 				"Subscriber called the block hook multiple times for the same sync. Expected %d, got %d", calledTimesFirstSync, calledTimes)
@@ -288,8 +287,7 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 	err := quick.Check(func(dpsb dagsyncPubSubBuilder, ll llBuilder) bool {
 		return t.Run("Quickcheck", func(t *testing.T) {
 			t.Parallel()
-			pubPrivKey, _, err := crypto.GenerateEd25519Key(cryptorand.Reader)
-			require.NoError(t, err)
+			_, pubPrivKey, _ := random.Identity()
 
 			pubDs := dssync.MutexWrap(datastore.NewMapDatastore())
 			pubSys := hostSystem{
@@ -328,7 +326,7 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 				ID:    pub.ID(),
 				Addrs: pub.Addrs(),
 			}
-			_, err = sub.SyncAdChain(context.Background(), peerInfo, dagsync.WithHeadAdCid(head.(cidlink.Link).Cid))
+			_, err := sub.SyncAdChain(t.Context(), peerInfo, dagsync.WithHeadAdCid(head.(cidlink.Link).Cid))
 			require.NoError(t, err)
 			require.Equal(t, int(ll.Length), calledTimes, "Subscriber did not call the block hook exactly once for each block")
 			require.Equal(t, head.(cidlink.Link).Cid, calledWith[0], "Subscriber did not call the block hook in the correct order")
@@ -336,7 +334,7 @@ func TestSyncWithHydratedDataStore(t *testing.T) {
 			calledTimesFirstSync := calledTimes
 
 			// Now sync again. We might call the hook because we don't have the latestSync persisted.
-			_, err = sub.SyncAdChain(context.Background(), peerInfo)
+			_, err = sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 			require.GreaterOrEqual(t, calledTimes, calledTimesFirstSync, "Expected to have called block hook twice. Once for each sync.")
 		})
@@ -366,7 +364,7 @@ func TestRoundTripSimple(t *testing.T) {
 
 	rootCid := lnk.(cidlink.Link).Cid
 	pub.SetRoot(rootCid)
-	err = announce.Send(context.Background(), rootCid, pub.Addrs(), sender)
+	err = announce.Send(t.Context(), rootCid, pub.Addrs(), sender)
 	require.NoError(t, err)
 
 	select {
@@ -375,7 +373,7 @@ func TestRoundTripSimple(t *testing.T) {
 	case downstream := <-watcher:
 		require.Equalf(t, lnk.(cidlink.Link).Cid, downstream.Cid,
 			"sync'd cid unexpected %s vs %s", downstream.Cid, lnk)
-		_, err = dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err = dstStore.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, "data not in receiver store")
 	}
 }
@@ -440,7 +438,7 @@ func TestRoundTrip(t *testing.T) {
 
 	rootCid1 := lnk1.(cidlink.Link).Cid
 	pub1.SetRoot(rootCid1)
-	err = announce.Send(context.Background(), rootCid1, pub1.Addrs(), p2pSender1)
+	err = announce.Send(t.Context(), rootCid1, pub1.Addrs(), p2pSender1)
 	require.NoError(t, err)
 	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
 	waitForSync(t, "Watcher 1", dstStore, lnk1.(cidlink.Link), watcher1)
@@ -448,7 +446,7 @@ func TestRoundTrip(t *testing.T) {
 
 	rootCid2 := lnk2.(cidlink.Link).Cid
 	pub2.SetRoot(rootCid2)
-	err = announce.Send(context.Background(), rootCid2, pub2.Addrs(), p2pSender2)
+	err = announce.Send(t.Context(), rootCid2, pub2.Addrs(), p2pSender2)
 	require.NoError(t, err)
 	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
 	waitForSync(t, "Watcher 1", dstStore, lnk2.(cidlink.Link), watcher1)
@@ -491,7 +489,7 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 		ID:    pub.ID(),
 		Addrs: pub.Addrs(),
 	}
-	_, err := sub.SyncAdChain(context.Background(), peerInfo)
+	_, err := sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(head.(cidlink.Link).Cid)
@@ -499,7 +497,7 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 	// Now call sync again with no address. The subscriber should re-use the
 	// previous address and succeeed.
 	peerInfo.Addrs = nil
-	_, err = sub.SyncAdChain(context.Background(), peerInfo)
+	_, err = sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 }
 
@@ -536,17 +534,17 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 		ID:    pub.ID(),
 		Addrs: pub.Addrs(),
 	}
-	_, err := sub.SyncAdChain(context.Background(), peerInfo)
+	_, err := sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(nextLL.(cidlink.Link).Cid)
 
-	_, err = sub.SyncAdChain(context.Background(), peerInfo)
+	_, err = sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 
 	pub.SetRoot(headLL.(cidlink.Link).Cid)
 
-	_, err = sub.SyncAdChain(context.Background(), peerInfo)
+	_, err = sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 
 	head := llBuilder{
@@ -559,7 +557,7 @@ func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	// This is blocked until we read from onSyncFinishedChan
 	syncDoneCh := make(chan error)
 	go func() {
-		_, err = sub.SyncAdChain(context.Background(), peerInfo)
+		_, err = sub.SyncAdChain(t.Context(), peerInfo)
 		syncDoneCh <- err
 	}()
 
@@ -648,11 +646,11 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	rootCid2 := lnk2.(cidlink.Link).Cid
 	pub2.SetRoot(rootCid2)
 
-	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
+	err = sub.Announce(t.Context(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
 
-	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
+	err = sub.Announce(t.Context(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
 
@@ -724,11 +722,11 @@ func TestMaxAsyncSyncs(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Close()
 
-	err = sub.Announce(context.Background(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
+	err = sub.Announce(t.Context(), rootCid1, peer.AddrInfo{ID: pub1.ID(), Addrs: pub1.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 1:", lnk1.(cidlink.Link).Cid)
 
-	err = sub.Announce(context.Background(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
+	err = sub.Announce(t.Context(), rootCid2, peer.AddrInfo{ID: pub2.ID(), Addrs: pub2.Addrs()})
 	require.NoError(t, err)
 	t.Log("Publish 2:", lnk2.(cidlink.Link).Cid)
 
@@ -763,7 +761,7 @@ func waitForSync(t *testing.T, logPrefix string, store *dssync.MutexDatastore, e
 		require.FailNow(t, "timed out waiting for sync to propogate")
 	case downstream := <-watcher:
 		require.Equal(t, expectedCid.Cid, downstream.Cid, "sync'd cid unexpected")
-		_, err := store.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err := store.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, "data not in receiver store")
 		t.Log(logPrefix+" got sync:", downstream.Cid)
 	}
@@ -858,8 +856,7 @@ type hostSystem struct {
 }
 
 func newHostSystem(t *testing.T) hostSystem {
-	privKey, _, err := crypto.GenerateEd25519Key(cryptorand.Reader)
-	require.NoError(t, err)
+	_, privKey, _ := random.Identity()
 	ds := dssync.MutexWrap(datastore.NewMapDatastore())
 	return hostSystem{
 		privKey: privKey,
@@ -912,7 +909,7 @@ func (b llBuilder) BuildWithPrev(t *testing.T, lsys ipld.LinkSystem, prev datamo
 		},
 	}
 
-	rng := rand.New(rand.NewSource(b.Seed))
+	rng := random.NewSeededRand(b.Seed)
 	for i := 0; i < int(b.Length); i++ {
 		p := basicnode.Prototype.Map
 		b := p.NewBuilder()
