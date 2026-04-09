@@ -6,20 +6,14 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-libipni/announce"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	testTopic        = "/announce/testtopic"
-	testCidString    = "QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB"
-	testCid2String   = "Qmejoony52NYREWv3e9Ap6Uvg29GmJKJpxaDgAbzzYL9kX"
-	testPeerIDString = "12D3KooWKRyzVWW6ChFjQjK4miCty85Niy48tpPV95XdKu1BcvMA"
-	testAddrString   = "/ip4/127.0.0.1/tcp/9999"
-)
+const testTopic = "/announce/testtopic"
 
 var (
 	testCid      cid.Cid
@@ -28,30 +22,11 @@ var (
 )
 
 func init() {
-	var err error
-	testCid, err = cid.Decode(testCidString)
-	if err != nil {
-		panic(err)
-	}
-	testCid2, err = cid.Decode(testCid2String)
-	if err != nil {
-		panic(err)
-	}
+	cids := random.Cids(2)
+	testCid = cids[0]
+	testCid2 = cids[1]
 
-	testPeerID, err := peer.Decode(testPeerIDString)
-	if err != nil {
-		panic(err)
-	}
-
-	testAddr, err := multiaddr.NewMultiaddr(testAddrString)
-	if err != nil {
-		panic(err)
-	}
-
-	testPeerInfo = peer.AddrInfo{
-		ID:    testPeerID,
-		Addrs: []multiaddr.Multiaddr{testAddr},
-	}
+	testPeerInfo = random.AddrInfos(1, 1)[0]
 }
 
 func TestReceiverBasic(t *testing.T) {

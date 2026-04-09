@@ -12,18 +12,12 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipni/go-libipni/announce/httpsender"
 	"github.com/ipni/go-libipni/announce/message"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	testPeerIDStr = "12D3KooWQ9j3Ur5V9U63Vi6ved72TcA3sv34k74W3wpW5rwNvDc3"
-	testCidStr    = "QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB"
-	testAddrStr   = "/ip4/127.0.0.1/tcp/9999"
-	testAddrStr2  = "/dns4/localhost/tcp/1234"
 )
 
 var (
@@ -33,20 +27,10 @@ var (
 )
 
 func init() {
-	var err error
-	testPeerID, err = peer.Decode(testPeerIDStr)
-	if err != nil {
-		panic(err)
-	}
-	testCid, err = cid.Decode(testCidStr)
-	if err != nil {
-		panic(err)
-	}
-	testAddrs = make([]multiaddr.Multiaddr, 1)
-	testAddrs[0], err = multiaddr.NewMultiaddr(testAddrStr)
-	if err != nil {
-		panic(err)
-	}
+	addrInfo := random.AddrInfos(1, 1)[0]
+	testPeerID = addrInfo.ID
+	testAddrs = addrInfo.Addrs
+	testCid = random.Cids(1)[0]
 }
 
 func TestSend(t *testing.T) {
@@ -96,7 +80,7 @@ func TestSend(t *testing.T) {
 	}
 	msg.SetAddrs(testAddrs)
 
-	err = sender.Send(context.Background(), msg)
+	err = sender.Send(t.Context(), msg)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 	require.NoError(t, sender.Close())
@@ -107,7 +91,7 @@ func TestSend(t *testing.T) {
 	defer sender.Close()
 
 	count = 0
-	err = sender.Send(context.Background(), msg)
+	err = sender.Send(t.Context(), msg)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 
@@ -127,7 +111,7 @@ func TestSend(t *testing.T) {
 	defer sender.Close()
 
 	count = 0
-	err = sender.Send(context.Background(), msg)
+	err = sender.Send(t.Context(), msg)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 	require.Equal(t, 1, count2)
@@ -175,7 +159,7 @@ func TestSendTimeout(t *testing.T) {
 	sender, err = httpsender.New([]*url.URL{announceURL}, testPeerID, httpsender.WithTimeout(time.Second))
 	require.NoError(t, err)
 	defer sender.Close()
-	err = sender.Send(context.Background(), msg)
+	err = sender.Send(t.Context(), msg)
 	require.Truef(t, strings.Contains(err.Error(), "Client.Timeout exceeded") || strings.Contains(err.Error(), "i/o timeout"), "error is %q", err)
 }
 
@@ -217,7 +201,7 @@ func TestJSONSend(t *testing.T) {
 	}
 	msg.SetAddrs(testAddrs)
 
-	err = sender.SendJson(context.Background(), msg)
+	err = sender.SendJson(t.Context(), msg)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 	require.NoError(t, sender.Close())
