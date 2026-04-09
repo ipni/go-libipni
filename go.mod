@@ -9,7 +9,7 @@ require (
 	github.com/ipfs/go-datastore v0.9.1
 	github.com/ipfs/go-ipld-format v0.6.3
 	github.com/ipfs/go-log/v2 v2.9.1
-	github.com/ipfs/go-test v0.2.3
+	github.com/ipfs/go-test v0.3.0
 	github.com/ipld/go-ipld-prime v0.22.0
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0

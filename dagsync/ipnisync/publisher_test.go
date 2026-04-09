@@ -37,7 +37,7 @@ import (
 )
 
 func TestPublisherWithLibp2pHTTP(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	req := require.New(t)
 
 	publisherStore := &correctedMemStore{&memstore.Store{
@@ -159,7 +159,7 @@ func TestPublisherWithLibp2pHTTP(t *testing.T) {
 }
 
 func TestExistingServerWithPublisher(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	req := require.New(t)
 
 	publisherStore := &correctedMemStore{&memstore.Store{
@@ -247,7 +247,7 @@ func TestExistingServerWithPublisher(t *testing.T) {
 
 func TestNewPublisherForListener(t *testing.T) {
 	req := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	store := &correctedMemStore{&memstore.Store{
 		Bag: make(map[string][]byte),
@@ -314,7 +314,7 @@ func TestNewPublisherForListener(t *testing.T) {
 func TestHandlerPath(t *testing.T) {
 	//t.Skip("needs work")
 	req := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	publisherStore := &correctedMemStore{&memstore.Store{
 		Bag: make(map[string][]byte),

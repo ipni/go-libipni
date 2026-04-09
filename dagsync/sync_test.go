@@ -106,7 +106,7 @@ func TestFirstSyncDepth(t *testing.T) {
 	case syncDone, open := <-watcher:
 		require.True(t, open, "event channel closed without receiving event")
 		require.Equal(t, adCid, syncDone.Cid, "sync returned unexpected cid")
-		_, err := dstStore.Get(context.Background(), datastore.NewKey(adCid.String()))
+		_, err := dstStore.Get(t.Context(), datastore.NewKey(adCid.String()))
 		require.NoError(t, err, "data not in receiver store")
 		require.Equal(t, 1, syncDone.Count)
 	}
@@ -147,7 +147,7 @@ func TestSyncFn(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Close()
 
-	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	err = srcHost.Connect(t.Context(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
 	require.NoError(t, err)
 
 	// Store the whole chain in source node
@@ -185,7 +185,7 @@ func TestSyncFn(t *testing.T) {
 	if !syncCid.Equals(lnk.(cidlink.Link).Cid) {
 		t.Fatalf("sync'd cid unexpected %s vs %s", syncCid, lnk)
 	}
-	_, err = dstStore.Get(context.Background(), datastore.NewKey(syncCid.String()))
+	_, err = dstStore.Get(t.Context(), datastore.NewKey(syncCid.String()))
 	require.NoError(t, err)
 	syncncl()
 
@@ -199,7 +199,7 @@ func TestSyncFn(t *testing.T) {
 	// Assert the latestSync is updated by explicit sync when cid and selector are unset.
 	newHead := chainLnks[0].(cidlink.Link).Cid
 	pub.SetRoot(newHead)
-	err = announce.Send(context.Background(), newHead, pub.Addrs(), p2pSender)
+	err = announce.Send(t.Context(), newHead, pub.Addrs(), p2pSender)
 	require.NoError(t, err)
 
 	select {
@@ -219,7 +219,7 @@ func TestSyncFn(t *testing.T) {
 	if !syncCid.Equals(newHead) {
 		t.Fatalf("sync'd cid unexpected %s vs %s", syncCid, lnk)
 	}
-	_, err = dstStore.Get(context.Background(), datastore.NewKey(syncCid.String()))
+	_, err = dstStore.Get(t.Context(), datastore.NewKey(syncCid.String()))
 	require.NoError(t, err, "data not in receiver store")
 	syncncl()
 
@@ -260,7 +260,7 @@ func TestPartialSync(t *testing.T) {
 	err = sub.SetLatestSync(srcHost.ID(), chainLnks[3].(cidlink.Link).Cid)
 	require.NoError(t, err)
 
-	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	err = srcHost.Connect(t.Context(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -270,7 +270,7 @@ func TestPartialSync(t *testing.T) {
 	senderAnnounceTest(t, pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[2])
 
 	// Check that first nodes hadn't been synced
-	_, err = dstStore.Get(context.Background(), datastore.NewKey(chainLnks[3].(cidlink.Link).Cid.String()))
+	_, err = dstStore.Get(t.Context(), datastore.NewKey(chainLnks[3].(cidlink.Link).Cid.String()))
 	require.ErrorIs(t, err, datastore.ErrNotFound, "data should not be in receiver store")
 
 	// Set latest sync so we pass through one of the links
@@ -282,7 +282,7 @@ func TestPartialSync(t *testing.T) {
 	senderAnnounceTest(t, pub, p2pSender, sub, dstStore, watcher, srcHost.ID(), chainLnks[0])
 
 	// Check if the node we pass through was retrieved
-	_, err = dstStore.Get(context.Background(), datastore.NewKey(chainLnks[1].(cidlink.Link).Cid.String()))
+	_, err = dstStore.Get(t.Context(), datastore.NewKey(chainLnks[1].(cidlink.Link).Cid.String()))
 	require.ErrorIs(t, err, datastore.ErrNotFound, "data should not be in receiver store")
 }
 
@@ -350,7 +350,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Close()
 
-	err = srcHost.Connect(context.Background(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
+	err = srcHost.Connect(t.Context(), dstHost.Peerstore().PeerInfo(dstHost.ID()))
 	require.NoError(t, err)
 
 	watcher, cncl := sub.OnSyncFinished()
@@ -363,7 +363,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	}
 	// Announce bad CID.
 	badCid := random.Cids(1)[0]
-	err = sub.Announce(context.Background(), badCid, pubInfo)
+	err = sub.Announce(t.Context(), badCid, pubInfo)
 	require.NoError(t, err)
 	// Check for fetch failure.
 	select {
@@ -393,7 +393,7 @@ func TestLatestSyncFailure(t *testing.T) {
 
 	rootCid := chainLnks[0].(cidlink.Link).Cid
 	pub.SetRoot(rootCid)
-	err = sub2.Announce(context.Background(), rootCid, pubInfo)
+	err = sub2.Announce(t.Context(), rootCid, pubInfo)
 	require.NoError(t, err)
 
 	select {
@@ -406,7 +406,7 @@ func TestLatestSyncFailure(t *testing.T) {
 	}
 
 	t.Log("Testing no update when node to sync is stop node")
-	err = sub2.Announce(context.Background(), rootCid, pubInfo)
+	err = sub2.Announce(t.Context(), rootCid, pubInfo)
 	require.NoError(t, err)
 
 	select {
@@ -558,14 +558,14 @@ func TestCancelDeadlock(t *testing.T) {
 		ID:    srcHost.ID(),
 		Addrs: srcHost.Addrs(),
 	}
-	_, err = sub.SyncAdChain(context.Background(), peerInfo)
+	_, err = sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 	// Now there should be an event on the watcher channel.
 
 	c = chainLnks[1].(cidlink.Link).Cid
 	pub.SetRoot(c)
 
-	_, err = sub.SyncAdChain(context.Background(), peerInfo)
+	_, err = sub.SyncAdChain(t.Context(), peerInfo)
 	require.NoError(t, err)
 	// Now the event dispatcher is blocked writing to the watcher channel.
 
@@ -626,7 +626,7 @@ func waitLatestSync(t *testing.T, dstStore datastore.Batching, watcher <-chan da
 	case downstream, open := <-watcher:
 		require.True(t, open, "event channel closed without receiving event")
 		require.Equal(t, expectedSync, downstream.Cid, "sync returned unexpected cid")
-		_, err := dstStore.Get(context.Background(), datastore.NewKey(downstream.Cid.String()))
+		_, err := dstStore.Get(t.Context(), datastore.NewKey(downstream.Cid.String()))
 		require.NoError(t, err, "data not in receiver store")
 	}
 }

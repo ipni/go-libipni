@@ -1,7 +1,6 @@
 package ipnisync_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestCtxWithCidSchema(t *testing.T) {
-	ctxOrig := context.Background()
+	ctxOrig := t.Context()
 	ctx, err := ipnisync.CtxWithCidSchema(ctxOrig, "")
 	require.NoError(t, err)
 	require.Equal(t, ctxOrig, ctx)

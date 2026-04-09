@@ -2,7 +2,6 @@ package ipnisync_test
 
 import (
 	"context"
-	"crypto/rand"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	_ "github.com/ipld/go-ipld-prime/codec/raw"
@@ -23,7 +23,6 @@ import (
 	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
 	"github.com/ipni/go-libipni/dagsync/ipnisync"
 	"github.com/ipni/go-libipni/maurl"
-	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multicodec"
@@ -33,7 +32,7 @@ import (
 
 const (
 	// Sample data extracted directly from http://ipfs-advertisement.s3.us-west-2.amazonaws.com
-
+	// Signed by provider QmQzqxhK82kAmKvARFZSkUVS6fo9sySaiogAnx5EnZ6ZmC
 	sampleNFTStorageCid  = "baguqeeranpqrweyey2zsab2mmt33ixc3jkg27p5ri3abr5di2pbbsbaig74q"
 	sampleNFTStorageHead = `{"head":{"/":"` + sampleNFTStorageCid + `"},"pubkey":{"/":{"bytes":"CAASpgIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDYi9qW5J1UIE4CUaRxxoROyqHkKZ2nhGRGWDurhNhPiNQ+n0sCy8rREEF9lertFt2n81c1Ik4W/8HZKxvk8PYKStrlGWjur6UoFyt+WuS/1hkRVyqEXjzBF7cLvfYQ75UaATIbLhXWpXqys1DVdh2snD0jnDugF4J72ZboIz6gwZC+BEd5axeVaibB9gJcg+5P48ihq9SAbr4dQUS47OgISMNb3f6nHfK7FQFF/KYx80byJYMJ9Oxsw8CB6C8pmDTdqvzYBT9kCUdY+loN/IcBqEeNw/UF7l3ay/ZJ2Yq437k6kn5BoxaZfxlbZHItoBjiLSJ9FSD7gpnUO+lJAh9bAgMBAAE="}},"sig":{"/":{"bytes":"NYkxmG812wa4DOCsZwH7NGLDERRkwtVwLNykf61RFug5VWNB1mKQjp0M3g0EBhVlf4dWqeh7ZCeVIC1qhAIONKw9VBAq4ITi4DTOlpx4yFphcNcCPGWNSfV0Qlosct6r64VmA4KtnRlYhwf6EsZ0gxcnZySbsv7KENHttmXLmO0ZBNQzG8dBNrp6thwiJbK4A1mw6+J6Ut4VzVwFUzJjONQzc0RpvUV7MwD1l6ZP83ucuOUT4Vw1F2yjVnFDgEa14N2tJfhxw2ZY2mHEiPH1pJL1dVxcjXRkiILV3V/qy1W5/cw+HhQHM3BIAgSBeWwSb7gbculHuBnOPDhHVKBmuQ=="}}}`
 	sampleNFTStorageAd   = `{"Addresses":["/dns4/elastic.dag.house/tcp/443/wss"],"ContextID":{"/":{"bytes":"YmFndXFlZXJhdW1qbGM3MjRhenFucmRiNXh3dDJ3bWdxMmZ4N2lrd2N6MmxtNHhlNWR0dWx4NHIzemQycQ=="}},"Entries":{"/":"baguqeeraumjlc724azqnrdb5xwt2wmgq2fx7ikwcz2lm4xe5dtulx4r3zd2q"},"IsRm":false,"Metadata":{"/":{"bytes":"gBI"}},"PreviousID":{"/":"baguqeeramj6uf7ie5brhk5ivzi7e4mccndzke6fizc4qaie6t73xrvspkxrq"},"Provider":"bafzbeibhqavlasjc7dvbiopygwncnrtvjd2xmryk5laib7zyjor6kf3avm","Signature":{"/":{"bytes":"CqsCCAASpgIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDYi9qW5J1UIE4CUaRxxoROyqHkKZ2nhGRGWDurhNhPiNQ+n0sCy8rREEF9lertFt2n81c1Ik4W/8HZKxvk8PYKStrlGWjur6UoFyt+WuS/1hkRVyqEXjzBF7cLvfYQ75UaATIbLhXWpXqys1DVdh2snD0jnDugF4J72ZboIz6gwZC+BEd5axeVaibB9gJcg+5P48ihq9SAbr4dQUS47OgISMNb3f6nHfK7FQFF/KYx80byJYMJ9Oxsw8CB6C8pmDTdqvzYBT9kCUdY+loN/IcBqEeNw/UF7l3ay/ZJ2Yq437k6kn5BoxaZfxlbZHItoBjiLSJ9FSD7gpnUO+lJAh9bAgMBAAESGy9pbmRleGVyL2luZ2VzdC9hZFNpZ25hdHVyZRoiEiAz1niaKM3G2J40Bz/3wQbElyuBh1+2Q1E9SBj9wNsE8iqAAgOO1BKwq1RRy7AkZksWRrDlClhXU5IHAiy9pHuYtI/ePbVANiMAisjIEkd7jtJx7uct+/q2BTTTVcmZS7iE4OMTUymVbPQJ21qrzB6l5hulKD5ieedkJngAPCpizXmI1Z32Ib1zkuEFMraRcFaQ0YWqBKoIBJjjO4POGIdB2SgrCO0aFSd94k+2lyudMeWK+OisGLI7r6+ovd8g1VmcspEgl6pfdlHvThM3TdYGa46LO3kSCZmTzbI/XPnbMKaITvbuS3p8gm6elxNagx7Jxw4oP7hVyINSJ9chRu/w0RiBO986WRwhkGz1jW5jUF6VG/cQODzwjhuACteHf9TWp18"}}}`
@@ -124,12 +123,8 @@ func TestIPNISync_NFTStorage_DigestCheck(t *testing.T) {
 
 func TestIPNIsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 	const testTopic = "/test/topic"
-	ctx := context.Background()
-
-	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
-	require.NoError(t, err)
-	pubID, err := peer.IDFromPrivateKey(pubPrK)
-	require.NoError(t, err)
+	ctx := t.Context()
+	pubID, pubPrK, _ := random.Identity()
 
 	// Instantiate a dagsync publisher.
 	publs := cidlink.DefaultLinkSystem()
@@ -191,12 +186,8 @@ func TestIPNIsync_AcceptsSpecCompliantDagJson(t *testing.T) {
 }
 
 func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
-	ctx := context.Background()
-
-	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
-	require.NoError(t, err)
-	pubID, err := peer.IDFromPrivateKey(pubPrK)
-	require.NoError(t, err)
+	ctx := t.Context()
+	pubID, pubPrK, _ := random.Identity()
 
 	// Instantiate a dagsync publisher.
 	publs := cidlink.DefaultLinkSystem()
@@ -232,11 +223,7 @@ func TestIPNIsync_NotFoundReturnsContentNotFoundErr(t *testing.T) {
 }
 
 func TestRequestTypeHint(t *testing.T) {
-	pubPrK, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
-	require.NoError(t, err)
-	pubID, err := peer.IDFromPrivateKey(pubPrK)
-	require.NoError(t, err)
-
+	pubID, pubPrK, _ := random.Identity()
 	var lastReqTypeHint string
 
 	// Instantiate a dagsync publisher.

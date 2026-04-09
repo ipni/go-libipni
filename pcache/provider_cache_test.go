@@ -85,6 +85,7 @@ func (s *mockSource) String() string {
 }
 
 func TestProviderCache(t *testing.T) {
+	ctx := t.Context()
 	src := newMockSource(pid1)
 	pc, err := pcache.New(pcache.WithSource(src))
 	require.NoError(t, err)
@@ -92,42 +93,42 @@ func TestProviderCache(t *testing.T) {
 	require.Equal(t, int32(1), src.callFetchAll.Load())
 
 	// Cache hit main
-	pinfo, err := pc.Get(context.Background(), pid1)
+	pinfo, err := pc.Get(ctx, pid1)
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 
 	// Cache miss
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 	require.Equal(t, 2, pc.Len())
 
 	// Negative cache hit update
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 
-	err = pc.Refresh(context.Background())
+	err = pc.Refresh(ctx)
 	require.NoError(t, err)
 
 	// Negative cache hit main
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 
 	src.addInfo(pid2)
 
 	// Should still get negative cache hit.
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.Nil(t, pinfo)
 
 	// Refresh single provider.
-	err = pc.Refresh(context.Background())
+	err = pc.Refresh(ctx)
 	require.NoError(t, err)
 
 	// Should see new provider now.
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, pid2, pinfo.AddrInfo.ID)
@@ -137,6 +138,7 @@ func TestProviderCache(t *testing.T) {
 }
 
 func TestOverlappingSources(t *testing.T) {
+	ctx := t.Context()
 	now := time.Now()
 
 	src1 := newMockSource(pid1)
@@ -149,18 +151,18 @@ func TestOverlappingSources(t *testing.T) {
 
 	// Check that provider pid1 came from src2, since it had the later
 	// timestamp.
-	pinfo, err := pc.Get(context.Background(), pid1)
+	pinfo, err := pc.Get(ctx, pid1)
 	require.NoError(t, err)
 	require.Equal(t, src2.infos[1].AddrInfo.Addrs[0], pinfo.AddrInfo.Addrs[0])
 	require.NotEqual(t, src1.infos[0].AddrInfo.Addrs[0], pinfo.AddrInfo.Addrs[0])
 
 	// Make src1 have newer timestamp for pid1.
 	src1.infos[0].LastAdvertisementTime = now.Add(5 * time.Second).Format(time.RFC3339)
-	err = pc.Refresh(context.Background())
+	err = pc.Refresh(ctx)
 	require.NoError(t, err)
 
 	// Refresh and check that provider pid1 came from src1.
-	pinfo, err = pc.Get(context.Background(), pid1)
+	pinfo, err = pc.Get(ctx, pid1)
 	require.NoError(t, err)
 	require.NotEqual(t, src2.infos[1].AddrInfo.Addrs[0], pinfo.AddrInfo.Addrs[0])
 	require.Equal(t, src1.infos[0].AddrInfo.Addrs[0], pinfo.AddrInfo.Addrs[0])
@@ -256,19 +258,21 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 	}))
 	defer testServer.Close()
 
+	ctx := t.Context()
+
 	// Test HTTP source.
 	src, err := pcache.NewHTTPSource(testServer.URL, nil)
 	require.NoError(t, err)
 
-	pi, err := src.Fetch(context.Background(), pid1)
+	pi, err := src.Fetch(ctx, pid1)
 	require.NoError(t, err)
 	require.NotNil(t, pi)
 	require.Equal(t, pid1, pi.AddrInfo.ID)
 
-	_, err = src.Fetch(context.Background(), pid2)
+	_, err = src.Fetch(ctx, pid2)
 	require.Error(t, err)
 
-	pis, err := src.FetchAll(context.Background())
+	pis, err := src.FetchAll(ctx)
 	require.NoError(t, err)
 	require.NotZero(t, len(pis))
 	require.Equal(t, pid1, pis[0].AddrInfo.ID)
@@ -280,16 +284,17 @@ func TestChainLevelExtendedProviderIsAsExpected(t *testing.T) {
 
 	contextID := []byte("lobster")
 	metadata := []byte("barreleye")
-	got, err := subject.GetResults(context.Background(), pid1, contextID, metadata)
+	got, err := subject.GetResults(ctx, pid1, contextID, metadata)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 
-	got, err = subject.GetResults(context.Background(), pid2, contextID, metadata)
+	got, err = subject.GetResults(ctx, pid2, contextID, metadata)
 	require.NoError(t, err)
 	require.Nil(t, got)
 }
 
 func TestNoPreload(t *testing.T) {
+	ctx := t.Context()
 	src1 := newMockSource(pid1)
 	src2 := newMockSource(pid2)
 
@@ -302,18 +307,19 @@ func TestNoPreload(t *testing.T) {
 	pinfos := pc.List()
 	require.Zero(t, len(pinfos))
 
-	pinfo, err := pc.Get(context.Background(), pid1)
+	pinfo, err := pc.Get(ctx, pid1)
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, 1, pc.Len())
 
-	pinfo, err = pc.Get(context.Background(), pid2)
+	pinfo, err = pc.Get(ctx, pid2)
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, 2, pc.Len())
 }
 
 func TestNoTimestamp(t *testing.T) {
+	ctx := t.Context()
 	src1 := newMockSource(pid1)
 	src2 := newMockSource(pid2)
 
@@ -324,18 +330,19 @@ func TestNoTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, pc.Len())
 
-	pinfo, err := pc.Get(context.Background(), pid1)
+	pinfo, err := pc.Get(ctx, pid1)
 	require.NoError(t, err)
 	require.NotNil(t, pinfo)
 	require.Equal(t, 1, pc.Len())
 
-	err = pc.Refresh(context.Background())
+	err = pc.Refresh(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, pc.Len())
 }
 
 func TestAutoRefresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
 		src1 := newMockSource(pid1)
 
 		pc, err := pcache.New(pcache.WithSource(src1), pcache.WithRefreshInterval(200*time.Millisecond))
@@ -343,13 +350,13 @@ func TestAutoRefresh(t *testing.T) {
 		require.Equal(t, 1, pc.Len())
 		require.Equal(t, int32(1), src1.callFetchAll.Load())
 
-		_, err = pc.Get(context.Background(), pid1)
+		_, err = pc.Get(ctx, pid1)
 		require.NoError(t, err)
 
 		time.Sleep(300 * time.Millisecond)
 		require.Equal(t, int32(1), src1.callFetchAll.Load())
 
-		_, err = pc.Get(context.Background(), pid1)
+		_, err = pc.Get(ctx, pid1)
 		require.NoError(t, err)
 
 		time.Sleep(300 * time.Millisecond)
@@ -365,6 +372,7 @@ func TestAutoRefresh(t *testing.T) {
 
 func TestTTL(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
 		src := newMockSource(pid1)
 		pc, err := pcache.New(pcache.WithSource(src), pcache.WithRefreshInterval(0),
 			pcache.WithTTL(200*time.Millisecond))
@@ -375,27 +383,27 @@ func TestTTL(t *testing.T) {
 		// Test TTL of disappeared provider
 		origInfos := src.infos
 		src.infos = nil
-		require.NoError(t, pc.Refresh(context.Background()))
+		require.NoError(t, pc.Refresh(ctx))
 		require.Equal(t, 1, len(pc.List()))
 
 		time.Sleep(220 * time.Millisecond)
-		require.NoError(t, pc.Refresh(context.Background()))
+		require.NoError(t, pc.Refresh(ctx))
 		require.Zero(t, len(pc.List()))
 
 		// Provider reappears.
 		src.infos = origInfos
-		require.NoError(t, pc.Refresh(context.Background()))
+		require.NoError(t, pc.Refresh(ctx))
 		require.Equal(t, 1, len(pc.List()))
 
 		// Test TTL of negative entry
-		pinfo, err := pc.Get(context.Background(), pid2)
+		pinfo, err := pc.Get(ctx, pid2)
 		require.NoError(t, err)
 		require.Nil(t, pinfo)
 		require.Equal(t, int32(1), src.callFetch.Load())
 
 		src.infos = nil // Cause cache update that moves neg entry to main map
-		require.NoError(t, pc.Refresh(context.Background()))
-		pinfo, err = pc.Get(context.Background(), pid2)
+		require.NoError(t, pc.Refresh(ctx))
+		pinfo, err = pc.Get(ctx, pid2)
 		require.NoError(t, err)
 		require.Nil(t, pinfo)
 		require.Equal(t, int32(1), src.callFetch.Load())
@@ -403,8 +411,8 @@ func TestTTL(t *testing.T) {
 		// Refresh after TTL should remove negative cache entry, and next Get
 		// should call Fetch again.
 		time.Sleep(220 * time.Millisecond)
-		require.NoError(t, pc.Refresh(context.Background()))
-		pinfo, err = pc.Get(context.Background(), pid2)
+		require.NoError(t, pc.Refresh(ctx))
+		pinfo, err = pc.Get(ctx, pid2)
 		require.NoError(t, err)
 		require.Nil(t, pinfo)
 		require.Equal(t, int32(2), src.callFetch.Load())

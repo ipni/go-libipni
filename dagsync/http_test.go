@@ -106,8 +106,8 @@ func TestSyncHttpFailsUnexpectedPeer(t *testing.T) {
 	te.pub.SetRoot(rootLnk.(cidlink.Link).Cid)
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
-
 	defer cancel()
+
 	_, otherPubKey, err := ic.GenerateECDSAKeyPair(rand.Reader)
 	require.NoError(t, err, "failed to make another peerid")
 	otherPeerID, err := peer.IDFromPublicKey(otherPubKey)
@@ -173,7 +173,7 @@ func TestSyncFnHttp(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, lnk.(cidlink.Link).Cid, syncCid, "sync'd cid unexpected")
-	_, err = te.dstStore.Get(context.Background(), datastore.NewKey(syncCid.String()))
+	_, err = te.dstStore.Get(t.Context(), datastore.NewKey(syncCid.String()))
 	require.NoError(t, err, "data not in receiver store")
 	syncncl()
 
@@ -189,7 +189,7 @@ func TestSyncFnHttp(t *testing.T) {
 	syncCid, err = te.sub.SyncAdChain(ctx, peerInfo)
 	require.NoError(t, err)
 	require.Equal(t, newHead, syncCid, "sync'd cid unexpected")
-	_, err = te.dstStore.Get(context.Background(), datastore.NewKey(syncCid.String()))
+	_, err = te.dstStore.Get(t.Context(), datastore.NewKey(syncCid.String()))
 	require.NoError(t, err, "data not in receiver store")
 	syncncl()
 
