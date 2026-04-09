@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	announcePath     = "ingest/announce"
+	announcePath     = "announce"
 	registerPath     = "register"
-	indexContentPath = "ingest/content"
+	indexContentPath = "content"
 )
 
 // Client is an http client for the indexer ingest API
