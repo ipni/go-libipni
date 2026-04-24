@@ -15,12 +15,16 @@ type loggingTracer struct {
 	log *logging.ZapEventLogger
 }
 
-func (l *loggingTracer) AddPeer(p peer.ID, proto protocol.ID) {
-	l.log.Debugf("Peer added with ID %s and protocol %s", p, proto)
-}
-
 func (l *loggingTracer) RemovePeer(p peer.ID) {
 	l.log.Debugf("Peer removed with ID %s", p)
+}
+
+func (l *loggingTracer) OnNewOutboundStream(p peer.ID, proto protocol.ID) {
+	l.log.Debugf("New outbound %s stream opened to peer %s", proto, p)
+}
+
+func (l *loggingTracer) OnClosedOutboundStream(p peer.ID) {
+	l.log.Debugf("Closed outbound stream to peer %s", p)
 }
 
 func (l *loggingTracer) Join(topic string) {
