@@ -35,6 +35,8 @@ type config struct {
 
 	blockHook BlockHookFunc
 
+	blockSyncAfterDone bool
+
 	idleHandlerTTL time.Duration
 	lastKnownSync  LastKnownSyncFunc
 	maxAsyncSyncs  int
@@ -128,6 +130,16 @@ func RetryableHTTPClient(retryMax int, waitMin, waitMax time.Duration) Option {
 func BlockHook(blockHook BlockHookFunc) Option {
 	return func(c *config) error {
 		c.blockHook = blockHook
+		return nil
+	}
+}
+
+// BlockSyncAfterDone configures the Subscriber to block new ad-chain syncs until
+// UnblockSync is called after the consumer finishes processing a SyncFinished
+// event.
+func BlockSyncAfterDone() Option {
+	return func(c *config) error {
+		c.blockSyncAfterDone = true
 		return nil
 	}
 }

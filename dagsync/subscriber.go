@@ -68,6 +68,9 @@ type Subscriber struct {
 	scopedBlockHookMutex *sync.RWMutex
 	generalBlockHook     BlockHookFunc
 
+	// blockSyncAfterDone blocks new ad-chain syncs until UnblockSync is called.
+	blockSyncAfterDone bool
+
 	// inEvents is used to send a SyncFinished from a peer handler to the
 	// distributeEvents goroutine.
 	inEvents chan SyncFinished
@@ -163,6 +166,31 @@ type handler struct {
 	expires time.Time
 	// syncer is a sync client for this handler's peer.
 	syncer Syncer
+	// syncReadyGuard is a 1-entry channel used to block ad-chain syncs until
+	// the consumer calls UnblockSync after processing a SyncFinished event.
+	syncReadyGuard chan struct{}
+}
+
+func (h *handler) acquireSyncGate(ctx context.Context) error {
+	if h.syncReadyGuard == nil {
+		return nil
+	}
+	select {
+	case h.syncReadyGuard <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (h *handler) releaseSyncGate() {
+	if h.syncReadyGuard == nil {
+		return
+	}
+	select {
+	case <-h.syncReadyGuard:
+	default:
+	}
 }
 
 // wrapBlockHook wraps a possibly nil block hook func to allow dispatching to a
@@ -222,6 +250,8 @@ func NewSubscriber(host host.Host, lsys ipld.LinkSystem, options ...Option) (*Su
 		scopedBlockHookMutex: scopedBlockHookMutex,
 		scopedBlockHook:      scopedBlockHook,
 		generalBlockHook:     opts.blockHook,
+
+		blockSyncAfterDone: opts.blockSyncAfterDone,
 
 		idleHandlerTTL:    opts.idleHandlerTTL,
 		latestSyncHandler: latestSyncHandler{},
@@ -328,6 +358,11 @@ func (s *Subscriber) doClose() error {
 	}
 
 	// Wait for any syncs to complete.
+	s.handlersMutex.Lock()
+	for _, hnd := range s.handlers {
+		hnd.releaseSyncGate()
+	}
+	s.handlersMutex.Unlock()
 	s.asyncWG.Wait()
 
 	// Stop the distribution goroutine.
@@ -482,6 +517,16 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 		return cid.Undef, fmt.Errorf("sync canceled: %w", ctx.Err())
 	}
 
+	if err := hnd.acquireSyncGate(ctx); err != nil {
+		return cid.Undef, fmt.Errorf("sync canceled waiting for processing: %w", err)
+	}
+	gateHeld := true
+	defer func() {
+		if gateHeld {
+			hnd.releaseSyncGate()
+		}
+	}()
+
 	segdl := s.segDepthLimit
 	if opts.segDepthLimit != 0 {
 		segdl = opts.segDepthLimit
@@ -506,6 +551,7 @@ func (s *Subscriber) SyncAdChain(ctx context.Context, peerInfo peer.AddrInfo, op
 
 	if updateLatest {
 		hnd.sendSyncFinishedEvent(nextCid, syncCount)
+		gateHeld = false
 	}
 
 	return nextCid, nil
@@ -659,10 +705,20 @@ func (s *Subscriber) getOrCreateHandler(peerID peer.ID) *handler {
 			peerID:     peerID,
 			expires:    expires,
 		}
+		if s.blockSyncAfterDone {
+			hnd.syncReadyGuard = make(chan struct{}, 1)
+		}
 		s.handlers[peerID] = hnd
 	}
 
 	return hnd
+}
+
+// UnblockSync releases the ad-chain sync gate for peerID after the consumer
+// has finished processing a SyncFinished event.
+func (s *Subscriber) UnblockSync(peerID peer.ID) {
+	hnd := s.getOrCreateHandler(peerID)
+	hnd.releaseSyncGate()
 }
 
 // idleHandlerCleaner periodically looks for idle handlers to remove. This
@@ -676,6 +732,9 @@ func (s *Subscriber) idleHandlerCleaner() {
 			s.handlersMutex.Lock()
 			for pid, hnd := range s.handlers {
 				if now.After(hnd.expires) {
+					// TODO: Is this safe for handler to be removed?
+					// What if ad sync takes longer than the idleHandlerTTL
+					// and nobody asks for that handler in the meantime?
 					delete(s.handlers, pid)
 					log.Debugw("Removed idle handler", "peer", pid)
 				}
@@ -724,6 +783,7 @@ func (s *Subscriber) watch() {
 			// semaphore.
 			hnd.asyncMutex.Lock()
 			defer hnd.asyncMutex.Unlock()
+
 			if s.syncSem != nil {
 				select {
 				case s.syncSem <- struct{}{}:
@@ -733,6 +793,7 @@ func (s *Subscriber) watch() {
 				case <-ctx.Done():
 				}
 			}
+
 			hnd.asyncSyncAdChain(ctx)
 		})
 	}
@@ -881,6 +942,18 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	if err != nil {
 		panic(err.Error())
 	}
+
+	if err := h.acquireSyncGate(ctx); err != nil {
+		log.Warnw("Abandoned pending sync waiting for processing", "err", err, "peer", h.peerID)
+		return
+	}
+	gateHeld := true
+	defer func() {
+		if gateHeld {
+			h.releaseSyncGate()
+		}
+	}()
+
 	sel := ExploreRecursiveWithStopNode(adsDepthLimit, h.subscriber.adsSelectorSeq, latestSyncLink)
 	syncCount, err := h.handle(ctx, nextCid, sel, syncer, h.subscriber.generalBlockHook, h.subscriber.segDepthLimit, stopAtCid)
 	if err != nil {
@@ -898,6 +971,7 @@ func (h *handler) asyncSyncAdChain(ctx context.Context) {
 	}
 	updatePeerstore()
 	h.sendSyncFinishedEvent(nextCid, syncCount)
+	gateHeld = false
 }
 
 var _ SegmentSyncActions = (*segmentedSync)(nil)
