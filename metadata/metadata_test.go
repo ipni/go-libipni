@@ -1,7 +1,7 @@
 package metadata_test
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/ipfs/go-test/random"

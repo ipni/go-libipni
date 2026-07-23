@@ -892,7 +892,7 @@ func (b dagsyncPubSubBuilder) Build(t *testing.T, topicName string, pubSys hostS
 
 type llBuilder struct {
 	Length uint8
-	Seed   int64
+	Seed   uint64
 }
 
 func (b llBuilder) Build(t *testing.T, lsys ipld.LinkSystem) datamodel.Link {
@@ -909,7 +909,7 @@ func (b llBuilder) BuildWithPrev(t *testing.T, lsys ipld.LinkSystem, prev datamo
 		},
 	}
 
-	rng := random.NewSeededRand(b.Seed)
+	rng := random.NewSeeded(random.Uint64ToSeed(b.Seed))
 	for i := 0; i < int(b.Length); i++ {
 		p := basicnode.Prototype.Map
 		b := p.NewBuilder()
@@ -917,7 +917,7 @@ func (b llBuilder) BuildWithPrev(t *testing.T, lsys ipld.LinkSystem, prev datamo
 		require.NoError(t, err)
 		eb, err := ma.AssembleEntry("Value")
 		require.NoError(t, err)
-		err = eb.AssignInt(int64(rng.Intn(100)))
+		err = eb.AssignInt(int64(rng.IntN(100)))
 		require.NoError(t, err)
 		eb, err = ma.AssembleEntry("Next")
 		require.NoError(t, err)
