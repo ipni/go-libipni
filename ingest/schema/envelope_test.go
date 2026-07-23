@@ -2,9 +2,7 @@ package schema_test
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
@@ -205,7 +203,7 @@ func TestSigVerificationFailsIfTheExtendedProviderIdentityIsIncorrect(t *testing
 
 func TestSigVerificationFailsIfTheExtendedProviderMetadataIsIncorrect(t *testing.T) {
 	extendedSignatureTest(t, func(adv stischema.Advertisement) {
-		rng := rand.New(rand.NewSource(time.Now().Unix()))
+		rng := random.New()
 		meta := make([]byte, 10)
 		rng.Read(meta)
 		adv.ExtendedProvider.Providers[1].Metadata = meta

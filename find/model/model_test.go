@@ -15,7 +15,8 @@ func TestMarshal(t *testing.T) {
 	// Generate some multihashes and populate indexer
 	metadata := []byte("test-metadata")
 	ctxID := []byte("test-context-id")
-	p := random.Peers(1)[0]
+	rnd := random.New()
+	p := rnd.Peers(1)[0]
 	m1, _ := multiaddr.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	m2, _ := multiaddr.NewMultiaddr("/dns4/ipni.io/tcp/443/https/httpath/http-cid-data")
 
@@ -33,7 +34,7 @@ func TestMarshal(t *testing.T) {
 		MultihashResults: []model.MultihashResult{},
 	}
 
-	mhs := random.Multihashes(3)
+	mhs := rnd.Multihashes(3)
 	for i := range mhs {
 		resp.MultihashResults = append(resp.MultihashResults, model.MultihashResult{
 			Multihash:       mhs[i],

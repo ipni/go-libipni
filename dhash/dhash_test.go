@@ -3,7 +3,6 @@ package dhash
 import (
 	"bytes"
 	"crypto/sha256"
-	"math/rand"
 	"testing"
 
 	"github.com/ipfs/go-test/random"
@@ -19,7 +18,7 @@ func TestSalt(t *testing.T) {
 }
 
 func TestEncryptSameValueWithTheSameMultihashShouldProduceTheSameOutput(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.NewSeeded(random.Uint64ToSeed(1413))
 	payload := make([]byte, 256)
 	_, err := rng.Read(payload)
 	if err != nil {
@@ -40,7 +39,7 @@ func TestEncryptSameValueWithTheSameMultihashShouldProduceTheSameOutput(t *testi
 }
 
 func TestCanDecryptEncryptedValue(t *testing.T) {
-	rng := rand.New(rand.NewSource(1413))
+	rng := random.NewSeeded(random.Uint64ToSeed(1413))
 	payload := make([]byte, 256)
 	_, err := rng.Read(payload)
 	if err != nil {
