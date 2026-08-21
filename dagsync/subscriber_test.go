@@ -62,29 +62,29 @@ func TestScopedBlockHook(t *testing.T) {
 			subDS := dssync.MutexWrap(datastore.NewMapDatastore())
 			subLsys := test.MkLinkSystem(subDS)
 
-			var calledGeneralBlockHookTimes int64
+			var calledGeneralBlockHookTimes atomic.Int64
 			sub, err := dagsync.NewSubscriber(subHost, subLsys,
 				dagsync.BlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
-					atomic.AddInt64(&calledGeneralBlockHookTimes, 1)
+					calledGeneralBlockHookTimes.Add(1)
 				}),
 				dagsync.StrictAdsSelector(false),
 			)
 			require.NoError(t, err)
 
-			var calledScopedBlockHookTimes int64
+			var calledScopedBlockHookTimes atomic.Int64
 			peerInfo := peer.AddrInfo{
 				ID:    pubHost.ID(),
 				Addrs: pubHost.Addrs(),
 			}
 			_, err = sub.SyncAdChain(t.Context(), peerInfo, dagsync.ScopedBlockHook(func(i peer.ID, c cid.Cid, _ dagsync.SegmentSyncActions) {
-				atomic.AddInt64(&calledScopedBlockHookTimes, 1)
+				calledScopedBlockHookTimes.Add(1)
 			}))
 			require.NoError(t, err)
 
-			require.Zero(t, atomic.LoadInt64(&calledGeneralBlockHookTimes),
+			require.Zero(t, calledGeneralBlockHookTimes.Load(),
 				"General block hook should not have been called when scoped block hook is set")
 
-			require.Equal(t, int64(ll.Length), atomic.LoadInt64(&calledScopedBlockHookTimes),
+			require.Equal(t, int64(ll.Length), calledScopedBlockHookTimes.Load(),
 				"Didn't call scoped block hook enough times")
 
 			anotherLL := llBuilder{
@@ -97,7 +97,7 @@ func TestScopedBlockHook(t *testing.T) {
 			_, err = sub.SyncAdChain(t.Context(), peerInfo)
 			require.NoError(t, err)
 
-			require.Equal(t, int64(ll.Length), atomic.LoadInt64(&calledGeneralBlockHookTimes),
+			require.Equal(t, int64(ll.Length), calledGeneralBlockHookTimes.Load(),
 				"General hook should have been called only in secod sync")
 		})
 	}, &quick.Config{

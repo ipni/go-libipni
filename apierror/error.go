@@ -104,8 +104,7 @@ func EncodeError(err error) []byte {
 	e := ErrorMessage{
 		Message: err.Error(),
 	}
-	var apierr *Error
-	if errors.As(err, &apierr) {
+	if apierr, ok := errors.AsType[*Error](err); ok {
 		e.Status = apierr.Status()
 	}
 
