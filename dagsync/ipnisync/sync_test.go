@@ -2,12 +2,17 @@ package ipnisync_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-test/random"
@@ -277,4 +282,233 @@ func TestRequestTypeHint(t *testing.T) {
 	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
 	err = syncer.Sync(ctx, testCid, selectorparse.CommonSelector_MatchPoint)
 	require.ErrorIs(t, err, ipnisync.ErrUnknownCidSchema)
+}
+
+// newFetchErrorTestSyncer creates a Syncer that fetches from the plain HTTP
+// server at serverURL. A non-zero retryMax configures the retryable HTTP
+// client with a short backoff.
+func newFetchErrorTestSyncer(t *testing.T, serverURL string, retryMax int, httpTimeout time.Duration) *ipnisync.Syncer {
+	t.Helper()
+	pubID, _, _ := random.Identity()
+
+	puburl, err := url.Parse(serverURL)
+	require.NoError(t, err)
+	pubmaddr, err := maurl.FromURL(puburl)
+	require.NoError(t, err)
+
+	ls := cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ls.SetWriteStorage(store)
+	ls.SetReadStorage(store)
+
+	var opts []ipnisync.ClientOption
+	if retryMax != 0 {
+		opts = append(opts, ipnisync.ClientHTTPRetry(retryMax, 10*time.Millisecond, 20*time.Millisecond))
+	}
+	if httpTimeout != 0 {
+		opts = append(opts, ipnisync.ClientHTTPTimeout(httpTimeout))
+	}
+
+	sync := ipnisync.NewSync(ls, nil, opts...)
+	syncer, err := sync.NewSyncer(peer.AddrInfo{
+		ID:    pubID,
+		Addrs: []multiaddr.Multiaddr{pubmaddr},
+	})
+	require.NoError(t, err)
+	return syncer
+}
+
+func TestFetchError_RetryExhaustedStatus(t *testing.T) {
+	const retryMax = 2
+	const attempts = retryMax + 1
+	longBody := strings.Repeat("x", 1000)
+
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(longBody))
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, retryMax, 0)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, http.StatusInternalServerError, fe.StatusCode)
+	require.Equal(t, attempts, fe.Attempts)
+	require.NoError(t, fe.Err)
+	require.Empty(t, fe.RetryAfter)
+	// The body is capped at 256 bytes with "..." appended when truncated.
+	require.Equal(t, strings.Repeat("x", 256)+"...", fe.Body)
+	require.Contains(t, fe.URL, pub.URL)
+
+	// The pre-change error string remains a prefix, with the status and body
+	// appended. The Get "<url>": prefix is the url.Error wrap added by
+	// net/http around the round tripper error.
+	want := fmt.Sprintf("fetch request failed: Get %q: GET %s giving up after %d attempt(s): non success http fetch response at %s: %d body: %q",
+		fe.URL, fe.URL, attempts, fe.URL, fe.StatusCode, fe.Body)
+	require.Equal(t, want, err.Error())
+}
+
+func TestFetchError_RetryAfter(t *testing.T) {
+	const retryMax = 2
+	const attempts = retryMax + 1
+
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// DefaultBackoff honors Retry-After on 429, so keep it small.
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("slow down"))
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, retryMax, 0)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, http.StatusTooManyRequests, fe.StatusCode)
+	require.Equal(t, attempts, fe.Attempts)
+	require.NoError(t, fe.Err)
+	require.Equal(t, "1", fe.RetryAfter)
+	require.Equal(t, "slow down", fe.Body)
+
+	want := fmt.Sprintf("fetch request failed: Get %q: GET %s giving up after %d attempt(s): non success http fetch response at %s: %d (retry-after: 1) body: %q",
+		fe.URL, fe.URL, attempts, fe.URL, fe.StatusCode, fe.Body)
+	require.Equal(t, want, err.Error())
+}
+
+func TestFetchError_ConnectionRefused(t *testing.T) {
+	const retryMax = 2
+	const attempts = retryMax + 1
+
+	// Use a local address that is not listening.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serverURL := "http://" + ln.Addr().String()
+	require.NoError(t, ln.Close())
+
+	syncer := newFetchErrorTestSyncer(t, serverURL, retryMax, 0)
+
+	_, err = syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Zero(t, fe.StatusCode)
+	require.Equal(t, attempts, fe.Attempts)
+	require.Error(t, fe.Err)
+	require.Empty(t, fe.RetryAfter)
+	require.Empty(t, fe.Body)
+
+	// The transport error string must be byte identical to the pre-change
+	// format.
+	want := fmt.Sprintf("fetch request failed: Get %q: GET %s giving up after %d attempt(s): %s", fe.URL, fe.URL, attempts, fe.Err)
+	require.Equal(t, want, err.Error())
+}
+
+func TestFetchError_Timeout(t *testing.T) {
+	const retryMax = 2
+	const attempts = retryMax + 1
+
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, ipnisync.IPNIPath) {
+			// Accept the connection but never respond.
+			<-r.Context().Done()
+			return
+		}
+		// Respond to the libp2phttp well-known metadata probe so NewSyncer
+		// falls back to plain HTTP.
+		http.NotFound(w, r)
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, retryMax, 300*time.Millisecond)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Zero(t, fe.StatusCode)
+	require.Equal(t, attempts, fe.Attempts)
+	require.Error(t, fe.Err)
+	require.Contains(t, fe.Err.Error(), "deadline exceeded")
+
+	want := fmt.Sprintf("fetch request failed: Get %q: GET %s giving up after %d attempt(s): %s", fe.URL, fe.URL, attempts, fe.Err)
+	require.Equal(t, want, err.Error())
+}
+
+func TestFetchError_ContextCanceled(t *testing.T) {
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, ipnisync.IPNIPath) {
+			<-r.Context().Done()
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, 2, 0)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := syncer.GetHead(ctx)
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, 1, fe.Attempts)
+	require.ErrorIs(t, fe.Err, context.DeadlineExceeded)
+	require.NotEmpty(t, fe.URL)
+	require.Contains(t, fe.URL, pub.URL)
+
+	// The URL must be present in the rendered string (no double space).
+	require.Contains(t, err.Error(), "GET "+fe.URL+" giving up after 1 attempt(s): context deadline exceeded")
+}
+
+func TestFetchError_NotFound(t *testing.T) {
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, 2, 0)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+	require.ErrorIs(t, err, ipld.ErrNotExists{})
+	require.Contains(t, err.Error(), "content not found")
+
+	// The 404 path must not produce a FetchError.
+	var fe *ipnisync.FetchError
+	require.False(t, errors.As(err, &fe))
+}
+
+func TestFetchError_NonRetryPath(t *testing.T) {
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, 0, 0)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, http.StatusInternalServerError, fe.StatusCode)
+	require.Zero(t, fe.Attempts)
+	require.NoError(t, fe.Err)
+	require.Empty(t, fe.RetryAfter)
+	require.Empty(t, fe.Body)
+
+	// With zero attempts the error renders without the "giving up" prefix.
+	require.Equal(t, fmt.Sprintf("non success http fetch response at %s: %d", fe.URL, fe.StatusCode), err.Error())
 }

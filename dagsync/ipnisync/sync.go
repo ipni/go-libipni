@@ -164,6 +164,7 @@ func (s *Sync) NewSyncer(peerInfo peer.AddrInfo, options ...SyncerOption) (*Sync
 			RetryMax:     s.rclient.RetryMax,
 			CheckRetry:   retryablehttp.DefaultRetryPolicy,
 			Backoff:      retryablehttp.DefaultBackoff,
+			ErrorHandler: fetchErrorHandler,
 		}
 		httpClient = rclient.StandardClient()
 	}
@@ -319,6 +320,45 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 	return traversalOrder, nil
 }
 
+// fetchErrorHandler converts the final failed response of the retryable HTTP
+// client into a *FetchError so the status code and a body snippet reach the
+// caller. It reads and drains the response body because retryablehttp only
+// drains it when no ErrorHandler is set. Returning a nil response preserves
+// the previous behavior of not returning a response on failure.
+func fetchErrorHandler(resp *http.Response, err error, attempt int) (*http.Response, error) {
+	fe := &FetchError{
+		Attempts: attempt,
+		Err:      err,
+	}
+	var u *url.URL
+	if resp != nil && resp.Request != nil {
+		u = resp.Request.URL
+	}
+	if u == nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			u, _ = url.Parse(uerr.URL)
+		}
+	}
+	fe.URL = redactURL(u)
+	if resp != nil {
+		fe.StatusCode = resp.StatusCode
+		fe.RetryAfter = resp.Header.Get("Retry-After")
+		if resp.Body != nil {
+			// Read one byte more than the snippet cap to detect truncation.
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet+1))
+			fe.Body = sanitizeSnippet(body, maxBodySnippet)
+			// Drain and close the body so the connection can be reused. The
+			// drain is capped at 4096 bytes, matching retryablehttp's own
+			// drainBody limit, so a large error body is not downloaded in
+			// full from an untrusted publisher.
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+		}
+	}
+	return nil, fe
+}
+
 func (s *Syncer) fetch(ctx context.Context, rsrc string, cb func(io.Reader) error) error {
 	if s.peerStore != nil {
 		now := time.Now()
@@ -349,6 +389,13 @@ retry:
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		// The retryable client's error handler cannot recover the URL when
+		// there is no response and the error carries no URL (e.g. context
+		// cancellation), so backfill it here.
+		var fe *FetchError
+		if errors.As(err, &fe) && fe.URL == "" {
+			fe.URL = fetchURL.String()
+		}
 		if len(urls) != 0 {
 			log.Errorw("Fetch request failed, will retry with next address", "err", err)
 			rootURL = *urls[0]
@@ -403,7 +450,7 @@ retry:
 		fallthrough
 	default:
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("non success http fetch response at %s: %d", fetchURL.String(), resp.StatusCode)
+		return &FetchError{URL: fetchURL.String(), StatusCode: resp.StatusCode}
 	}
 }
 
