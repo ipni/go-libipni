@@ -333,6 +333,7 @@ func fetchErrorHandler(resp *http.Response, err error, attempt int) (*http.Respo
 	var u *url.URL
 	if resp != nil && resp.Request != nil {
 		u = resp.Request.URL
+		fe.Method = resp.Request.Method
 	}
 	if u == nil {
 		var uerr *url.Error
@@ -348,6 +349,10 @@ func fetchErrorHandler(resp *http.Response, err error, attempt int) (*http.Respo
 			// Read one byte more than the snippet cap to detect truncation.
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet+1))
 			fe.Body = sanitizeSnippet(body, maxBodySnippet)
+			// TODO: Go 1.27 adds automatic draining of the response body
+			// for failed requests, which supersedes this manual drain.
+			// Remove it once the module's go directive reaches 1.27.
+			//
 			// Drain and close the body so the connection can be reused. The
 			// drain is capped at 4096 bytes, matching retryablehttp's own
 			// drainBody limit, so a large error body is not downloaded in

@@ -512,3 +512,106 @@ func TestFetchError_NonRetryPath(t *testing.T) {
 	// With zero attempts the error renders without the "giving up" prefix.
 	require.Equal(t, fmt.Sprintf("non success http fetch response at %s: %d", fe.URL, fe.StatusCode), err.Error())
 }
+
+func TestFetchError_MethodRendering(t *testing.T) {
+	const urlStr = "https://example.com/ipni/head"
+	transportErr := errors.New("connection refused")
+
+	tests := []struct {
+		name string
+		fe   *ipnisync.FetchError
+		want string
+	}{
+		{
+			name: "empty method defaults to GET",
+			fe:   &ipnisync.FetchError{URL: urlStr, Attempts: 3, Err: transportErr},
+			want: fmt.Sprintf("GET %s giving up after 3 attempt(s): connection refused", urlStr),
+		},
+		{
+			name: "GET method is byte identical to the default",
+			fe:   &ipnisync.FetchError{Method: "GET", URL: urlStr, Attempts: 3, Err: transportErr},
+			want: fmt.Sprintf("GET %s giving up after 3 attempt(s): connection refused", urlStr),
+		},
+		{
+			name: "POST method renders POST",
+			fe:   &ipnisync.FetchError{Method: "POST", URL: urlStr, Attempts: 3, Err: transportErr},
+			want: fmt.Sprintf("POST %s giving up after 3 attempt(s): connection refused", urlStr),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, test.fe.Error())
+		})
+	}
+}
+
+func TestFetchError_ZeroAttemptsErr(t *testing.T) {
+	const urlStr = "https://example.com/ipni/head"
+
+	// With Err nil the zero-attempts string is unchanged.
+	feNil := &ipnisync.FetchError{URL: urlStr, StatusCode: http.StatusInternalServerError}
+	require.Equal(t,
+		fmt.Sprintf("non success http fetch response at %s: %d", urlStr, http.StatusInternalServerError),
+		feNil.Error())
+
+	// With Err set the error is rendered after the status.
+	feErr := &ipnisync.FetchError{URL: urlStr, StatusCode: http.StatusInternalServerError, Err: errors.New("boom")}
+	require.Equal(t,
+		fmt.Sprintf("non success http fetch response at %s: %d: boom", urlStr, http.StatusInternalServerError),
+		feErr.Error())
+}
+
+// fetchBodySnippet returns the FetchError.Body produced when fetching from a
+// server that responds with the given body and a 500 status. The non-zero
+// retry max routes the final response through fetchErrorHandler, which is the
+// only path that populates Body.
+func fetchBodySnippet(t *testing.T, body []byte) string {
+	t.Helper()
+
+	pub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(body)
+	}))
+	defer pub.Close()
+
+	syncer := newFetchErrorTestSyncer(t, pub.URL, 2, 0)
+
+	_, err := syncer.GetHead(t.Context())
+	require.Error(t, err)
+
+	var fe *ipnisync.FetchError
+	require.ErrorAs(t, err, &fe)
+	return fe.Body
+}
+
+func TestSanitizeSnippet_PlainTextUnchanged(t *testing.T) {
+	require.Equal(t, "hello world", fetchBodySnippet(t, []byte("hello world")))
+}
+
+func TestSanitizeSnippet_TextTruncation(t *testing.T) {
+	// A long plain-text body is capped at 256 bytes and ends in "...".
+	got := fetchBodySnippet(t, []byte(strings.Repeat("x", 1000)))
+	require.Equal(t, strings.Repeat("x", 256)+"...", got)
+}
+
+func TestSanitizeSnippet_ControlBytes(t *testing.T) {
+	// A few control bytes keep the text and append the dropped count.
+	require.Equal(t, "hello world [1 non-printable bytes]", fetchBodySnippet(t, []byte("hello world\x00")))
+}
+
+func TestSanitizeSnippet_InvalidUTF8Hex(t *testing.T) {
+	// A body of invalid UTF-8 / protobuf-style bytes renders as hex rather
+	// than replacement characters.
+	body := []byte{0x0a, 0x03, 0x68, 0x69, 0x00, 0xff, 0x80, 0x81}
+	got := fetchBodySnippet(t, body)
+	require.Equal(t, "hex:0a03686900ff8081", got)
+	require.NotContains(t, got, "\uFFFD", "must not contain a replacement character")
+}
+
+func TestSanitizeSnippet_LongBinaryTruncation(t *testing.T) {
+	// A long binary body renders as hex with a truncation marker.
+	body := make([]byte, 100) // all NUL bytes
+	got := fetchBodySnippet(t, body)
+	require.True(t, strings.HasPrefix(got, "hex:"), "got %q", got)
+	require.True(t, strings.HasSuffix(got, "..."), "got %q", got)
+}
