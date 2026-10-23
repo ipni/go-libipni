@@ -1,6 +1,6 @@
 module github.com/ipni/go-libipni
 
-go 1.26.0
+go 1.26.6
 
 require (
 	github.com/gammazero/chanqueue v1.1.3
@@ -12,7 +12,7 @@ require (
 	github.com/ipfs/go-test v0.4.1
 	github.com/ipld/go-ipld-prime v0.24.0
 	github.com/libp2p/go-libp2p v0.51.0
-	github.com/libp2p/go-libp2p-pubsub v0.17.0
+	github.com/libp2p/go-libp2p-pubsub v0.19.0
 	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.3.0
 	github.com/multiformats/go-multiaddr v0.16.1
