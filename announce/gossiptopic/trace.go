@@ -1,6 +1,8 @@
 package gossiptopic
 
 import (
+	"time"
+
 	logging "github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -83,6 +85,10 @@ func (l *loggingTracer) RecvRPC(rpc *pubsub.RPC) {
 
 func (l *loggingTracer) SendRPC(rpc *pubsub.RPC, p peer.ID) {
 	l.log.Debugf("Sent RPC with size %d bytes to peer ID %s", proto.Size(rpc), p)
+}
+
+func (l *loggingTracer) SendRPCCompleted(rpc *pubsub.RPC, p peer.ID, writeDuration time.Duration) {
+	l.log.Debugf("Sent RPC completed after %s with size %d bytes to peer ID %s", writeDuration, proto.Size(rpc), p)
 }
 
 func (l *loggingTracer) DropRPC(rpc *pubsub.RPC, p peer.ID) {
