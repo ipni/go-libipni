@@ -2,9 +2,11 @@ package ipnisync_test
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/boxo/verifcid"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
@@ -661,6 +664,97 @@ func TestIPNIsync_IdentityRootCID(t *testing.T) {
 	require.Equal(t, []cid.Cid{ts.childCid}, ts.hooked)
 	_, err = ts.ls.LoadRaw(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid})
 	require.NoError(t, err)
+}
+
+func TestIPNIsync_IdentityCIDTooLarge(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString(strings.Repeat("x", ipnisync.MaxIdentityDigestSize))
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+	require.ErrorIs(t, ipnisync.CheckIdentitySize(ts.childCid), ipnisync.ErrIdentityTooLarge)
+
+	err := ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.ErrorIs(t, err, ipnisync.ErrIdentityTooLarge)
+
+	// The oversized block is neither requested nor stored.
+	require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
+	require.Equal(t, []cid.Cid{ts.rootCid}, ts.written)
+}
+
+func TestIPNIsync_IdentityCIDTooLargeAlreadyStored(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString(strings.Repeat("x", ipnisync.MaxIdentityDigestSize))
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// The syncer's link system already holds the oversized block, so a local
+	// load finds it.
+	_, err := ts.ls.Store(ipld.LinkContext{Ctx: t.Context()}, cidlink.LinkPrototype{Prefix: ts.childCid.Prefix()}, child)
+	require.NoError(t, err)
+
+	err = ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.ErrorIs(t, err, ipnisync.ErrIdentityTooLarge)
+}
+
+func TestIPNIsync_MalformedIdentityCID(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString("lobster")
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// NewCidV1 does not validate the multihash. These claim a digest length
+	// that does not match the bytes they hold. A length of 5 is the length of
+	// the whole CID, so its digest would overlap the header.
+	for name, mh := range map[string][]byte{
+		"longer than cid":   {multihash.IDENTITY, 100, 'x'},
+		"overlaps header":   {multihash.IDENTITY, 5, 'x'},
+		"shorter than hash": {multihash.IDENTITY, 1, 'x', 'y'},
+		"negative":          binary.AppendUvarint([]byte{multihash.IDENTITY}, math.MaxUint64),
+	} {
+		c := cid.NewCidV1(cid.Raw, mh)
+		require.NotPanics(t, func() {
+			err := ts.syncer.Sync(t.Context(), c, selectorparse.CommonSelector_ExploreAllRecursively)
+			require.Error(t, err)
+		}, name)
+	}
+	require.Empty(t, ts.requested)
+	require.Empty(t, ts.written)
+}
+
+func TestMaxIdentityDigestSizeMatchesBoxo(t *testing.T) {
+	// The limit is an IPNI rule that indexers must agree on, so it is not taken
+	// from boxo. A change to boxo's default fails here, to be decided for IPNI.
+	require.EqualValues(t, verifcid.DefaultMaxIdentityDigestSize, ipnisync.MaxIdentityDigestSize)
+}
+
+func TestCheckIdentitySize(t *testing.T) {
+	builder := cid.V1Builder{Codec: cid.Raw, MhType: multihash.IDENTITY}
+	atLimit, err := builder.Sum(make([]byte, ipnisync.MaxIdentityDigestSize))
+	require.NoError(t, err)
+	require.NoError(t, ipnisync.CheckIdentitySize(atLimit))
+
+	overLimit, err := builder.Sum(make([]byte, ipnisync.MaxIdentityDigestSize+1))
+	require.NoError(t, err)
+	require.ErrorIs(t, ipnisync.CheckIdentitySize(overLimit), ipnisync.ErrIdentityTooLarge)
+
+	hashed, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.SHA2_256}.Sum(make([]byte, 1024))
+	require.NoError(t, err)
+	require.NoError(t, ipnisync.CheckIdentitySize(hashed))
+	require.NoError(t, ipnisync.CheckIdentitySize(cid.Undef))
+}
+
+func TestCheckIdentitySizeDoesNotAllocate(t *testing.T) {
+	identity, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.IDENTITY}.Sum(make([]byte, ipnisync.MaxIdentityDigestSize))
+	require.NoError(t, err)
+	hashed, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.SHA2_256}.Sum(make([]byte, 1024))
+	require.NoError(t, err)
+
+	for name, c := range map[string]cid.Cid{"identity": identity, "hashed": hashed, "undef": cid.Undef} {
+		allocs := testing.AllocsPerRun(100, func() {
+			_ = ipnisync.CheckIdentitySize(c)
+		})
+		require.Zero(t, allocs, name)
+	}
 }
 
 // identityTestSync is a publisher and a syncer for a dag-json root block that
