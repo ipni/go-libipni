@@ -17,6 +17,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	_ "github.com/ipld/go-ipld-prime/codec/raw"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -614,4 +615,117 @@ func TestSanitizeSnippet_LongBinaryTruncation(t *testing.T) {
 	got := fetchBodySnippet(t, body)
 	require.True(t, strings.HasPrefix(got, "hex:"), "got %q", got)
 	require.True(t, strings.HasSuffix(got, "..."), "got %q", got)
+}
+
+func TestIPNIsync_IdentityCIDNotFetched(t *testing.T) {
+	// The publisher serves every block as dag-json, so a dag-cbor identity
+	// block also checks that the block is not requested from it.
+	for _, codec := range []multicodec.Code{multicodec.DagJson, multicodec.DagCbor} {
+		t.Run(codec.String(), func(t *testing.T) {
+			child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+				na.AssembleEntry("fish").AssignString("lobster")
+			})
+			ts := newIdentityTestSync(t, child, codec)
+
+			err := ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+			require.NoError(t, err)
+
+			// The identity block is stored through the write opener, like a
+			// fetched block.
+			require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
+			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.written)
+			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.hooked)
+			node, err := ts.ls.Load(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid}, basicnode.Prototype.Any)
+			require.NoError(t, err)
+			fish, err := node.LookupByString("fish")
+			require.NoError(t, err)
+			got, err := fish.AsString()
+			require.NoError(t, err)
+			require.Equal(t, "lobster", got)
+		})
+	}
+}
+
+func TestIPNIsync_IdentityRootCID(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString("lobster")
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// The identity CID is the root of the sync, loaded by walkFetch
+	err := ts.syncer.Sync(t.Context(), ts.childCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.NoError(t, err)
+
+	require.Empty(t, ts.requested)
+	require.Equal(t, []cid.Cid{ts.childCid}, ts.written)
+	require.Equal(t, []cid.Cid{ts.childCid}, ts.hooked)
+	_, err = ts.ls.LoadRaw(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid})
+	require.NoError(t, err)
+}
+
+// identityTestSync is a publisher and a syncer for a dag-json root block that
+// links to a child held in an identity CID, encoded with the codec given to
+// newIdentityTestSync. The publisher has only the root. The fields
+// record the CIDs the publisher is asked for, the CIDs written through the
+// syncer's write opener, and the CIDs passed to the block hook.
+type identityTestSync struct {
+	syncer    *ipnisync.Syncer
+	ls        ipld.LinkSystem
+	rootCid   cid.Cid
+	childCid  cid.Cid
+	requested []cid.Cid
+	written   []cid.Cid
+	hooked    []cid.Cid
+}
+
+func newIdentityTestSync(t *testing.T, child ipld.Node, codec multicodec.Code) *identityTestSync {
+	ts := &identityTestSync{}
+	pubID, pubPrK, _ := random.Identity()
+
+	publs := cidlink.DefaultLinkSystem()
+	pubstore := &memstore.Store{}
+	publs.SetWriteStorage(pubstore)
+	publs.StorageReadOpener = func(lnkCtx linking.LinkContext, lnk datamodel.Link) (io.Reader, error) {
+		ts.requested = append(ts.requested, lnk.(cidlink.Link).Cid)
+		return pubstore.GetStream(lnkCtx.Ctx, lnk.(cidlink.Link).Binary())
+	}
+	pub, err := ipnisync.NewPublisher(publs, pubPrK, ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pub.Close()) })
+
+	childLink, err := publs.ComputeLink(cidlink.LinkPrototype{Prefix: cid.Prefix{
+		Version:  1,
+		Codec:    uint64(codec),
+		MhType:   multihash.IDENTITY,
+		MhLength: -1,
+	}}, child)
+	require.NoError(t, err)
+	root := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("child").AssignLink(childLink)
+	})
+	rootLink, err := publs.Store(ipld.LinkContext{Ctx: t.Context()}, cidlink.LinkPrototype{Prefix: cid.Prefix{
+		Version:  1,
+		Codec:    uint64(multicodec.DagJson),
+		MhType:   multihash.SHA2_256,
+		MhLength: -1,
+	}}, root)
+	require.NoError(t, err)
+	ts.rootCid = rootLink.(cidlink.Link).Cid
+	ts.childCid = childLink.(cidlink.Link).Cid
+
+	ts.ls = cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ts.ls.SetReadStorage(store)
+	ts.ls.StorageWriteOpener = func(lctx linking.LinkContext) (io.Writer, linking.BlockWriteCommitter, error) {
+		var buf strings.Builder
+		return &buf, func(lnk ipld.Link) error {
+			ts.written = append(ts.written, lnk.(cidlink.Link).Cid)
+			return store.Put(lctx.Ctx, lnk.(cidlink.Link).Binary(), []byte(buf.String()))
+		}, nil
+	}
+
+	sync := ipnisync.NewSync(ts.ls, func(_ peer.ID, c cid.Cid) { ts.hooked = append(ts.hooked, c) })
+	ts.syncer, err = sync.NewSyncer(peer.AddrInfo{ID: pubID, Addrs: pub.Addrs()})
+	require.NoError(t, err)
+	return ts
 }

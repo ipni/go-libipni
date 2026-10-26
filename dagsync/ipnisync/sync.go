@@ -460,6 +460,8 @@ retry:
 }
 
 // fetchBlock fetches an item into the datastore at c if not locally available.
+// The block of an identity CID is the CID's digest, so it is taken from the CID
+// instead of being requested from the publisher.
 func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 	n, err := s.sync.lsys.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
 	// node is already present.
@@ -467,7 +469,7 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 		return nil
 	}
 
-	return s.fetch(ctx, c.String(), func(data io.Reader) error {
+	store := func(data io.Reader) error {
 		writer, committer, err := s.sync.lsys.StorageWriteOpener(ipld.LinkContext{Ctx: ctx})
 		if err != nil {
 			log.Errorw("Failed to get write opener", "err", err)
@@ -488,5 +490,10 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 			return err
 		}
 		return nil
-	})
+	}
+
+	if dmh, err := multihash.Decode(c.Hash()); err == nil && dmh.Code == multihash.IDENTITY {
+		return store(bytes.NewReader(dmh.Digest))
+	}
+	return s.fetch(ctx, c.String(), store)
 }
