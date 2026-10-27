@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -21,6 +22,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2phttp "github.com/libp2p/go-libp2p/p2p/http"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multicodec"
+	"github.com/multiformats/go-multihash"
 )
 
 // Publisher serves an advertisement chain over HTTP.
@@ -39,6 +42,29 @@ type Publisher struct {
 }
 
 var _ http.Handler = (*Publisher)(nil)
+
+// blockContentTypes maps IPLD codecs to the media types of their blocks, the
+// same as boxo's HTTP gateway does. A block in any other codec is served as
+// application/octet-stream.
+var blockContentTypes = map[multicodec.Code]string{
+	multicodec.Json:    "application/json",
+	multicodec.Cbor:    "application/cbor",
+	multicodec.DagJson: "application/vnd.ipld.dag-json",
+	multicodec.DagCbor: "application/vnd.ipld.dag-cbor",
+	multicodec.Raw:     "application/vnd.ipld.raw",
+}
+
+// blockContentType returns the media type of a block in the given codec.
+func blockContentType(codec uint64) string {
+	if contentType, ok := blockContentTypes[multicodec.Code(codec)]; ok {
+		return contentType
+	}
+	return "application/octet-stream"
+}
+
+// immutableCacheControl is the Cache-Control value for a response whose body
+// is fixed by the requested CID.
+const immutableCacheControl = "public, max-age=29030400, immutable"
 
 // NewPublisher creates a new ipni-sync publisher. Optionally, a libp2p stream
 // host can be provided to serve HTTP over libp2p.
@@ -221,6 +247,32 @@ func (p *Publisher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c, err := cid.Parse(ask)
 	if err != nil {
 		http.Error(w, "invalid request: not a cid", http.StatusBadRequest)
+		return
+	}
+
+	// The block of an identity CID is its digest, which the publisher may not
+	// store. It is written as is, in the CID's own codec, so that a syncer that
+	// requests it gets a block matching the CID. An identity CID over the size
+	// limit is not found, as syncers refuse it.
+	//
+	// The digest comes from the request URL, so anyone can choose it. It is
+	// served with the media type of its codec and with sniffing disabled, so
+	// that a browser never renders it, for example as HTML. The body follows
+	// from the CID alone, so it is cached as immutable.
+	if prefix := c.Prefix(); prefix.MhType == multihash.IDENTITY {
+		if err = checkDigestSize(c, prefix.MhLength); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		digest, err := identityDigestStr(c, prefix)
+		if err != nil {
+			http.Error(w, "invalid request: malformed identity cid", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", blockContentType(prefix.Codec))
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", immutableCacheControl)
+		_, _ = io.WriteString(w, digest)
 		return
 	}
 
