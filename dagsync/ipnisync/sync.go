@@ -460,11 +460,32 @@ retry:
 }
 
 // fetchBlock fetches an item into the datastore at c if not locally available.
+// The block of an identity CID is the CID's digest, so it is taken from the CID
+// instead of being requested from the publisher. An identity CID whose digest is
+// larger than MaxIdentityDigestSize fails with ErrIdentityTooLarge.
 func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
+	p := c.Prefix()
+
+	if p.MhType == multihash.IDENTITY {
+		if err := checkDigestSize(c, p.MhLength); err != nil {
+			return err
+		}
+	}
+
 	n, err := s.sync.lsys.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: c}, basicnode.Prototype.Any)
 	// node is already present.
 	if n != nil && err == nil {
 		return nil
+	}
+
+	// The write opener sees the context cancelled when fetchBlock returns. A
+	// block that was not committed, such as one with a mismatched digest, is
+	// abandoned; a committed block stays stored.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if p.MhType == multihash.IDENTITY {
+		return s.storeIdentityBlock(ctx, c, p)
 	}
 
 	return s.fetch(ctx, c.String(), func(data io.Reader) error {
@@ -489,4 +510,27 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 		}
 		return nil
 	})
+}
+
+// storeIdentityBlock stores the block of the identity CID c, which is the
+// CID's digest, through the link system write opener. The block is the digest
+// itself, so there is no hash to verify.
+func (s *Syncer) storeIdentityBlock(ctx context.Context, c cid.Cid, p cid.Prefix) error {
+	digest, err := identityDigestStr(c, p)
+	if err != nil {
+		return err
+	}
+	writer, committer, err := s.sync.lsys.StorageWriteOpener(ipld.LinkContext{Ctx: ctx})
+	if err != nil {
+		log.Errorw("Failed to get write opener", "err", err)
+		return err
+	}
+	if _, err = io.WriteString(writer, digest); err != nil {
+		return err
+	}
+	if err = committer(cidlink.Link{Cid: c}); err != nil {
+		log.Errorw("Failed to commit", "err", err)
+		return err
+	}
+	return nil
 }

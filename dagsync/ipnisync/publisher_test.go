@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipld/go-ipld-prime"
+	"github.com/ipld/go-ipld-prime/codec/dagcbor"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
 	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/fluent"
@@ -33,6 +35,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multicodec"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -309,6 +312,65 @@ func TestNewPublisherForListener(t *testing.T) {
 			req.ElementsMatch([]string{"head", "pubkey", "sig"}, mapKeys(t, respNode))
 		})
 	}
+}
+
+func TestPublisherServesIdentityCID(t *testing.T) {
+	// The publisher stores no blocks, so identity CIDs are served from the CID
+	lsys := cidlink.DefaultLinkSystem()
+	lsys.SetReadStorage(&memstore.Store{})
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	pub, err := ipnisync.NewPublisher(lsys, privKey, ipnisync.WithHTTPListenAddrs("127.0.0.1:0"), ipnisync.WithStartServer(false))
+	require.NoError(t, err)
+
+	serve := func(c cid.Cid) *httptest.ResponseRecorder {
+		resp := httptest.NewRecorder()
+		pub.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path.Join(ipnisync.IPNIPath, c.String()), nil))
+		return resp
+	}
+
+	// A dag-cbor block is served in its own codec, so it matches the CID
+	node := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString("lobster")
+	})
+	block, err := ipld.Encode(node, dagcbor.Encode)
+	require.NoError(t, err)
+	c, err := cid.V1Builder{Codec: cid.DagCBOR, MhType: multihash.IDENTITY}.Sum(block)
+	require.NoError(t, err)
+	resp := serve(c)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, block, resp.Body.Bytes())
+	sum, err := multihash.Sum(resp.Body.Bytes(), multihash.IDENTITY, -1)
+	require.NoError(t, err)
+	require.Equal(t, c.Hash(), sum)
+	require.Equal(t, "application/vnd.ipld.dag-cbor", resp.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", resp.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "public, max-age=29030400, immutable", resp.Header().Get("Cache-Control"))
+
+	// The digest is chosen by the requester, so a body that looks like HTML is
+	// still served with its codec's media type, which a browser does not sniff.
+	page := []byte("<html><script src=//evil.example/x.js></script></html>")
+	c, err = cid.V1Builder{Codec: cid.DagJSON, MhType: multihash.IDENTITY}.Sum(page)
+	require.NoError(t, err)
+	resp = serve(c)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, page, resp.Body.Bytes())
+	require.Equal(t, "application/vnd.ipld.dag-json", resp.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", resp.Header().Get("X-Content-Type-Options"))
+
+	// A block in a codec with no known media type is served as opaque bytes
+	c, err = cid.V1Builder{Codec: uint64(multicodec.GitRaw), MhType: multihash.IDENTITY}.Sum(page)
+	require.NoError(t, err)
+	resp = serve(c)
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, page, resp.Body.Bytes())
+	require.Equal(t, "application/octet-stream", resp.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", resp.Header().Get("X-Content-Type-Options"))
+
+	// An identity CID over the size limit is not found, as syncers refuse it
+	oversized, err := cid.V1Builder{Codec: cid.DagJSON, MhType: multihash.IDENTITY}.Sum(make([]byte, ipnisync.MaxIdentityDigestSize+1))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, serve(oversized).Code)
 }
 
 func TestHandlerPath(t *testing.T) {

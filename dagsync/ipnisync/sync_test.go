@@ -2,9 +2,11 @@ package ipnisync_test
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/boxo/verifcid"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-test/random"
 	"github.com/ipld/go-ipld-prime"
+	_ "github.com/ipld/go-ipld-prime/codec/dagcbor"
 	_ "github.com/ipld/go-ipld-prime/codec/dagjson"
 	_ "github.com/ipld/go-ipld-prime/codec/raw"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -614,4 +618,220 @@ func TestSanitizeSnippet_LongBinaryTruncation(t *testing.T) {
 	got := fetchBodySnippet(t, body)
 	require.True(t, strings.HasPrefix(got, "hex:"), "got %q", got)
 	require.True(t, strings.HasSuffix(got, "..."), "got %q", got)
+}
+
+func TestIPNIsync_IdentityCIDNotFetched(t *testing.T) {
+	// The publisher serves every block as dag-json, so a dag-cbor identity
+	// block also checks that the block is not requested from it.
+	for _, codec := range []multicodec.Code{multicodec.DagJson, multicodec.DagCbor} {
+		t.Run(codec.String(), func(t *testing.T) {
+			child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+				na.AssembleEntry("fish").AssignString("lobster")
+			})
+			ts := newIdentityTestSync(t, child, codec)
+
+			err := ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+			require.NoError(t, err)
+
+			// The identity block is stored through the write opener, like a
+			// fetched block.
+			require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
+			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.written)
+			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.hooked)
+
+			// Each write context is cancelled once its block is stored, and
+			// the committed blocks stay stored.
+			require.Len(t, ts.writeCtxs, 2)
+			for _, ctx := range ts.writeCtxs {
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+			}
+			_, err = ts.ls.LoadRaw(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.rootCid})
+			require.NoError(t, err)
+			node, err := ts.ls.Load(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid}, basicnode.Prototype.Any)
+			require.NoError(t, err)
+			fish, err := node.LookupByString("fish")
+			require.NoError(t, err)
+			got, err := fish.AsString()
+			require.NoError(t, err)
+			require.Equal(t, "lobster", got)
+		})
+	}
+}
+
+func TestIPNIsync_IdentityRootCID(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString("lobster")
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// The identity CID is the root of the sync, loaded by walkFetch
+	err := ts.syncer.Sync(t.Context(), ts.childCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.NoError(t, err)
+
+	require.Empty(t, ts.requested)
+	require.Equal(t, []cid.Cid{ts.childCid}, ts.written)
+	require.Equal(t, []cid.Cid{ts.childCid}, ts.hooked)
+	_, err = ts.ls.LoadRaw(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid})
+	require.NoError(t, err)
+}
+
+func TestIPNIsync_IdentityCIDTooLarge(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString(strings.Repeat("x", ipnisync.MaxIdentityDigestSize))
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+	require.ErrorIs(t, ipnisync.CheckIdentitySize(ts.childCid), ipnisync.ErrIdentityTooLarge)
+
+	err := ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.ErrorIs(t, err, ipnisync.ErrIdentityTooLarge)
+
+	// The oversized block is neither requested nor stored.
+	require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
+	require.Equal(t, []cid.Cid{ts.rootCid}, ts.written)
+}
+
+func TestIPNIsync_IdentityCIDTooLargeAlreadyStored(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString(strings.Repeat("x", ipnisync.MaxIdentityDigestSize))
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// The syncer's link system already holds the oversized block, so a local
+	// load finds it.
+	_, err := ts.ls.Store(ipld.LinkContext{Ctx: t.Context()}, cidlink.LinkPrototype{Prefix: ts.childCid.Prefix()}, child)
+	require.NoError(t, err)
+
+	err = ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
+	require.ErrorIs(t, err, ipnisync.ErrIdentityTooLarge)
+}
+
+func TestIPNIsync_MalformedIdentityCID(t *testing.T) {
+	child := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("fish").AssignString("lobster")
+	})
+	ts := newIdentityTestSync(t, child, multicodec.DagJson)
+
+	// NewCidV1 does not validate the multihash. These claim a digest length
+	// that does not match the bytes they hold. A length of 5 is the length of
+	// the whole CID, so its digest would overlap the header.
+	for name, mh := range map[string][]byte{
+		"longer than cid":   {multihash.IDENTITY, 100, 'x'},
+		"overlaps header":   {multihash.IDENTITY, 5, 'x'},
+		"shorter than hash": {multihash.IDENTITY, 1, 'x', 'y'},
+		"negative":          binary.AppendUvarint([]byte{multihash.IDENTITY}, math.MaxUint64),
+	} {
+		c := cid.NewCidV1(cid.Raw, mh)
+		require.NotPanics(t, func() {
+			err := ts.syncer.Sync(t.Context(), c, selectorparse.CommonSelector_ExploreAllRecursively)
+			require.Error(t, err)
+		}, name)
+	}
+	require.Empty(t, ts.requested)
+	require.Empty(t, ts.written)
+}
+
+func TestMaxIdentityDigestSizeMatchesBoxo(t *testing.T) {
+	// The limit is an IPNI rule that indexers must agree on, so it is not taken
+	// from boxo. A change to boxo's default fails here, to be decided for IPNI.
+	require.EqualValues(t, verifcid.DefaultMaxIdentityDigestSize, ipnisync.MaxIdentityDigestSize)
+}
+
+func TestCheckIdentitySize(t *testing.T) {
+	builder := cid.V1Builder{Codec: cid.Raw, MhType: multihash.IDENTITY}
+	atLimit, err := builder.Sum(make([]byte, ipnisync.MaxIdentityDigestSize))
+	require.NoError(t, err)
+	require.NoError(t, ipnisync.CheckIdentitySize(atLimit))
+
+	overLimit, err := builder.Sum(make([]byte, ipnisync.MaxIdentityDigestSize+1))
+	require.NoError(t, err)
+	require.ErrorIs(t, ipnisync.CheckIdentitySize(overLimit), ipnisync.ErrIdentityTooLarge)
+
+	hashed, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.SHA2_256}.Sum(make([]byte, 1024))
+	require.NoError(t, err)
+	require.NoError(t, ipnisync.CheckIdentitySize(hashed))
+	require.NoError(t, ipnisync.CheckIdentitySize(cid.Undef))
+}
+
+func TestCheckIdentitySizeDoesNotAllocate(t *testing.T) {
+	identity, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.IDENTITY}.Sum(make([]byte, ipnisync.MaxIdentityDigestSize))
+	require.NoError(t, err)
+	hashed, err := cid.V1Builder{Codec: cid.Raw, MhType: multihash.SHA2_256}.Sum(make([]byte, 1024))
+	require.NoError(t, err)
+
+	for name, c := range map[string]cid.Cid{"identity": identity, "hashed": hashed, "undef": cid.Undef} {
+		allocs := testing.AllocsPerRun(100, func() {
+			_ = ipnisync.CheckIdentitySize(c)
+		})
+		require.Zero(t, allocs, name)
+	}
+}
+
+// identityTestSync is a publisher and a syncer for a dag-json root block that
+// links to a child held in an identity CID, encoded with the codec given to
+// newIdentityTestSync. The publisher has only the root. The fields
+// record the CIDs the publisher is asked for, the CIDs written through the
+// syncer's write opener, the contexts the write opener is given, and the CIDs
+// passed to the block hook.
+type identityTestSync struct {
+	syncer    *ipnisync.Syncer
+	ls        ipld.LinkSystem
+	rootCid   cid.Cid
+	childCid  cid.Cid
+	requested []cid.Cid
+	written   []cid.Cid
+	writeCtxs []context.Context
+	hooked    []cid.Cid
+}
+
+func newIdentityTestSync(t *testing.T, child ipld.Node, codec multicodec.Code) *identityTestSync {
+	ts := &identityTestSync{}
+	pubID, pubPrK, _ := random.Identity()
+
+	publs := cidlink.DefaultLinkSystem()
+	pubstore := &memstore.Store{}
+	publs.SetWriteStorage(pubstore)
+	publs.StorageReadOpener = func(lnkCtx linking.LinkContext, lnk datamodel.Link) (io.Reader, error) {
+		ts.requested = append(ts.requested, lnk.(cidlink.Link).Cid)
+		return pubstore.GetStream(lnkCtx.Ctx, lnk.(cidlink.Link).Binary())
+	}
+	pub, err := ipnisync.NewPublisher(publs, pubPrK, ipnisync.WithHTTPListenAddrs("0.0.0.0:0"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pub.Close()) })
+
+	childLink, err := publs.ComputeLink(cidlink.LinkPrototype{Prefix: cid.Prefix{
+		Version:  1,
+		Codec:    uint64(codec),
+		MhType:   multihash.IDENTITY,
+		MhLength: -1,
+	}}, child)
+	require.NoError(t, err)
+	root := fluent.MustBuildMap(basicnode.Prototype.Map, 1, func(na fluent.MapAssembler) {
+		na.AssembleEntry("child").AssignLink(childLink)
+	})
+	rootLink, err := publs.Store(ipld.LinkContext{Ctx: t.Context()}, cidlink.LinkPrototype{Prefix: cid.Prefix{
+		Version:  1,
+		Codec:    uint64(multicodec.DagJson),
+		MhType:   multihash.SHA2_256,
+		MhLength: -1,
+	}}, root)
+	require.NoError(t, err)
+	ts.rootCid = rootLink.(cidlink.Link).Cid
+	ts.childCid = childLink.(cidlink.Link).Cid
+
+	ts.ls = cidlink.DefaultLinkSystem()
+	store := &memstore.Store{}
+	ts.ls.SetReadStorage(store)
+	ts.ls.StorageWriteOpener = func(lctx linking.LinkContext) (io.Writer, linking.BlockWriteCommitter, error) {
+		ts.writeCtxs = append(ts.writeCtxs, lctx.Ctx)
+		var buf strings.Builder
+		return &buf, func(lnk ipld.Link) error {
+			ts.written = append(ts.written, lnk.(cidlink.Link).Cid)
+			return store.Put(lctx.Ctx, lnk.(cidlink.Link).Binary(), []byte(buf.String()))
+		}, nil
+	}
+
+	sync := ipnisync.NewSync(ts.ls, func(_ peer.ID, c cid.Cid) { ts.hooked = append(ts.hooked, c) })
+	ts.syncer, err = sync.NewSyncer(peer.AddrInfo{ID: pubID, Addrs: pub.Addrs()})
+	require.NoError(t, err)
+	return ts
 }
