@@ -638,6 +638,15 @@ func TestIPNIsync_IdentityCIDNotFetched(t *testing.T) {
 			require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
 			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.written)
 			require.Equal(t, []cid.Cid{ts.rootCid, ts.childCid}, ts.hooked)
+
+			// Each write context is cancelled once its block is stored, and
+			// the committed blocks stay stored.
+			require.Len(t, ts.writeCtxs, 2)
+			for _, ctx := range ts.writeCtxs {
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+			}
+			_, err = ts.ls.LoadRaw(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.rootCid})
+			require.NoError(t, err)
 			node, err := ts.ls.Load(ipld.LinkContext{Ctx: t.Context()}, cidlink.Link{Cid: ts.childCid}, basicnode.Prototype.Any)
 			require.NoError(t, err)
 			fish, err := node.LookupByString("fish")
@@ -761,7 +770,8 @@ func TestCheckIdentitySizeDoesNotAllocate(t *testing.T) {
 // links to a child held in an identity CID, encoded with the codec given to
 // newIdentityTestSync. The publisher has only the root. The fields
 // record the CIDs the publisher is asked for, the CIDs written through the
-// syncer's write opener, and the CIDs passed to the block hook.
+// syncer's write opener, the contexts the write opener is given, and the CIDs
+// passed to the block hook.
 type identityTestSync struct {
 	syncer    *ipnisync.Syncer
 	ls        ipld.LinkSystem
@@ -769,6 +779,7 @@ type identityTestSync struct {
 	childCid  cid.Cid
 	requested []cid.Cid
 	written   []cid.Cid
+	writeCtxs []context.Context
 	hooked    []cid.Cid
 }
 
@@ -811,6 +822,7 @@ func newIdentityTestSync(t *testing.T, child ipld.Node, codec multicodec.Code) *
 	store := &memstore.Store{}
 	ts.ls.SetReadStorage(store)
 	ts.ls.StorageWriteOpener = func(lctx linking.LinkContext) (io.Writer, linking.BlockWriteCommitter, error) {
+		ts.writeCtxs = append(ts.writeCtxs, lctx.Ctx)
 		var buf strings.Builder
 		return &buf, func(lnk ipld.Link) error {
 			ts.written = append(ts.written, lnk.(cidlink.Link).Cid)

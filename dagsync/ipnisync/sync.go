@@ -478,6 +478,12 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 		return nil
 	}
 
+	// The write opener sees the context cancelled when fetchBlock returns. A
+	// block that was not committed, such as one with a mismatched digest, is
+	// abandoned; a committed block stays stored.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if p.MhType == multihash.IDENTITY {
 		return s.storeIdentityBlock(ctx, c, p)
 	}
