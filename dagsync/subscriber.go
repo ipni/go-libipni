@@ -124,8 +124,9 @@ type Subscriber struct {
 
 	// selectorOne selects one multihash entries or HAMT block.
 	selectorOne ipld.Node
-	// selectorAll selects all multihash HAMT blocks.
-	selectorAll ipld.Node
+	// selectorHamt selects all multihash HAMT blocks, to a recursion depth
+	// of MaxHamtSyncDepth.
+	selectorHamt ipld.Node
 	// selectEnts selects multihash entries blocks up to depth limit.
 	selectorEnts ipld.Node
 }
@@ -261,8 +262,8 @@ func NewSubscriber(host host.Host, lsys ipld.LinkSystem, options ...Option) (*Su
 		firstSyncDepth: opts.firstSyncDepth,
 		segDepthLimit:  opts.segDepthLimit,
 
-		selectorOne: ssb.ExploreRecursive(selector.RecursionLimitDepth(0), all).Node(),
-		selectorAll: ssb.ExploreRecursive(selector.RecursionLimitNone(), all).Node(),
+		selectorOne:  ssb.ExploreRecursive(selector.RecursionLimitDepth(0), all).Node(),
+		selectorHamt: ssb.ExploreRecursive(selector.RecursionLimitDepth(MaxHamtSyncDepth), all).Node(),
 		selectorEnts: ssb.ExploreRecursive(recursionLimit(opts.entriesDepthLimit),
 			ssb.ExploreFields(func(efsb builder.ExploreFieldsSpecBuilder) {
 				efsb.Insert("Next", ssb.ExploreRecursiveEdge()) // Next field in EntryChunk
@@ -583,13 +584,25 @@ func (s *Subscriber) SyncEntries(ctx context.Context, peerInfo peer.AddrInfo, en
 	return s.syncEntries(ctx, peerInfo, entCid, selectorEnts, opts.blockHook, s.segDepthLimit)
 }
 
+// MaxHamtSyncDepth is the recursion depth limit of a HAMT entries sync. The
+// selector counts a level for each step into a child, and a link to the next
+// HAMT node is an element in the node's list of elements, so each level of a
+// HAMT is two levels of recursion. It allows a HAMT 512 levels deep, more
+// than a HAMT keyed by 512-bit hashes needs.
+const MaxHamtSyncDepth = 1024
+
+// SyncHAMTEntries syncs the HAMT whose root block is identified by entCid, to a
+// recursion depth of MaxHamtSyncDepth. Blocks below that depth are not synced,
+// and the sync returns no error for them, as a sync stops at the depth limit of
+// SyncEntries. A caller that reads the HAMT finds those blocks missing, and
+// can treat a HAMT that deep as malformed, since no valid HAMT reaches it.
 func (s *Subscriber) SyncHAMTEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, options ...SyncOption) error {
 	opts := getSyncOpts(options)
 	if opts.blockHook == nil {
 		opts.blockHook = s.generalBlockHook
 	}
 
-	return s.syncEntries(ctx, peerInfo, entCid, s.selectorAll, opts.blockHook, -1)
+	return s.syncEntries(ctx, peerInfo, entCid, s.selectorHamt, opts.blockHook, -1)
 }
 
 func (s *Subscriber) syncEntries(ctx context.Context, peerInfo peer.AddrInfo, entCid cid.Cid, sel ipld.Node, bh BlockHookFunc, segdl int64) error {
