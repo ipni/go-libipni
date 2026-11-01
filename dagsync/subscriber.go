@@ -230,7 +230,8 @@ func NewSubscriber(host host.Host, lsys ipld.LinkSystem, options ...Option) (*Su
 	ipniSync := ipnisync.NewSync(lsys, blockHook,
 		ipnisync.ClientStreamHost(host),
 		ipnisync.ClientHTTPTimeout(opts.httpTimeout),
-		ipnisync.ClientHTTPRetry(opts.httpRetryMax, opts.httpRetryWaitMin, opts.httpRetryWaitMax))
+		ipnisync.ClientHTTPRetry(opts.httpRetryMax, opts.httpRetryWaitMin, opts.httpRetryWaitMax),
+		ipnisync.ClientMaxBlockSize(opts.maxBlockSize))
 
 	s := &Subscriber{
 		host: host,

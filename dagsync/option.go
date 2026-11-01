@@ -56,6 +56,7 @@ type config struct {
 	httpRetryMax     int
 	httpRetryWaitMin time.Duration
 	httpRetryWaitMax time.Duration
+	maxBlockSize     int64
 }
 
 // Option is a function that sets a value in a config.
@@ -101,6 +102,19 @@ func Topic(topic *pubsub.Topic) Option {
 func HttpTimeout(to time.Duration) Option {
 	return func(c *config) error {
 		c.httpTimeout = to
+		return nil
+	}
+}
+
+// MaxBlockSize sets the largest block, in bytes, that the subscriber accepts
+// from a publisher. A larger block fails the sync with
+// ipnisync.ErrBlockTooLarge. A value less than 1 uses
+// ipnisync.DefaultMaxBlockSize. The block of an identity CID is read from the
+// CID and is bounded by ipnisync.MaxIdentityDigestSize instead, as described
+// in ipnisync.ClientMaxBlockSize.
+func MaxBlockSize(size int64) Option {
+	return func(c *config) error {
+		c.maxBlockSize = size
 		return nil
 	}
 }
