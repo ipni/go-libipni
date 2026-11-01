@@ -312,6 +312,10 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 			Ctx:                            ctx,
 			LinkSystem:                     getMissingLs,
 			LinkTargetNodePrototypeChooser: basicnode.Chooser,
+			// Visit each block once. Without this, a DAG with many paths to
+			// the same block is walked once per path, which grows
+			// exponentially with the depth of the DAG.
+			LinkVisitOnlyOnce: true,
 		},
 		Path: datamodel.NewPath([]datamodel.PathSegment{}),
 	}

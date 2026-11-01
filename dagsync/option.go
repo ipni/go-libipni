@@ -154,6 +154,12 @@ func IdleHandlerTTL(ttl time.Duration) Option {
 
 // Checks that advertisement blocks contain a "PreviousID" field. This can be
 // set to false to not do the check if there is no reason to do so.
+//
+// With strict set to false, the ads sync follows every link of an
+// advertisement. A sync visits each block once, so when two advertisements
+// link the same block, such as the same Entries CID, the links below that
+// block are followed only as far as the depth limit allows from the first
+// advertisement that reaches it, which may be the older one.
 func StrictAdsSelector(strict bool) Option {
 	return func(c *config) error {
 		c.strictAdsSelSeq = strict
