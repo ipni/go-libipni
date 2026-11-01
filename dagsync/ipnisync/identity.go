@@ -14,9 +14,9 @@ import (
 const MaxIdentityDigestSize = 128
 
 // ErrIdentityTooLarge is returned for an identity CID whose digest is larger
-// than MaxIdentityDigestSize. Such a CID can never be synced, so callers
-// should treat it as a permanent failure, not retry it.
-var ErrIdentityTooLarge = fmt.Errorf("identity cid digest is larger than %d bytes", MaxIdentityDigestSize)
+// than MaxIdentityDigestSize. Such a CID can never be synced, so it wraps
+// ErrMalformed.
+var ErrIdentityTooLarge = fmt.Errorf("%w: identity cid digest is larger than %d bytes", ErrMalformed, MaxIdentityDigestSize)
 
 // CheckIdentitySize returns ErrIdentityTooLarge if c is an identity CID whose
 // digest is larger than MaxIdentityDigestSize. Any other CID passes. It does
@@ -34,7 +34,8 @@ func CheckIdentitySize(c cid.Cid) error {
 //
 // It fails unless the length of c is the encoded length of p plus the digest
 // length, which a CID built without validation, such as by cid.NewCidV1, may
-// not match.
+// not match. The error wraps ErrMalformed, since a sync of the same CID fails
+// the same way.
 func identityDigestStr(c cid.Cid, p cid.Prefix) (string, error) {
 	headerLen := varint.UvarintSize(p.Version) +
 		varint.UvarintSize(p.Codec) +
@@ -42,7 +43,7 @@ func identityDigestStr(c cid.Cid, p cid.Prefix) (string, error) {
 		varint.UvarintSize(uint64(p.MhLength))
 	key := c.KeyString()
 	if p.MhLength < 0 || len(key) != headerLen+p.MhLength {
-		return "", fmt.Errorf("malformed identity cid %s", c)
+		return "", fmt.Errorf("%w: identity cid %s has a digest length that does not match its bytes", ErrMalformed, c)
 	}
 	return key[headerLen:], nil
 }

@@ -48,6 +48,7 @@ type Sync struct {
 	clientHostMutex sync.Mutex
 	authPeerID      bool
 	rclient         *retryablehttp.Client
+	maxBlockSize    int64
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -85,9 +86,10 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 			// upgraded to a version of ipni that uses go-libp2p v0.34.0.
 			EnableCompatibilityWithLegacyWellKnownEndpoint: true,
 		},
-		lsys:        lsys,
-		authPeerID:  opts.authPeerID,
-		httpTimeout: opts.httpTimeout,
+		lsys:         lsys,
+		authPeerID:   opts.authPeerID,
+		httpTimeout:  opts.httpTimeout,
+		maxBlockSize: opts.maxBlockSize,
 	}
 
 	if opts.httpRetryMax != 0 {
@@ -204,8 +206,15 @@ func (s *Sync) Close() {
 func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	var signedHead *headschema.SignedHead
 	err := s.fetch(ctx, "head", func(msg io.Reader) error {
-		var err error
-		signedHead, err = headschema.Decode(msg)
+		limited := &io.LimitedReader{R: msg, N: MaxHeadSize + 1}
+		data, err := io.ReadAll(limited)
+		if err != nil {
+			return err
+		}
+		if limited.N == 0 {
+			return fmt.Errorf("%w: limit is %d bytes", ErrHeadTooLarge, MaxHeadSize)
+		}
+		signedHead, err = headschema.Decode(bytes.NewReader(data))
 		return err
 	})
 	if err != nil {
@@ -494,10 +503,16 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 			log.Errorw("Failed to get write opener", "err", err)
 			return err
 		}
-		tee := io.TeeReader(data, writer)
+		// Read at most one byte more than the limit, to detect a block over
+		// the limit without reading the rest of it.
+		limited := &io.LimitedReader{R: data, N: s.sync.maxBlockSize + 1}
+		tee := io.TeeReader(limited, writer)
 		sum, err := multihash.SumStream(tee, c.Prefix().MhType, c.Prefix().MhLength)
 		if err != nil {
 			return err
+		}
+		if limited.N == 0 {
+			return fmt.Errorf("%w: block %s is larger than %d bytes", ErrBlockTooLarge, c, s.sync.maxBlockSize)
 		}
 		if !bytes.Equal(c.Hash(), sum) {
 			err := fmt.Errorf("hash digest mismatch; expected %s but got %s", c.Hash().B58String(), sum.B58String())
