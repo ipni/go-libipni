@@ -362,16 +362,8 @@ func fetchErrorHandler(resp *http.Response, err error, attempt int) (*http.Respo
 			// Read one byte more than the snippet cap to detect truncation.
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet+1))
 			fe.Body = sanitizeSnippet(body, maxBodySnippet)
-			// TODO: Go 1.27 adds automatic draining of the response body
-			// for failed requests, which supersedes this manual drain.
-			// Remove it once the module's go directive reaches 1.27.
-			//
-			// Drain and close the body so the connection can be reused. The
-			// drain is capped at 4096 bytes, matching retryablehttp's own
-			// drainBody limit, so a large error body is not downloaded in
-			// full from an untrusted publisher.
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-			resp.Body.Close()
+			drainBody(resp.Body)
+			_ = resp.Body.Close()
 		}
 	}
 	return nil, fe
@@ -443,12 +435,15 @@ retry:
 		}
 		return cb(resp.Body)
 	case http.StatusNotFound:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		drainBody(resp.Body)
 		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
 			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
 			noPath = true
+			// Close the body now rather than when fetch returns, so that the
+			// connection is not held during the retry.
+			_ = resp.Body.Close()
 			goto nextURL
 		}
 		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
@@ -457,17 +452,20 @@ retry:
 		// being checked already.
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 	case http.StatusForbidden:
-		_, _ = io.Copy(io.Discard, resp.Body)
 		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
 			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
 			noPath = true
+			drainBody(resp.Body)
+			// Close the body now rather than when fetch returns, so that the
+			// connection is not held during the retry.
+			_ = resp.Body.Close()
 			goto nextURL
 		}
 		fallthrough
 	default:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		drainBody(resp.Body)
 		return &FetchError{URL: fetchURL.String(), StatusCode: resp.StatusCode}
 	}
 }
@@ -552,4 +550,16 @@ func (s *Syncer) storeIdentityBlock(ctx context.Context, c cid.Cid, p cid.Prefix
 		return err
 	}
 	return nil
+}
+
+// drainBody reads and discards up to 4096 bytes of an error response body,
+// so that the connection can be reused. The cap matches retryablehttp's own
+// drainBody limit, so a large or endless error body from an untrusted
+// publisher is not read in full.
+//
+// TODO: Go 1.27 drains a response body closed before its end, with limits on
+// both bytes and time, which supersedes this manual drain. Remove it once the
+// module's go directive reaches 1.27.
+func drainBody(body io.Reader) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 }
