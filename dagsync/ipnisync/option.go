@@ -3,6 +3,7 @@ package ipnisync
 import (
 	"crypto/tls"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -120,6 +121,8 @@ type clientConfig struct {
 	httpRetryMax     int
 	httpRetryWaitMin time.Duration
 	httpRetryWaitMax time.Duration
+
+	maxBlockSize int64
 }
 
 // ClientOption is a function that supplies an option value to a Client.
@@ -127,7 +130,9 @@ type ClientOption func(*clientConfig)
 
 // getClientOpts creates a pubConfig and applies Options to it.
 func getClientOpts(opts []ClientOption) clientConfig {
-	var cfg clientConfig
+	cfg := clientConfig{
+		maxBlockSize: DefaultMaxBlockSize,
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -165,6 +170,25 @@ func ClientHTTPRetry(retryMax int, waitMin, waitMax time.Duration) ClientOption 
 		c.httpRetryMax = retryMax
 		c.httpRetryWaitMin = waitMin
 		c.httpRetryWaitMax = waitMax
+	}
+}
+
+// ClientMaxBlockSize sets the largest block, in bytes, that the sync client
+// accepts from a publisher. A larger block fails with ErrBlockTooLarge. A value
+// less than 1 uses DefaultMaxBlockSize. math.MaxInt64 is taken as
+// math.MaxInt64-1, since the client reads one byte past the limit to detect a
+// larger block.
+//
+// The block of an identity CID is not fetched but read from the CID, so it is
+// bounded by MaxIdentityDigestSize instead. Such a CID is a link inside a block
+// that passed this check. It cannot be the head of a valid advertisement chain,
+// since a signed advertisement is larger than MaxIdentityDigestSize.
+func ClientMaxBlockSize(size int64) ClientOption {
+	return func(c *clientConfig) {
+		if size < 1 {
+			size = DefaultMaxBlockSize
+		}
+		c.maxBlockSize = min(size, math.MaxInt64-1)
 	}
 }
 

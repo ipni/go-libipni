@@ -48,6 +48,7 @@ type Sync struct {
 	clientHostMutex sync.Mutex
 	authPeerID      bool
 	rclient         *retryablehttp.Client
+	maxBlockSize    int64
 }
 
 // Syncer provides sync functionality for a single sync with a peer.
@@ -85,9 +86,10 @@ func NewSync(lsys ipld.LinkSystem, blockHook func(peer.ID, cid.Cid), options ...
 			// upgraded to a version of ipni that uses go-libp2p v0.34.0.
 			EnableCompatibilityWithLegacyWellKnownEndpoint: true,
 		},
-		lsys:        lsys,
-		authPeerID:  opts.authPeerID,
-		httpTimeout: opts.httpTimeout,
+		lsys:         lsys,
+		authPeerID:   opts.authPeerID,
+		httpTimeout:  opts.httpTimeout,
+		maxBlockSize: opts.maxBlockSize,
 	}
 
 	if opts.httpRetryMax != 0 {
@@ -204,8 +206,15 @@ func (s *Sync) Close() {
 func (s *Syncer) GetHead(ctx context.Context) (cid.Cid, error) {
 	var signedHead *headschema.SignedHead
 	err := s.fetch(ctx, "head", func(msg io.Reader) error {
-		var err error
-		signedHead, err = headschema.Decode(msg)
+		limited := &io.LimitedReader{R: msg, N: MaxHeadSize + 1}
+		data, err := io.ReadAll(limited)
+		if err != nil {
+			return err
+		}
+		if limited.N == 0 {
+			return fmt.Errorf("%w: limit is %d bytes", ErrHeadTooLarge, MaxHeadSize)
+		}
+		signedHead, err = headschema.Decode(bytes.NewReader(data))
 		return err
 	})
 	if err != nil {
@@ -268,7 +277,6 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		}
 	}
 
-	s.client.CloseIdleConnections()
 	return nil
 }
 
@@ -303,6 +311,10 @@ func (s *Syncer) walkFetch(ctx context.Context, rootCid cid.Cid, sel selector.Se
 			Ctx:                            ctx,
 			LinkSystem:                     getMissingLs,
 			LinkTargetNodePrototypeChooser: basicnode.Chooser,
+			// Visit each block once. Without this, a DAG with many paths to
+			// the same block is walked once per path, which grows
+			// exponentially with the depth of the DAG.
+			LinkVisitOnlyOnce: true,
 		},
 		Path: datamodel.NewPath([]datamodel.PathSegment{}),
 	}
@@ -349,16 +361,8 @@ func fetchErrorHandler(resp *http.Response, err error, attempt int) (*http.Respo
 			// Read one byte more than the snippet cap to detect truncation.
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet+1))
 			fe.Body = sanitizeSnippet(body, maxBodySnippet)
-			// TODO: Go 1.27 adds automatic draining of the response body
-			// for failed requests, which supersedes this manual drain.
-			// Remove it once the module's go directive reaches 1.27.
-			//
-			// Drain and close the body so the connection can be reused. The
-			// drain is capped at 4096 bytes, matching retryablehttp's own
-			// drainBody limit, so a large error body is not downloaded in
-			// full from an untrusted publisher.
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-			resp.Body.Close()
+			drainBody(resp.Body)
+			_ = resp.Body.Close()
 		}
 	}
 	return nil, fe
@@ -430,12 +434,15 @@ retry:
 		}
 		return cb(resp.Body)
 	case http.StatusNotFound:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		drainBody(resp.Body)
 		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got not found response, retrying without IPNI path for legacy HTTP")
 			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
 			noPath = true
+			// Close the body now rather than when fetch returns, so that the
+			// connection is not held during the retry.
+			_ = resp.Body.Close()
 			goto nextURL
 		}
 		log.Errorw("Block not found from HTTP publisher", "resource", rsrc)
@@ -444,17 +451,20 @@ retry:
 		// being checked already.
 		return fmt.Errorf("content not found: %w", ipld.ErrNotExists{})
 	case http.StatusForbidden:
-		_, _ = io.Copy(io.Discard, resp.Body)
 		if s.plainHTTP && !noPath {
 			// Try again with no path for legacy http.
 			log.Warnw("Plain HTTP got forbidden response, retrying without IPNI path for legacy HTTP")
 			rootURL.Path = strings.TrimSuffix(rootURL.Path, strings.Trim(IPNIPath, "/"))
 			noPath = true
+			drainBody(resp.Body)
+			// Close the body now rather than when fetch returns, so that the
+			// connection is not held during the retry.
+			_ = resp.Body.Close()
 			goto nextURL
 		}
 		fallthrough
 	default:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		drainBody(resp.Body)
 		return &FetchError{URL: fetchURL.String(), StatusCode: resp.StatusCode}
 	}
 }
@@ -494,10 +504,16 @@ func (s *Syncer) fetchBlock(ctx context.Context, c cid.Cid) error {
 			log.Errorw("Failed to get write opener", "err", err)
 			return err
 		}
-		tee := io.TeeReader(data, writer)
+		// Read at most one byte more than the limit, to detect a block over
+		// the limit without reading the rest of it.
+		limited := &io.LimitedReader{R: data, N: s.sync.maxBlockSize + 1}
+		tee := io.TeeReader(limited, writer)
 		sum, err := multihash.SumStream(tee, c.Prefix().MhType, c.Prefix().MhLength)
 		if err != nil {
 			return err
+		}
+		if limited.N == 0 {
+			return fmt.Errorf("%w: block %s is larger than %d bytes", ErrBlockTooLarge, c, s.sync.maxBlockSize)
 		}
 		if !bytes.Equal(c.Hash(), sum) {
 			err := fmt.Errorf("hash digest mismatch; expected %s but got %s", c.Hash().B58String(), sum.B58String())
@@ -533,4 +549,16 @@ func (s *Syncer) storeIdentityBlock(ctx context.Context, c cid.Cid, p cid.Prefix
 		return err
 	}
 	return nil
+}
+
+// drainBody reads and discards up to 4096 bytes of an error response body,
+// so that the connection can be reused. The cap matches retryablehttp's own
+// drainBody limit, so a large or endless error body from an untrusted
+// publisher is not read in full.
+//
+// TODO: Go 1.27 drains a response body closed before its end, with limits on
+// both bytes and time, which supersedes this manual drain. Remove it once the
+// module's go directive reaches 1.27.
+func drainBody(body io.Reader) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 }

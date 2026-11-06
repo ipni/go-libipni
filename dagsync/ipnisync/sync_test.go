@@ -684,6 +684,7 @@ func TestIPNIsync_IdentityCIDTooLarge(t *testing.T) {
 
 	err := ts.syncer.Sync(t.Context(), ts.rootCid, selectorparse.CommonSelector_ExploreAllRecursively)
 	require.ErrorIs(t, err, ipnisync.ErrIdentityTooLarge)
+	require.ErrorIs(t, err, ipnisync.ErrMalformed)
 
 	// The oversized block is neither requested nor stored.
 	require.Equal(t, []cid.Cid{ts.rootCid}, ts.requested)
@@ -723,7 +724,7 @@ func TestIPNIsync_MalformedIdentityCID(t *testing.T) {
 		c := cid.NewCidV1(cid.Raw, mh)
 		require.NotPanics(t, func() {
 			err := ts.syncer.Sync(t.Context(), c, selectorparse.CommonSelector_ExploreAllRecursively)
-			require.Error(t, err)
+			require.ErrorIs(t, err, ipnisync.ErrMalformed)
 		}, name)
 	}
 	require.Empty(t, ts.requested)

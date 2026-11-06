@@ -179,7 +179,9 @@ func TestSyncFnHttp(t *testing.T) {
 
 	_, ok := blocksSeenByHook[lnk.(cidlink.Link).Cid]
 	require.True(t, ok, "block hook did not see link cid")
-	require.Equal(t, 11, blockHookCalls)
+	// The chain has 7 distinct blocks. The sync visits each block once, even
+	// when several links lead to it.
+	require.Equal(t, 7, blockHookCalls)
 
 	// Assert the latestSync is not updated by explicit sync when cid is set
 	require.Nil(t, te.sub.GetLatestSync(te.srcHost.ID()))
