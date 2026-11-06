@@ -277,7 +277,6 @@ func (s *Syncer) Sync(ctx context.Context, nextCid cid.Cid, sel ipld.Node) error
 		}
 	}
 
-	s.client.CloseIdleConnections()
 	return nil
 }
 
