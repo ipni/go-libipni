@@ -96,3 +96,5 @@ sub.SetLatestSync(peerID1, lastSync1)
 sub.SetLatestSync(peerID2, lastSync2)
 sub.SetLatestSync(peerID3, lastSync3)
 ```
+
+The `Subscriber` records a chain's head as the latest sync when it fetches the chain, before the consumer processes it. A consumer that fails to process a chain can call `SetLatestSync` with the newest CID it has processed, so that the next sync fetches the rest of the chain again. When the `Subscriber` is created with `BlockSyncAfterDone`, make this call before `UnblockSync`. Setting `cid.Undef` removes the peer's latest sync: the next sync then stops at the CID returned by the `WithLastKnownSync` function, or, when there is none, is a first sync limited by `FirstSyncDepth`.
