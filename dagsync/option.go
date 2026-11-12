@@ -286,7 +286,8 @@ func getSyncOpts(opts []SyncOption) syncCfg {
 }
 
 // WithHeadAdCid explicitly specifies an advertisement CID to sync to, instead
-// of getting this by querying the publisher.
+// of getting this by querying the publisher. A sync given a head CID does not
+// record it as the latest synced CID and sends no SyncFinished event.
 func WithHeadAdCid(headAd cid.Cid) SyncOption {
 	return func(sc *syncCfg) {
 		sc.headAdCid = headAd
@@ -301,9 +302,16 @@ func WithStopAdCid(stopAd cid.Cid) SyncOption {
 	}
 }
 
-// WithResyncAds causes the current sync to ignore advertisements that have been
-// previously synced. When true, sync does not record the latest synced CID or
-// send sync finished notification.
+// WithAdsResync makes the sync ignore the latest synced CID, so that it walks
+// advertisements that were synced before. The sync still stops at the CID
+// given by WithStopAdCid. Without one, it is limited as a first sync is: by
+// the first sync depth, unless a depth limit is given.
+//
+// A resync records the head as the latest synced CID and sends a
+// SyncFinished event, as other syncs do. The exception is a sync given
+// WithHeadAdCid: it does not query the publisher for the head, so it records
+// nothing and sends no SyncFinished event. A caller must not wait for the
+// event then.
 func WithAdsResync(resync bool) SyncOption {
 	return func(sc *syncCfg) {
 		sc.resync = resync

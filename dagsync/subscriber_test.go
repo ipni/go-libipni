@@ -581,6 +581,47 @@ func TestSetLatestSyncUndefAnnounce(t *testing.T) {
 	require.Equal(t, head, sub.GetLatestSync(pub.ID()))
 }
 
+// A resync walks ads that were synced before, stops at the CID given by
+// WithStopAdCid, is limited by the first sync depth without one, records the
+// head as the latest sync, and sends a SyncFinished event.
+func TestAdsResync(t *testing.T) {
+	t.Parallel()
+	pubHostSys := newHostSystem(t)
+	subHostSys := newHostSystem(t)
+	pub, sub, _ := dagsyncPubSubBuilder{}.Build(t, testTopic, pubHostSys, subHostSys,
+		[]dagsync.Option{dagsync.FirstSyncDepth(2)})
+
+	older := llBuilder{Length: 2, Seed: 1}.Build(t, pubHostSys.lsys)
+	head := llBuilder{Length: 2, Seed: 2}.BuildWithPrev(t, pubHostSys.lsys, older)
+	headCid := head.(cidlink.Link).Cid
+	pub.SetRoot(headCid)
+	peerInfo := peer.AddrInfo{ID: pub.ID(), Addrs: pub.Addrs()}
+
+	syncFinished, cncl := sub.OnSyncFinished()
+	defer cncl()
+	requireSync := func(wantCount int, opts ...dagsync.SyncOption) {
+		t.Helper()
+		c, err := sub.SyncAdChain(t.Context(), peerInfo, opts...)
+		require.NoError(t, err)
+		require.Equal(t, headCid, c)
+		select {
+		case evt := <-syncFinished:
+			require.Equal(t, headCid, evt.Cid)
+			require.Equal(t, wantCount, evt.Count)
+		case <-time.After(updateTimeout):
+			require.FailNow(t, "no SyncFinished event")
+		}
+		sub.UnblockSync(pub.ID())
+		require.Equal(t, head, sub.GetLatestSync(pub.ID()))
+	}
+
+	requireSync(4, dagsync.ScopedDepthLimit(-1))
+	requireSync(2, dagsync.WithAdsResync(true))
+	requireSync(4, dagsync.WithAdsResync(true), dagsync.ScopedDepthLimit(-1))
+	requireSync(2, dagsync.WithAdsResync(true), dagsync.ScopedDepthLimit(-1),
+		dagsync.WithStopAdCid(older.(cidlink.Link).Cid))
+}
+
 // After the latest sync is removed, the subscriber uses the CID that the
 // LastKnownSync function returns.
 func TestSetLatestSyncUndefUsesLastKnownSync(t *testing.T) {
