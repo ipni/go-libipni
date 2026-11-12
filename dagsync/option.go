@@ -253,6 +253,11 @@ func MaxAsyncConcurrency(n int) Option {
 // is not already known to dagsync. This will generally be some CID that is
 // known to have already been seen, so that there is no need to fetch portions
 // of the dag before this.
+//
+// The function must return the newest CID that the consumer has processed,
+// not a head saved when a chain was fetched. dagsync stops the next sync at
+// the returned CID, so a chain that failed to process would not be fetched
+// again.
 func WithLastKnownSync(f LastKnownSyncFunc) Option {
 	return func(c *config) error {
 		c.lastKnownSync = f

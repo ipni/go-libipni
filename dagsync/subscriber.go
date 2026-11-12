@@ -307,7 +307,7 @@ func (s *Subscriber) HttpPeerStore() peerstore.Peerstore {
 // GetLatestSync returns the latest synced CID for the specified peer.
 func (s *Subscriber) GetLatestSync(peerID peer.ID) ipld.Link {
 	c, ok := s.latestSyncHandler.getLatestSync(peerID)
-	if ok && c != cid.Undef {
+	if ok {
 		return cidlink.Link{Cid: c}
 	}
 	if s.lastKnownSync != nil {
@@ -320,11 +320,23 @@ func (s *Subscriber) GetLatestSync(peerID peer.ID) ipld.Link {
 	return nil
 }
 
-// SetLatestSync sets the latest synced CID for a specified peer.
+// SetLatestSync sets the latest synced CID for a specified peer. The next
+// advertisement chain sync with the peer stops at that CID.
+//
+// dagsync sets the latest sync to the head of a chain when it fetches the
+// chain, before the consumer processes it. A consumer that fails to process a
+// chain calls SetLatestSync with the newest CID it has processed, so that the
+// next sync fetches the rest of the chain again. With BlockSyncAfterDone, call
+// it before UnblockSync: after UnblockSync, another sync with the peer can
+// record a newer head, which this call would then replace.
+//
+// cid.Undef removes the peer's latest sync. The next sync then stops at the
+// CID that the LastKnownSync function returns for the peer. When there is
+// none, it is a first sync: it walks the chain with no stop node, to the
+// first sync depth. See WithLastKnownSync for what that function must return.
+//
+// The returned error is always nil.
 func (s *Subscriber) SetLatestSync(peerID peer.ID, latestSync cid.Cid) error {
-	if latestSync == cid.Undef {
-		return errors.New("cannot set latest sync to undefined value")
-	}
 	s.latestSyncHandler.setLatestSync(peerID, latestSync)
 	return nil
 }

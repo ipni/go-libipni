@@ -7,15 +7,20 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// latestSyncHandler defines how to store the latest synced cid for a given
-// peer and how to fetch it. dagsync guarantees this will not be called
-// concurrently for the same peer, but it may be called concurrently for
-// different peers.
+// latestSyncHandler stores the latest synced CID of each peer. It is safe for
+// concurrent use. A sync with a peer and a call to SetLatestSync for the same
+// peer can write its record at the same time, and the later write wins.
 type latestSyncHandler struct {
 	m sync.Map
 }
 
+// setLatestSync records c as the latest sync of p. cid.Undef removes the
+// record.
 func (h *latestSyncHandler) setLatestSync(p peer.ID, c cid.Cid) {
+	if c == cid.Undef {
+		h.m.Delete(p)
+		return
+	}
 	h.m.Store(p, c)
 }
 

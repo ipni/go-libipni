@@ -501,6 +501,105 @@ func TestHttpPeerAddrPeerstore(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Setting the latest sync to cid.Undef removes it, so the next sync with the
+// peer is a first sync again: it fetches the head, to the first sync depth,
+// and sends a SyncFinished event.
+func TestSetLatestSyncUndefRemovesStopNode(t *testing.T) {
+	t.Parallel()
+	pubHostSys := newHostSystem(t)
+	subHostSys := newHostSystem(t)
+	pub, sub, _ := dagsyncPubSubBuilder{}.Build(t, testTopic, pubHostSys, subHostSys,
+		[]dagsync.Option{dagsync.FirstSyncDepth(1)})
+
+	head := llBuilder{Length: 3, Seed: 1}.Build(t, pubHostSys.lsys)
+	headCid := head.(cidlink.Link).Cid
+	pub.SetRoot(headCid)
+	peerInfo := peer.AddrInfo{ID: pub.ID(), Addrs: pub.Addrs()}
+
+	syncFinished, cncl := sub.OnSyncFinished()
+	defer cncl()
+	requireFirstSync := func() {
+		t.Helper()
+		c, err := sub.SyncAdChain(t.Context(), peerInfo)
+		require.NoError(t, err)
+		require.Equal(t, headCid, c)
+		select {
+		case evt := <-syncFinished:
+			require.Equal(t, headCid, evt.Cid)
+			require.Equal(t, 1, evt.Count)
+		case <-time.After(updateTimeout):
+			require.FailNow(t, "no SyncFinished event")
+		}
+		sub.UnblockSync(pub.ID())
+	}
+
+	requireFirstSync()
+	require.Equal(t, head, sub.GetLatestSync(pub.ID()))
+
+	require.NoError(t, sub.SetLatestSync(pub.ID(), cid.Undef))
+	require.Nil(t, sub.GetLatestSync(pub.ID()))
+	requireFirstSync()
+}
+
+// After the latest sync is removed, an announce of the same head is a first
+// sync: it fetches the head, to the first sync depth, and sends SyncFinished.
+func TestSetLatestSyncUndefAnnounce(t *testing.T) {
+	t.Parallel()
+	pubHostSys := newHostSystem(t)
+	subHostSys := newHostSystem(t)
+	pub, sub, _ := dagsyncPubSubBuilder{}.Build(t, testTopic, pubHostSys, subHostSys,
+		[]dagsync.Option{dagsync.FirstSyncDepth(2), dagsync.RecvAnnounce(testTopic)})
+	defer sub.Close()
+
+	head := llBuilder{Length: 3, Seed: 1}.Build(t, pubHostSys.lsys)
+	headCid := head.(cidlink.Link).Cid
+	pub.SetRoot(headCid)
+	peerInfo := peer.AddrInfo{ID: pub.ID(), Addrs: pub.Addrs()}
+
+	syncFinished, cncl := sub.OnSyncFinished()
+	defer cncl()
+	requireSyncFinished := func() {
+		t.Helper()
+		select {
+		case evt := <-syncFinished:
+			require.Equal(t, headCid, evt.Cid)
+			require.Equal(t, 2, evt.Count)
+		case <-time.After(updateTimeout):
+			require.FailNow(t, "no SyncFinished event")
+		}
+		sub.UnblockSync(pub.ID())
+	}
+
+	c, err := sub.SyncAdChain(t.Context(), peerInfo)
+	require.NoError(t, err)
+	require.Equal(t, headCid, c)
+	requireSyncFinished()
+
+	require.NoError(t, sub.SetLatestSync(pub.ID(), cid.Undef))
+	require.NoError(t, sub.Announce(t.Context(), headCid, peerInfo))
+	requireSyncFinished()
+	require.Equal(t, head, sub.GetLatestSync(pub.ID()))
+}
+
+// After the latest sync is removed, the subscriber uses the CID that the
+// LastKnownSync function returns.
+func TestSetLatestSyncUndefUsesLastKnownSync(t *testing.T) {
+	t.Parallel()
+	peerID := random.Peers(1)[0]
+	cids := random.Cids(2)
+	sub, err := dagsync.NewSubscriber(test.MkTestHost(t), test.MkLinkSystem(dssync.MutexWrap(datastore.NewMapDatastore())),
+		dagsync.WithLastKnownSync(func(p peer.ID) (cid.Cid, bool) {
+			return cids[0], p == peerID
+		}))
+	require.NoError(t, err)
+	defer sub.Close()
+
+	require.NoError(t, sub.SetLatestSync(peerID, cids[1]))
+	require.Equal(t, cidlink.Link{Cid: cids[1]}, sub.GetLatestSync(peerID))
+	require.NoError(t, sub.SetLatestSync(peerID, cid.Undef))
+	require.Equal(t, cidlink.Link{Cid: cids[0]}, sub.GetLatestSync(peerID))
+}
+
 func TestSyncFinishedAlwaysDelivered(t *testing.T) {
 	t.Parallel()
 	pubHostSys := newHostSystem(t)
