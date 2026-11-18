@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,10 +51,17 @@ func TestFetchErrorBodyDrain(t *testing.T) {
 // TestFetchRetryClosesResponse checks that, when a plain HTTP publisher
 // answers 404 or 403 on the IPNI path, the client closes that response before
 // it retries without the path. The first body is larger than the drain limit,
-// so its connection is held until the body is closed. Once closed, the
-// connection is either closed or, with an HTTP client that drains the rest of
-// the body, reused by the retry. The retried request checks for either.
+// so its connection stays in use until the body is closed. A closed body
+// leaves the connection closed, reused by the retry, or idle in the client's
+// pool, possibly after a background drain. While the retried request is
+// served, the handler accepts the reused connection, or closes the idle
+// connections of the transport the syncer uses until the first connection
+// closes. A response that is still open keeps its connection in use, so it
+// does not close and the test fails.
 func TestFetchRetryClosesResponse(t *testing.T) {
+	// The syncer's client has no transport of its own, so it uses
+	// http.DefaultTransport.
+	transport := http.DefaultTransport.(*http.Transport)
 	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			type connKey struct{}
@@ -62,7 +70,7 @@ func TestFetchRetryClosesResponse(t *testing.T) {
 				mu          sync.Mutex
 				firstConn   net.Conn
 				firstClosed = make(chan struct{})
-				released    bool
+				released    atomic.Bool
 			)
 			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				conn := r.Context().Value(connKey{}).(net.Conn)
@@ -78,15 +86,7 @@ func TestFetchRetryClosesResponse(t *testing.T) {
 					mu.Lock()
 					reused := conn == firstConn
 					mu.Unlock()
-					if reused {
-						released = true
-					} else {
-						select {
-						case <-firstClosed:
-							released = true
-						case <-time.After(5 * time.Second):
-						}
-					}
+					released.Store(reused || closeIdleUntil(transport, firstClosed, 5*time.Second))
 				}
 				http.NotFound(w, r)
 			}))
@@ -106,7 +106,23 @@ func TestFetchRetryClosesResponse(t *testing.T) {
 			syncer, _ := newBlockSyncer(t, srv.URL, peer.ID("publisher"), func(peer.ID, cid.Cid) {})
 			err := syncer.Sync(t.Context(), c, selectorparse.CommonSelector_ExploreAllRecursively)
 			require.Error(t, err)
-			require.True(t, released)
+			require.True(t, released.Load())
 		})
+	}
+}
+
+// closeIdleUntil closes the idle connections of transport every 10ms until
+// connClosed is closed. It returns false if timeout passes first.
+func closeIdleUntil(transport *http.Transport, connClosed <-chan struct{}, timeout time.Duration) bool {
+	deadline := time.After(timeout)
+	for {
+		transport.CloseIdleConnections()
+		select {
+		case <-connClosed:
+			return true
+		case <-deadline:
+			return false
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }
